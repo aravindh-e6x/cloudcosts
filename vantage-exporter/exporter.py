@@ -195,6 +195,9 @@ class GreptimeDBClient:
 
     def __init__(self, greptimedb_url: str, username: str = '', password: str = '', database: str = 'vantage'):
         self.greptimedb_url = greptimedb_url.rstrip('/')
+        self.database = database
+        self.username = username
+        self.password = password
         self.push_url = f"{self.greptimedb_url}/v1/prometheus/write?db={database}"
         self.session = requests.Session()
         self.session.headers.update({
@@ -204,6 +207,25 @@ class GreptimeDBClient:
         })
         if username and password:
             self.session.auth = (username, password)
+
+        self._ensure_database_exists()
+
+    def _ensure_database_exists(self):
+        """Create the database if it doesn't exist."""
+        sql_url = f"{self.greptimedb_url}/v1/sql"
+        try:
+            response = requests.post(
+                sql_url,
+                data={'sql': f'CREATE DATABASE IF NOT EXISTS {self.database}'},
+                auth=(self.username, self.password) if self.username else None,
+                timeout=10
+            )
+            if response.ok:
+                logger.info(f"Database '{self.database}' ensured to exist")
+            else:
+                logger.warning(f"Failed to ensure database exists: {response.status_code} - {response.text}")
+        except Exception as e:
+            logger.warning(f"Failed to ensure database exists: {e}")
 
     def _encode_varint(self, value: int) -> bytes:
         """Encode an integer as a varint."""
