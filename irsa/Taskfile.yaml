@@ -1,128 +1,121 @@
 version: '3'
 
-vars:
-  AWS_REGION: ${AWS_REGION}
-  AWS_ACCOUNT_ID: ${AWS_PRIMARY_ACCOUNT_ID}
-
 tasks:
+  resolve:
+    desc: Substitute env vars in all JSON files
+    cmds:
+      - for f in *.json; do envsubst < "$f" > "/tmp/$f"; done
+
   create-grafana-role:
     desc: Create IAM role for Grafana CloudWatch access
+    deps: [resolve]
     cmds:
       - |
         aws iam create-role \
           --role-name grafana-cloudwatch-role \
-          --assume-role-policy-document file://grafana-cloudwatch-trust.json \
-          --description "IAM role for Grafana to access CloudWatch" \
-          --region {{.AWS_REGION}} || echo "Role may already exist"
+          --assume-role-policy-document file:///tmp/grafana-cloudwatch-trust.json \
+          --description "IAM role for Grafana to access CloudWatch" || echo "Role may already exist"
       - |
         aws iam put-role-policy \
           --role-name grafana-cloudwatch-role \
           --policy-name grafana-cloudwatch-policy \
-          --policy-document file://grafana-cloudwatch-policy.json \
-          --region {{.AWS_REGION}}
-    silent: false
+          --policy-document file:///tmp/grafana-cloudwatch-policy.json
 
   update-grafana-trust:
     desc: Update trust policy for Grafana role
+    deps: [resolve]
     cmds:
       - |
         aws iam update-assume-role-policy \
           --role-name grafana-cloudwatch-role \
-          --policy-document file://grafana-cloudwatch-trust.json \
-          --region {{.AWS_REGION}}
+          --policy-document file:///tmp/grafana-cloudwatch-trust.json
 
   delete-grafana-role:
     desc: Delete Grafana CloudWatch IAM role
     cmds:
-      - aws iam delete-role-policy --role-name grafana-cloudwatch-role --policy-name grafana-cloudwatch-policy --region {{.AWS_REGION}} || true
-      - aws iam delete-role --role-name grafana-cloudwatch-role --region {{.AWS_REGION}}
+      - aws iam delete-role-policy --role-name grafana-cloudwatch-role --policy-name grafana-cloudwatch-policy || true
+      - aws iam delete-role --role-name grafana-cloudwatch-role
 
   create-greptimedb-role:
     desc: Create IAM role for GreptimeDB S3 access
+    deps: [resolve]
     cmds:
       - |
         aws iam create-role \
           --role-name greptimedb-s3-role \
-          --assume-role-policy-document file://greptimedb-s3-trust.json \
-          --description "IAM role for GreptimeDB to access S3" \
-          --region {{.AWS_REGION}} || echo "Role may already exist"
+          --assume-role-policy-document file:///tmp/greptimedb-s3-trust.json \
+          --description "IAM role for GreptimeDB to access S3" || echo "Role may already exist"
       - |
         aws iam put-role-policy \
           --role-name greptimedb-s3-role \
           --policy-name greptimedb-s3-policy \
-          --policy-document file://greptimedb-s3-policy.json \
-          --region {{.AWS_REGION}}
-    silent: false
+          --policy-document file:///tmp/greptimedb-s3-policy.json
 
   update-greptimedb-trust:
     desc: Update trust policy for GreptimeDB role
+    deps: [resolve]
     cmds:
       - |
         aws iam update-assume-role-policy \
           --role-name greptimedb-s3-role \
-          --policy-document file://greptimedb-s3-trust.json \
-          --region {{.AWS_REGION}}
+          --policy-document file:///tmp/greptimedb-s3-trust.json
 
   delete-greptimedb-role:
     desc: Delete GreptimeDB S3 IAM role
     cmds:
-      - aws iam delete-role-policy --role-name greptimedb-s3-role --policy-name greptimedb-s3-policy --region {{.AWS_REGION}} || true
-      - aws iam delete-role --role-name greptimedb-s3-role --region {{.AWS_REGION}}
+      - aws iam delete-role-policy --role-name greptimedb-s3-role --policy-name greptimedb-s3-policy || true
+      - aws iam delete-role --role-name greptimedb-s3-role
 
   create-alloy-cloudwatch-role:
     desc: Create IAM role for Alloy CloudWatch access
+    deps: [resolve]
     cmds:
       - |
         aws iam create-role \
           --role-name alloy-cloudwatch-role \
-          --assume-role-policy-document file://alloy-cloudwatch-trust.json \
-          --description "IAM role for Alloy to access CloudWatch metrics" \
-          --region {{.AWS_REGION}} || echo "Role may already exist"
+          --assume-role-policy-document file:///tmp/alloy-cloudwatch-trust.json \
+          --description "IAM role for Alloy to access CloudWatch metrics" || echo "Role may already exist"
       - |
         aws iam put-role-policy \
           --role-name alloy-cloudwatch-role \
           --policy-name alloy-cloudwatch-policy \
-          --policy-document file://alloy-cloudwatch-policy.json \
-          --region {{.AWS_REGION}}
-    silent: false
+          --policy-document file:///tmp/alloy-cloudwatch-policy.json
 
   update-alloy-cloudwatch-trust:
     desc: Update trust policy for Alloy CloudWatch role
+    deps: [resolve]
     cmds:
       - |
         aws iam update-assume-role-policy \
           --role-name alloy-cloudwatch-role \
-          --policy-document file://alloy-cloudwatch-trust.json \
-          --region {{.AWS_REGION}}
+          --policy-document file:///tmp/alloy-cloudwatch-trust.json
 
   delete-alloy-cloudwatch-role:
     desc: Delete Alloy CloudWatch IAM role
     cmds:
-      - aws iam delete-role-policy --role-name alloy-cloudwatch-role --policy-name alloy-cloudwatch-policy --region {{.AWS_REGION}} || true
-      - aws iam delete-role --role-name alloy-cloudwatch-role --region {{.AWS_REGION}}
+      - aws iam delete-role-policy --role-name alloy-cloudwatch-role --policy-name alloy-cloudwatch-policy || true
+      - aws iam delete-role --role-name alloy-cloudwatch-role
 
   create-cross-account-role:
     desc: Create CloudWatch role in target account for cross-account access
+    deps: [resolve]
     cmds:
       - |
         aws iam create-role \
           --role-name cloudwatch-exporter-role \
-          --assume-role-policy-document file://cross-account-cloudwatch-trust.json \
-          --description "IAM role for cross-account CloudWatch access from monitoring account" \
-          --region {{.AWS_REGION}} || echo "Role may already exist"
+          --assume-role-policy-document file:///tmp/cross-account-cloudwatch-trust.json \
+          --description "IAM role for cross-account CloudWatch access" || echo "Role may already exist"
       - |
         aws iam put-role-policy \
           --role-name cloudwatch-exporter-role \
           --policy-name cloudwatch-read-policy \
-          --policy-document file://cross-account-cloudwatch-policy.json \
-          --region {{.AWS_REGION}}
-    silent: false
+          --policy-document file:///tmp/cross-account-cloudwatch-policy.json
 
   delete-cross-account-role:
     desc: Delete cross-account CloudWatch role
     cmds:
-      - aws iam delete-role-policy --role-name cloudwatch-exporter-role --policy-name cloudwatch-read-policy --region {{.AWS_REGION}} || true
-      - aws iam delete-role --role-name cloudwatch-exporter-role --region {{.AWS_REGION}}
+      - aws iam delete-role-policy --role-name cloudwatch-exporter-role --policy-name cloudwatch-read-policy || true
+      - aws iam delete-role --role-name cloudwatch-exporter-role
 
   create-all:
     desc: Create all IRSA roles
@@ -142,10 +135,10 @@ tasks:
     desc: List all IRSA roles
     cmds:
       - echo "=== Grafana CloudWatch Role ==="
-      - aws iam get-role --role-name grafana-cloudwatch-role --region {{.AWS_REGION}} 2>/dev/null || echo "Not found"
+      - aws iam get-role --role-name grafana-cloudwatch-role 2>/dev/null || echo "Not found"
       - echo ""
       - echo "=== GreptimeDB S3 Role ==="
-      - aws iam get-role --role-name greptimedb-s3-role --region {{.AWS_REGION}} 2>/dev/null || echo "Not found"
+      - aws iam get-role --role-name greptimedb-s3-role 2>/dev/null || echo "Not found"
       - echo ""
       - echo "=== Alloy CloudWatch Role ==="
-      - aws iam get-role --role-name alloy-cloudwatch-role --region {{.AWS_REGION}} 2>/dev/null || echo "Not found"
+      - aws iam get-role --role-name alloy-cloudwatch-role 2>/dev/null || echo "Not found"

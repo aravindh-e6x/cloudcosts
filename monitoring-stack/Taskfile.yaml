@@ -6,26 +6,27 @@ vars:
   CHART_DIR: .
 
 tasks:
+  install:
+    desc: Install the monitoring stack
+    cmds:
+      - envsubst < values.yaml > /tmp/values-resolved.yaml
+      - helm dependency update {{.CHART_DIR}}
+      - helm install {{.RELEASE_NAME}} {{.CHART_DIR}} -n {{.NAMESPACE}} --create-namespace -f /tmp/values-resolved.yaml
+
+  upgrade:
+    desc: Upgrade the monitoring stack
+    cmds:
+      - envsubst < values.yaml > /tmp/values-resolved.yaml
+      - helm dependency update {{.CHART_DIR}}
+      - helm upgrade {{.RELEASE_NAME}} {{.CHART_DIR}} -n {{.NAMESPACE}} -f /tmp/values-resolved.yaml
+
   clean-install:
     desc: Delete helm chart fully and reinstall from scratch
     cmds:
       - helm uninstall {{.RELEASE_NAME}} -n {{.NAMESPACE}} --wait || true
       - kubectl delete pvc -n {{.NAMESPACE}} -l app.kubernetes.io/instance={{.RELEASE_NAME}} --wait=false || true
       - sleep 5
-      - helm dependency update {{.CHART_DIR}}
-      - helm install {{.RELEASE_NAME}} {{.CHART_DIR}} -n {{.NAMESPACE}} --create-namespace --wait --timeout 5m
-
-  install:
-    desc: Install the monitoring stack
-    cmds:
-      - helm dependency update {{.CHART_DIR}}
-      - helm install {{.RELEASE_NAME}} {{.CHART_DIR}} -n {{.NAMESPACE}} --create-namespace
-
-  upgrade:
-    desc: Upgrade the monitoring stack
-    cmds:
-      - helm dependency update {{.CHART_DIR}}
-      - helm upgrade {{.RELEASE_NAME}} {{.CHART_DIR}} -n {{.NAMESPACE}}
+      - task: install
 
   rollback:
     desc: Rollback to previous revision
@@ -51,3 +52,10 @@ tasks:
     desc: Show logs from all pods
     cmds:
       - kubectl logs -n {{.NAMESPACE}} -l app.kubernetes.io/instance={{.RELEASE_NAME}} --all-containers --tail=50
+
+  template:
+    desc: Render helm templates locally (for debugging)
+    cmds:
+      - envsubst < values.yaml > /tmp/values-resolved.yaml
+      - helm dependency update {{.CHART_DIR}}
+      - helm template {{.RELEASE_NAME}} {{.CHART_DIR}} -n {{.NAMESPACE}} -f /tmp/values-resolved.yaml

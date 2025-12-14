@@ -2,16 +2,18 @@ version: '3'
 
 vars:
   RELEASE_NAME: monitoring-agent
-  NAMESPACE: '{{.NAMESPACE | default "cloudcosts"}}'
+  NAMESPACE: monitoring
   CHART_DIR: .
 
 tasks:
   install:
-    desc: Install monitoring-agent chart (requires cluster.name)
+    desc: Install monitoring-agent chart (requires CLUSTER_NAME)
     cmds:
+      - envsubst < values.yaml > /tmp/values-resolved.yaml
       - helm dependency update {{.CHART_DIR}}
       - |
         helm install {{.RELEASE_NAME}} {{.CHART_DIR}} -n {{.NAMESPACE}} --create-namespace \
+          -f /tmp/values-resolved.yaml \
           --set cluster.name={{.CLUSTER_NAME}} \
           --set alloy.alloy.configMap.name={{.RELEASE_NAME}}-alloy
     vars:
@@ -23,9 +25,11 @@ tasks:
   upgrade:
     desc: Upgrade monitoring-agent chart
     cmds:
+      - envsubst < values.yaml > /tmp/values-resolved.yaml
       - helm dependency update {{.CHART_DIR}}
       - |
         helm upgrade {{.RELEASE_NAME}} {{.CHART_DIR}} -n {{.NAMESPACE}} \
+          -f /tmp/values-resolved.yaml \
           --set alloy.alloy.configMap.name={{.RELEASE_NAME}}-alloy
 
   rollback:
@@ -46,8 +50,10 @@ tasks:
   template:
     desc: Render helm templates locally (for debugging)
     cmds:
+      - envsubst < values.yaml > /tmp/values-resolved.yaml
       - helm dependency update {{.CHART_DIR}}
       - |
         helm template {{.RELEASE_NAME}} {{.CHART_DIR}} -n {{.NAMESPACE}} \
+          -f /tmp/values-resolved.yaml \
           --set cluster.name={{.CLUSTER_NAME | default "test-cluster"}} \
           --set alloy.alloy.configMap.name={{.RELEASE_NAME}}-alloy
