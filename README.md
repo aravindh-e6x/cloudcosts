@@ -5,10 +5,11 @@ Central monitoring stack for collecting and visualizing cloud infrastructure cos
 ## Structure
 
 ```
-├── eks/                  # eksctl config for cluster provisioning
+├── eks/                  # eksctl config for EKS cluster
+├── k3s/                  # CloudFormation for k3s single-node
 ├── monitoring-stack/     # Central Helm chart (Grafana, GreptimeDB, exporters)
 ├── monitoring-agent/     # Agent Helm chart (deploy to each EKS cluster)
-├── irsa/                 # IAM roles and policies for IRSA
+├── irsa/                 # IAM roles and policies for IRSA (EKS only)
 ├── poc-cost-exporter/    # Python exporter for POC customer metrics
 └── vantage-exporter/     # Python exporter for Vantage cost data
 ```
@@ -37,6 +38,17 @@ task install    # or task upgrade
 - Vantage Exporter (cost data from Vantage API)
 - POC Cost Exporter (customer POC metrics from e6.run Grafana/Mimir)
 - ALB Ingress for Grafana and GreptimeDB
+
+**Resource Requirements:**
+
+| Workload | CPU Request | Memory Request |
+|----------|-------------|----------------|
+| GreptimeDB | 500m | 2Gi |
+| Grafana | 250m | 512Mi |
+| CloudWatch Exporter | 100m | 256Mi |
+| Vantage Exporter | 50m | 64Mi |
+| POC Cost Exporter | 50m | 64Mi |
+| **Total** | **950m** | **~2.9Gi** |
 
 ## Deploy Agent to EKS Clusters
 

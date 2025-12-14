@@ -1,25 +1,38 @@
 # Monitoring Stack Values
 
 cluster:
-  name: ${EKS_CLUSTER_NAME}
+  name: k3s-cloudcosts
 
-# Grafana Ingress Configuration (AWS ALB)
+# Grafana Ingress
 grafanaIngress:
   enabled: true
   host: ${GRAFANA_INGRESS_HOST}
-  scheme: internet-facing
-  certificateArn: "${ALB_ACM_CERTIFICATE_ARN}"
-  groupName: cloudcosts
-  annotations: {}
+  tls:
+    enabled: true
+    secretName: grafana-tls
 
-# GreptimeDB Ingress Configuration (AWS ALB)
+# GreptimeDB Ingress
 greptimeIngress:
   enabled: true
   host: ${GREPTIMEDB_INGRESS_HOST}
-  scheme: internet-facing
-  certificateArn: "${ALB_ACM_CERTIFICATE_ARN}"
-  groupName: cloudcosts
-  annotations: {}
+  tls:
+    enabled: true
+    secretName: greptimedb-tls
+
+# cert-manager Configuration
+certManager:
+  email: ${LETSENCRYPT_EMAIL}
+
+cert-manager:
+  installCRDs: true
+
+# Nginx Ingress Controller
+ingress-nginx:
+  controller:
+    hostPort:
+      enabled: true
+    service:
+      type: ClusterIP
 
 # GreptimeDB Standalone Configuration
 greptimedb-standalone:
@@ -57,10 +70,10 @@ greptimedb-standalone:
   resources:
     requests:
       cpu: 500m
-      memory: 1Gi
+      memory: 2Gi
     limits:
       cpu: 1500m
-      memory: 2Gi
+      memory: 4Gi
 
   service:
     type: ClusterIP

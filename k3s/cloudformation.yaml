@@ -1,0 +1,268 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: k3s single-node cluster for CloudCosts monitoring stack
+
+Parameters:
+  InstanceType:
+    Type: String
+    Default: t4g.large
+    Description: EC2 instance type (ARM-based)
+
+  VpcCidr:
+    Type: String
+    Default: 10.50.0.0/16
+
+  SubnetCidr:
+    Type: String
+    Default: 10.50.1.0/24
+
+  AllowedSSHCidr:
+    Type: String
+    Default: 0.0.0.0/0
+    Description: CIDR allowed to SSH (restrict to your IP for security)
+
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: k3s-cloudcosts-vpc
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: k3s-cloudcosts-igw
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref SubnetCidr
+      MapPublicIpOnLaunch: true
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: k3s-cloudcosts-public
+
+  RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: k3s-cloudcosts-rt
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref RouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  SubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet
+      RouteTableId: !Ref RouteTable
+
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: k3s security group
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref AllowedSSHCidr
+          Description: SSH
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+          Description: HTTP
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+          Description: HTTPS
+        - IpProtocol: tcp
+          FromPort: 6443
+          ToPort: 6443
+          CidrIp: !Ref AllowedSSHCidr
+          Description: Kubernetes API
+      Tags:
+        - Key: Name
+          Value: k3s-cloudcosts-sg
+
+  IAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: k3s-cloudcosts-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+      Policies:
+        - PolicyName: GreptimeDBBucketAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                  - s3:ListBucket
+                Resource:
+                  - arn:aws:s3:::e6-cloudcosts
+                  - arn:aws:s3:::e6-cloudcosts/*
+        - PolicyName: CloudWatchReadAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cloudwatch:GetMetricData
+                  - cloudwatch:GetMetricStatistics
+                  - cloudwatch:ListMetrics
+                  - tag:GetResources
+                Resource: '*'
+        - PolicyName: CrossAccountAssumeRole
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sts:AssumeRole
+                Resource: 'arn:aws:iam::*:role/cloudwatch-exporter-role'
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref IAMRole
+
+  ElasticIP:
+    Type: AWS::EC2::EIP
+    DeletionPolicy: Retain
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: k3s-cloudcosts-eip
+
+  EC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: !Sub '{{resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64}}'
+      KeyName: ingestion-ec2-instances
+      SubnetId: !Ref PublicSubnet
+      SecurityGroupIds:
+        - !Ref SecurityGroup
+      IamInstanceProfile: !Ref InstanceProfile
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: 30
+            VolumeType: gp3
+            DeleteOnTermination: true
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -e
+
+          ACCOUNT_ID=$(curl -s http://169.254.169.254/latest/dynamic/instance-identity/document | grep accountId | awk -F'"' '{print $4}')
+          REGION=$(curl -s http://169.254.169.254/latest/meta-data/placement/region)
+
+          mkdir -p /etc/rancher/k3s
+
+          # Create ECR credential refresh script
+          cat > /usr/local/bin/refresh-ecr-credentials.sh << 'SCRIPT'
+          #!/bin/bash
+          ACCOUNT_ID=$(curl -s http://169.254.169.254/latest/dynamic/instance-identity/document | grep accountId | awk -F'"' '{print $4}')
+          REGION=$(curl -s http://169.254.169.254/latest/meta-data/placement/region)
+          ECR_PASSWORD=$(aws ecr get-login-password --region $REGION)
+
+          cat > /etc/rancher/k3s/registries.yaml << EOF
+          mirrors:
+            "$ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com":
+              endpoint:
+                - "https://$ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com"
+          configs:
+            "$ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com":
+              auth:
+                username: AWS
+                password: $ECR_PASSWORD
+          EOF
+
+          systemctl restart k3s 2>/dev/null || true
+          SCRIPT
+          chmod +x /usr/local/bin/refresh-ecr-credentials.sh
+
+          # Initial ECR credentials setup
+          /usr/local/bin/refresh-ecr-credentials.sh
+
+          # Setup cron to refresh ECR credentials every 6 hours
+          echo "0 */6 * * * root /usr/local/bin/refresh-ecr-credentials.sh" > /etc/cron.d/refresh-ecr
+
+          # Install k3s
+          curl -sfL https://get.k3s.io | sh -s - \
+            --write-kubeconfig-mode 644 \
+            --disable traefik \
+            --tls-san ${ElasticIP}
+
+          # Wait for k3s to be ready
+          until kubectl get nodes; do sleep 5; done
+
+          # Install Helm
+          curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+          # Create monitoring namespace
+          kubectl create namespace monitoring
+
+          echo "k3s installation complete"
+      Tags:
+        - Key: Name
+          Value: k3s-cloudcosts
+
+  EIPAssociation:
+    Type: AWS::EC2::EIPAssociation
+    Properties:
+      InstanceId: !Ref EC2Instance
+      EIP: !Ref ElasticIP
+
+Outputs:
+  PublicIP:
+    Description: Public IP of k3s node
+    Value: !Ref ElasticIP
+
+  SSHCommand:
+    Description: SSH command to connect
+    Value: !Sub 'ssh -i ingestion-ec2-instances.pem ec2-user@${ElasticIP}'
+
+  KubeconfigCommand:
+    Description: Command to get kubeconfig
+    Value: !Sub 'ssh -i ingestion-ec2-instances.pem ec2-user@${ElasticIP} "sudo cat /etc/rancher/k3s/k3s.yaml" | sed "s/127.0.0.1/${ElasticIP}/g" > ~/.kube/k3s-cloudcosts.yaml'
+
+  KubectlExport:
+    Description: Export KUBECONFIG
+    Value: 'export KUBECONFIG=~/.kube/k3s-cloudcosts.yaml'

@@ -7,25 +7,18 @@ metadata:
     {{- include "monitoring-stack.labels" . | nindent 4 }}
     app.kubernetes.io/component: greptimedb
   annotations:
-    alb.ingress.kubernetes.io/scheme: {{ .Values.greptimeIngress.scheme | default "internet-facing" }}
-    alb.ingress.kubernetes.io/target-type: ip
-    alb.ingress.kubernetes.io/backend-protocol: HTTP
-    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
-    alb.ingress.kubernetes.io/ssl-policy: ELBSecurityPolicy-TLS13-1-2-2021-06
-    alb.ingress.kubernetes.io/healthcheck-protocol: HTTP
-    alb.ingress.kubernetes.io/healthcheck-path: /health
-    alb.ingress.kubernetes.io/success-codes: "200"
-    {{- if .Values.greptimeIngress.certificateArn }}
-    alb.ingress.kubernetes.io/certificate-arn: {{ .Values.greptimeIngress.certificateArn }}
-    {{- end }}
-    {{- if .Values.greptimeIngress.groupName }}
-    alb.ingress.kubernetes.io/group.name: {{ .Values.greptimeIngress.groupName }}
-    {{- end }}
+    cert-manager.io/cluster-issuer: letsencrypt-prod
     {{- with .Values.greptimeIngress.annotations }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
 spec:
-  ingressClassName: alb
+  ingressClassName: nginx
+  {{- if .Values.greptimeIngress.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ .Values.greptimeIngress.host }}
+      secretName: {{ .Values.greptimeIngress.tls.secretName }}
+  {{- end }}
   rules:
     - host: {{ .Values.greptimeIngress.host | required "greptimeIngress.host is required" }}
       http:
