@@ -1,0 +1,292 @@
+# Monitoring Stack Values
+
+cluster:
+  name: ${EKS_CLUSTER_NAME}
+
+# Grafana Ingress Configuration (AWS ALB)
+grafanaIngress:
+  enabled: true
+  host: ${GRAFANA_INGRESS_HOST}
+  scheme: internet-facing
+  certificateArn: "${ALB_ACM_CERTIFICATE_ARN}"
+  groupName: cloudcosts
+  annotations: {}
+
+# GreptimeDB Ingress Configuration (AWS ALB)
+greptimeIngress:
+  enabled: true
+  host: ${GREPTIMEDB_INGRESS_HOST}
+  scheme: internet-facing
+  certificateArn: "${ALB_ACM_CERTIFICATE_ARN}"
+  groupName: cloudcosts
+  annotations: {}
+
+# GreptimeDB Standalone Configuration
+greptimedb-standalone:
+  image:
+    registry: docker.io
+    repository: greptime/greptimedb
+    tag: "v1.0.0-beta.2"
+    pullPolicy: IfNotPresent
+
+  persistence:
+    enabled: true
+    storageClass: ""
+    size: 50Gi
+
+  objectStorage:
+    s3:
+      bucket: ${GREPTIMEDB_S3_BUCKET}
+      region: ${AWS_REGION}
+      root: greptimedb
+    credentials:
+      existingSecretName: ""
+
+  serviceAccount:
+    create: true
+    annotations:
+      eks.amazonaws.com/role-arn: arn:aws:iam::${AWS_PRIMARY_ACCOUNT_ID}:role/greptimedb-s3-role
+
+  auth:
+    enabled: true
+    users:
+      - username: "${GREPTIMEDB_USERNAME}"
+        password: "${GREPTIMEDB_PASSWORD}"
+        permission: "readwrite"
+
+  resources:
+    requests:
+      cpu: 2000m
+      memory: 2Gi
+    limits:
+      cpu: 2000m
+      memory: 2Gi
+
+  service:
+    type: ClusterIP
+
+# Grafana Configuration
+grafana:
+  replicas: 1
+
+  deploymentStrategy:
+    type: Recreate
+
+  adminUser: ${GRAFANA_ADMIN_USERNAME}
+  adminPassword: ${GRAFANA_ADMIN_PASSWORD}
+
+  persistence:
+    enabled: true
+    size: 5Gi
+
+  serviceAccount:
+    create: true
+    annotations:
+      eks.amazonaws.com/role-arn: arn:aws:iam::${AWS_PRIMARY_ACCOUNT_ID}:role/grafana-cloudwatch-role
+
+  datasources:
+    datasources.yaml:
+      apiVersion: 1
+      datasources:
+        - name: GreptimeDB
+          uid: greptimedb
+          type: prometheus
+          url: http://monitoring-stack-greptimedb-standalone.monitoring.svc:4000/v1/prometheus
+          access: proxy
+          isDefault: true
+          basicAuth: true
+          basicAuthUser: ${GREPTIMEDB_USERNAME}
+          secureJsonData:
+            basicAuthPassword: ${GREPTIMEDB_PASSWORD}
+            httpHeaderValue1: kubernetes
+          jsonData:
+            timeInterval: "15s"
+            httpHeaderName1: x-greptime-db-name
+        - name: GreptimeDB-AWS
+          uid: greptimedb-aws
+          type: prometheus
+          url: http://monitoring-stack-greptimedb-standalone.monitoring.svc:4000/v1/prometheus
+          access: proxy
+          basicAuth: true
+          basicAuthUser: ${GREPTIMEDB_USERNAME}
+          secureJsonData:
+            basicAuthPassword: ${GREPTIMEDB_PASSWORD}
+            httpHeaderValue1: aws
+          jsonData:
+            timeInterval: "5m"
+            httpHeaderName1: x-greptime-db-name
+        - name: GreptimeDB-Vantage
+          uid: greptimedb-vantage
+          type: prometheus
+          url: http://monitoring-stack-greptimedb-standalone.monitoring.svc:4000/v1/prometheus
+          access: proxy
+          basicAuth: true
+          basicAuthUser: ${GREPTIMEDB_USERNAME}
+          secureJsonData:
+            basicAuthPassword: ${GREPTIMEDB_PASSWORD}
+            httpHeaderValue1: vantage
+          jsonData:
+            timeInterval: "1h"
+            httpHeaderName1: x-greptime-db-name
+        - name: CloudWatch
+          uid: cloudwatch
+          type: cloudwatch
+          access: proxy
+          jsonData:
+            authType: default
+            defaultRegion: ${AWS_REGION}
+        - name: GreptimeDB-Cisco
+          uid: greptimedb-cisco
+          type: prometheus
+          url: http://monitoring-stack-greptimedb-standalone.monitoring.svc:4000/v1/prometheus
+          access: proxy
+          basicAuth: true
+          basicAuthUser: ${GREPTIMEDB_USERNAME}
+          secureJsonData:
+            basicAuthPassword: ${GREPTIMEDB_PASSWORD}
+            httpHeaderValue1: cisco_sal
+          jsonData:
+            timeInterval: "1m"
+            httpHeaderName1: x-greptime-db-name
+
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      folder: /tmp/dashboards
+      folderAnnotation: grafana_folder
+      provider:
+        foldersFromFilesStructure: true
+        allowUiUpdates: true
+    datasources:
+      enabled: true
+      label: grafana_datasource
+
+  service:
+    type: ClusterIP
+    port: 80
+
+  ingress:
+    enabled: false
+
+  resources:
+    requests:
+      cpu: 1000m
+      memory: 1Gi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+# CloudWatch Exporter (Alloy-based, multi-account)
+cloudwatchExporter:
+  serviceAccount:
+    roleArn: "arn:aws:iam::${AWS_PRIMARY_ACCOUNT_ID}:role/alloy-cloudwatch-role"
+
+  greptimedb:
+    url: "http://monitoring-stack-greptimedb-standalone.monitoring.svc:4000"
+    username: "${GREPTIMEDB_USERNAME}"
+    password: "${GREPTIMEDB_PASSWORD}"
+
+  accounts:
+    - name: "primary"
+      accountId: "${AWS_PRIMARY_ACCOUNT_ID}"
+      region: "${AWS_REGION}"
+      regions: ["${AWS_REGION}"]
+
+    - name: "perfadmin"
+      accountId: "${CLOUDWATCH_ACCOUNT_PERFADMIN}"
+      region: "${AWS_REGION}"
+      regions: ["${AWS_REGION}"]
+      roleArn: "arn:aws:iam::${CLOUDWATCH_ACCOUNT_PERFADMIN}:role/cloudwatch-exporter-role"
+
+    - name: "preprod"
+      accountId: "${CLOUDWATCH_ACCOUNT_PREPROD}"
+      region: "${AWS_REGION}"
+      regions: ["${AWS_REGION}"]
+      roleArn: "arn:aws:iam::${CLOUDWATCH_ACCOUNT_PREPROD}:role/cloudwatch-exporter-role"
+
+    - name: "serverless_prod"
+      accountId: "${CLOUDWATCH_ACCOUNT_SERVERLESS_PROD}"
+      region: "${AWS_REGION}"
+      regions: ["${AWS_REGION}"]
+      roleArn: "arn:aws:iam::${CLOUDWATCH_ACCOUNT_SERVERLESS_PROD}:role/cloudwatch-exporter-role"
+
+    - name: "serverless_beta"
+      accountId: "${CLOUDWATCH_ACCOUNT_SERVERLESS_BETA}"
+      region: "${AWS_REGION}"
+      regions: ["${AWS_REGION}"]
+      roleArn: "arn:aws:iam::${CLOUDWATCH_ACCOUNT_SERVERLESS_BETA}:role/cloudwatch-exporter-role"
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# Vantage Exporter Configuration
+vantageExporter:
+  image:
+    repository: "${AWS_PRIMARY_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/cloudcosts/vantage-exporter"
+    tag: "latest"
+    pullPolicy: Always
+
+  apiToken: "${VANTAGE_API_TOKEN}"
+  apiUrl: "https://api.vantage.sh"
+
+  greptimeUrl: "http://monitoring-stack-greptimedb-standalone.monitoring.svc:4000"
+  greptimeUsername: "${GREPTIMEDB_USERNAME}"
+  greptimePassword: "${GREPTIMEDB_PASSWORD}"
+  greptimeDatabase: "vantage"
+
+  pushInterval: "3600"
+  historicalDays: "90"
+
+  collectByProvider: "true"
+  collectByAccount: "true"
+  collectByService: "true"
+  collectByResource: "false"
+
+  costReportTokens: ""
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+# POC Cost Exporter Configuration
+pocCostExporter:
+  enabled: true
+
+  image:
+    repository: "${AWS_PRIMARY_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/cloudcosts/poc-cost-exporter"
+    tag: "latest"
+    pullPolicy: Always
+
+  grafana:
+    url: "${POC_EXPORTER_GRAFANA_URL}"
+    username: "${POC_EXPORTER_GRAFANA_USERNAME}"
+    password: "${POC_EXPORTER_GRAFANA_PASSWORD}"
+
+  greptimedb:
+    url: "http://monitoring-stack-greptimedb-standalone.monitoring.svc:4000"
+    username: "${GREPTIMEDB_USERNAME}"
+    password: "${GREPTIMEDB_PASSWORD}"
+
+  customers:
+    - name: "cisco-sal"
+      datasourceId: 4
+      database: "cisco_sal"
+      scrapeInterval: 300
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi

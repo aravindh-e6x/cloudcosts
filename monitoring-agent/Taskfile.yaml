@@ -1,0 +1,53 @@
+version: '3'
+
+vars:
+  RELEASE_NAME: monitoring-agent
+  NAMESPACE: '{{.NAMESPACE | default "cloudcosts"}}'
+  CHART_DIR: .
+
+tasks:
+  install:
+    desc: Install monitoring-agent chart (requires cluster.name)
+    cmds:
+      - helm dependency update {{.CHART_DIR}}
+      - |
+        helm install {{.RELEASE_NAME}} {{.CHART_DIR}} -n {{.NAMESPACE}} --create-namespace \
+          --set cluster.name={{.CLUSTER_NAME}} \
+          --set alloy.alloy.configMap.name={{.RELEASE_NAME}}-alloy
+    vars:
+      CLUSTER_NAME: '{{.CLUSTER_NAME | default ""}}'
+    preconditions:
+      - sh: '[ -n "{{.CLUSTER_NAME}}" ]'
+        msg: "CLUSTER_NAME is required. Usage: task install CLUSTER_NAME=my-cluster"
+
+  upgrade:
+    desc: Upgrade monitoring-agent chart
+    cmds:
+      - helm dependency update {{.CHART_DIR}}
+      - |
+        helm upgrade {{.RELEASE_NAME}} {{.CHART_DIR}} -n {{.NAMESPACE}} \
+          --set alloy.alloy.configMap.name={{.RELEASE_NAME}}-alloy
+
+  rollback:
+    desc: Rollback monitoring-agent to previous revision
+    cmds:
+      - helm rollback {{.RELEASE_NAME}} -n {{.NAMESPACE}}
+
+  delete:
+    desc: Uninstall monitoring-agent chart
+    cmds:
+      - helm uninstall {{.RELEASE_NAME}} -n {{.NAMESPACE}}
+
+  status:
+    desc: Show monitoring-agent release status
+    cmds:
+      - helm status {{.RELEASE_NAME}} -n {{.NAMESPACE}}
+
+  template:
+    desc: Render helm templates locally (for debugging)
+    cmds:
+      - helm dependency update {{.CHART_DIR}}
+      - |
+        helm template {{.RELEASE_NAME}} {{.CHART_DIR}} -n {{.NAMESPACE}} \
+          --set cluster.name={{.CLUSTER_NAME | default "test-cluster"}} \
+          --set alloy.alloy.configMap.name={{.RELEASE_NAME}}-alloy

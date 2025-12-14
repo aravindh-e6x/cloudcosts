@@ -1,0 +1,349 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "gridPos": { "h": 2, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "options": {
+        "content": "# Cloud Cost Report\nUse the date picker (top right) to select a date. Data is delayed by 1 day.",
+        "mode": "markdown"
+      },
+      "type": "text"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "greptimedb-vantage" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "currencyUSD"
+        }
+      },
+      "gridPos": { "h": 4, "w": 8, "x": 0, "y": 2 },
+      "id": 2,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["sum"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "greptimedb-vantage" },
+          "editorMode": "code",
+          "expr": "sum(last_over_time(vantage_daily_cost_by_provider[24h]))",
+          "legendFormat": "__auto",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Total Spend",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "greptimedb-vantage" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 4, "w": 8, "x": 8, "y": 2 },
+      "id": 3,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["sum"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "greptimedb-vantage" },
+          "editorMode": "code",
+          "expr": "count(last_over_time(vantage_daily_cost_by_provider[24h]))",
+          "legendFormat": "__auto",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Providers",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "greptimedb-vantage" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 2 },
+      "id": 4,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["sum"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "greptimedb-vantage" },
+          "editorMode": "code",
+          "expr": "count(last_over_time(vantage_daily_cost_by_account[24h]))",
+          "legendFormat": "__auto",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Accounts",
+      "type": "stat"
+    },
+    {
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 6 },
+      "id": 6,
+      "title": "Cost by Provider",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "greptimedb-vantage" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "hideFrom": { "legend": false, "tooltip": false, "viz": false } },
+          "mappings": [],
+          "unit": "currencyUSD"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 7 },
+      "id": 7,
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right", "showLegend": true, "values": ["value", "percent"] },
+        "pieType": "pie",
+        "reduceOptions": { "calcs": ["sum"], "fields": "", "values": false },
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "greptimedb-vantage" },
+          "editorMode": "code",
+          "expr": "sum by (provider) (last_over_time(vantage_daily_cost_by_provider[24h]))",
+          "legendFormat": "{{provider}}",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Cost by Provider",
+      "type": "piechart"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "greptimedb-vantage" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "custom": { "align": "auto", "cellOptions": { "type": "auto" }, "inspect": false },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Provider" }, "properties": [{ "id": "custom.width", "value": 150 }] },
+          { "matcher": { "id": "byName", "options": "Cost" }, "properties": [{ "id": "unit", "value": "currencyUSD" }] }
+        ]
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 7 },
+      "id": 10,
+      "options": {
+        "cellHeight": "sm",
+        "footer": { "countRows": false, "fields": "", "reducer": ["sum"], "show": true },
+        "showHeader": true,
+        "sortBy": [{ "desc": true, "displayName": "Cost" }]
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "greptimedb-vantage" },
+          "editorMode": "code",
+          "expr": "sum by (provider) (last_over_time(vantage_daily_cost_by_provider[24h]))",
+          "format": "table",
+          "legendFormat": "__auto",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Provider Breakdown",
+      "transformations": [
+        { "id": "organize", "options": { "excludeByName": { "Time": true }, "renameByName": { "Value": "Cost", "provider": "Provider" } } },
+        { "id": "sortBy", "options": { "sort": [{ "desc": true, "field": "Cost" }] } }
+      ],
+      "type": "table"
+    },
+    {
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 15 },
+      "id": 11,
+      "title": "Account Breakdown",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "greptimedb-vantage" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "custom": { "align": "auto", "cellOptions": { "type": "auto" }, "inspect": false },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Account" }, "properties": [{ "id": "custom.width", "value": 200 }] },
+          { "matcher": { "id": "byName", "options": "Provider" }, "properties": [{ "id": "custom.width", "value": 100 }] },
+          { "matcher": { "id": "byName", "options": "Cost" }, "properties": [{ "id": "unit", "value": "currencyUSD" }] }
+        ]
+      },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 16 },
+      "id": 12,
+      "options": {
+        "cellHeight": "sm",
+        "footer": { "countRows": false, "fields": "", "reducer": ["sum"], "show": true },
+        "showHeader": true,
+        "sortBy": [{ "desc": true, "displayName": "Cost" }]
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "greptimedb-vantage" },
+          "editorMode": "code",
+          "expr": "sum by (account_name, provider) (last_over_time(vantage_daily_cost_by_account[24h]))",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Top Accounts by Cost",
+      "transformations": [
+        { "id": "organize", "options": { "excludeByName": { "Time": true }, "renameByName": { "Value": "Cost", "account_name": "Account", "provider": "Provider" } } },
+        { "id": "sortBy", "options": { "sort": [{ "desc": true, "field": "Cost" }] } }
+      ],
+      "type": "table"
+    },
+    {
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 26 },
+      "id": 13,
+      "title": "Service Breakdown",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "greptimedb-vantage" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "custom": { "align": "auto", "cellOptions": { "type": "auto" }, "inspect": false },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Service" }, "properties": [{ "id": "custom.width", "value": 250 }] },
+          { "matcher": { "id": "byName", "options": "Cost" }, "properties": [{ "id": "unit", "value": "currencyUSD" }] }
+        ]
+      },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 27 },
+      "id": 14,
+      "options": {
+        "cellHeight": "sm",
+        "footer": { "countRows": false, "fields": "", "reducer": ["sum"], "show": true },
+        "showHeader": true,
+        "sortBy": [{ "desc": true, "displayName": "Cost" }]
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "greptimedb-vantage" },
+          "editorMode": "code",
+          "expr": "sum by (service) (last_over_time(vantage_daily_cost_by_service[24h]))",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Top Services by Cost",
+      "transformations": [
+        { "id": "organize", "options": { "excludeByName": { "Time": true }, "renameByName": { "Value": "Cost", "service": "Service" } } },
+        { "id": "sortBy", "options": { "sort": [{ "desc": true, "field": "Cost" }] } }
+      ],
+      "type": "table"
+    },
+    {
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 37 },
+      "id": 15,
+      "title": "Account-Service Detail",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "greptimedb-vantage" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "custom": { "align": "auto", "cellOptions": { "type": "auto" }, "inspect": false },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Account" }, "properties": [{ "id": "custom.width", "value": 180 }] },
+          { "matcher": { "id": "byName", "options": "Service" }, "properties": [{ "id": "custom.width", "value": 200 }] },
+          { "matcher": { "id": "byName", "options": "Provider" }, "properties": [{ "id": "custom.width", "value": 100 }] },
+          { "matcher": { "id": "byName", "options": "Cost" }, "properties": [{ "id": "unit", "value": "currencyUSD" }] }
+        ]
+      },
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 38 },
+      "id": 16,
+      "options": {
+        "cellHeight": "sm",
+        "footer": { "countRows": false, "fields": "", "reducer": ["sum"], "show": true },
+        "showHeader": true,
+        "sortBy": [{ "desc": true, "displayName": "Cost" }]
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "greptimedb-vantage" },
+          "editorMode": "code",
+          "expr": "sum by (account_name, service, provider) (last_over_time(vantage_daily_cost_by_service[24h]))",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Top Account-Service Combinations",
+      "transformations": [
+        { "id": "organize", "options": { "excludeByName": { "Time": true }, "renameByName": { "Value": "Cost", "account_name": "Account", "service": "Service", "provider": "Provider" } } },
+        { "id": "sortBy", "options": { "sort": [{ "desc": true, "field": "Cost" }] } }
+      ],
+      "type": "table"
+    }
+  ],
+  "refresh": "",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["vantage", "cost"],
+  "templating": { "list": [] },
+  "time": { "from": "2025-12-13T00:00:00.000Z", "to": "2025-12-13T23:59:59.000Z" },
+  "timepicker": {
+    "hidden": false,
+    "time_options": ["1d", "7d", "30d", "90d"]
+  },
+  "timezone": "utc",
+  "title": "Vantage Cloud Costs",
+  "uid": "vantage-cloud-costs",
+  "version": 4,
+  "weekStart": ""
+}

@@ -1,0 +1,18 @@
+# POC Cost Exporter Configuration
+# Use environment variables or replace with actual values
+
+grafana:
+  url: "${POC_EXPORTER_GRAFANA_URL}"
+  username: "${POC_EXPORTER_GRAFANA_USERNAME}"
+  password: "${POC_EXPORTER_GRAFANA_PASSWORD}"
+
+greptimedb:
+  url: "http://monitoring-stack-greptimedb-standalone.monitoring.svc:4000"
+  username: "${GREPTIMEDB_USERNAME}"
+  password: "${GREPTIMEDB_PASSWORD}"
+
+customers:
+  - name: "cisco-sal"
+    datasourceId: 4
+    database: "cisco_sal"
+    scrapeInterval: 300

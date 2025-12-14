@@ -1,0 +1,12 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::${AWS_PRIMARY_ACCOUNT_ID}:role/alloy-cloudwatch-role"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}

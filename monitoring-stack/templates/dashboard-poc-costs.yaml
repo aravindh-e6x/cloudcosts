@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "monitoring-stack.fullname" . }}-dashboard-poc-costs
+  labels:
+    {{- include "monitoring-stack.labels" . | nindent 4 }}
+    grafana_dashboard: "1"
+data:
+  poc-costs.json: |-
+{{ .Files.Get "dashboards/poc-costs.json" | indent 4 }}

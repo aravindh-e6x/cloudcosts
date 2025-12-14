@@ -1,0 +1,78 @@
+# Monitoring Agent Values
+# Install this chart in EKS clusters to send metrics to central GreptimeDB
+
+cluster:
+  name: ""  # REQUIRED: Unique cluster identifier (e.g., "prod-us-east-1", "staging")
+
+# Central GreptimeDB Configuration
+greptimedb:
+  urlBase: "https://${GREPTIMEDB_INGRESS_HOST}"
+  username: "${GREPTIMEDB_USERNAME}"
+  password: "${GREPTIMEDB_PASSWORD}"
+
+# Alloy (Metrics Collector)
+alloy:
+  alloy:
+    configMap:
+      create: false
+      name: null
+      key: config.alloy
+  controller:
+    type: deployment
+    replicas: 1
+  serviceAccount:
+    create: true
+  rbac:
+    create: true
+
+# Kube State Metrics
+kube-state-metrics:
+  resources:
+    requests:
+      cpu: 10m
+      memory: 64Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+# Node Exporter
+prometheus-node-exporter:
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 64Mi
+
+# OpenCost (Cost Metrics)
+opencost:
+  opencost:
+    exporter:
+      defaultClusterId: ""
+      aws:
+        spot_data_region: ${AWS_REGION}
+        spot_data_bucket: ""
+        spot_data_prefix: ""
+        athena_bucket: ""
+        athena_region: ""
+        athena_database: ""
+        athena_table: ""
+        athena_workgroup: ""
+        account_id: ""
+        use_v2: true
+    prometheus:
+      internal:
+        enabled: false
+      external:
+        enabled: true
+        url: "https://${GREPTIMEDB_INGRESS_HOST}/v1/prometheus"
+    ui:
+      enabled: false
+    resources:
+      requests:
+        cpu: 10m
+        memory: 64Mi
+      limits:
+        cpu: 100m
+        memory: 128Mi

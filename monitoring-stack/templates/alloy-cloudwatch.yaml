@@ -1,0 +1,419 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Release.Name }}-alloy-cloudwatch
+  labels:
+    app: alloy-cloudwatch
+  annotations:
+    eks.amazonaws.com/role-arn: {{ .Values.cloudwatchExporter.serviceAccount.roleArn }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-alloy-cloudwatch-config
+  labels:
+    app: alloy-cloudwatch
+data:
+  config.alloy: |
+    // =============================================================================
+    // Alloy CloudWatch Exporter - Multi-Account AWS Metrics
+    // =============================================================================
+
+    {{- range $idx, $account := .Values.cloudwatchExporter.accounts }}
+    // Account: {{ $account.name }} ({{ $account.accountId }})
+    prometheus.exporter.cloudwatch "{{ $account.name }}" {
+      sts_region = "{{ $account.region }}"
+
+      // EC2 Metrics
+      discovery {
+        type    = "AWS/EC2"
+        regions = [{{ range $i, $r := $account.regions }}{{ if $i }}, {{ end }}"{{ $r }}"{{ end }}]
+        {{- if $account.roleArn }}
+        role {
+          role_arn = "{{ $account.roleArn }}"
+        }
+        {{- end }}
+        metric {
+          name       = "CPUUtilization"
+          statistics = ["Average"]
+          period     = "5m"
+        }
+        metric {
+          name       = "NetworkIn"
+          statistics = ["Sum"]
+          period     = "5m"
+        }
+        metric {
+          name       = "NetworkOut"
+          statistics = ["Sum"]
+          period     = "5m"
+        }
+        metric {
+          name       = "DiskReadBytes"
+          statistics = ["Sum"]
+          period     = "5m"
+        }
+        metric {
+          name       = "DiskWriteBytes"
+          statistics = ["Sum"]
+          period     = "5m"
+        }
+      }
+
+      // RDS Metrics
+      discovery {
+        type    = "AWS/RDS"
+        regions = [{{ range $i, $r := $account.regions }}{{ if $i }}, {{ end }}"{{ $r }}"{{ end }}]
+        {{- if $account.roleArn }}
+        role {
+          role_arn = "{{ $account.roleArn }}"
+        }
+        {{- end }}
+        metric {
+          name       = "CPUUtilization"
+          statistics = ["Average"]
+          period     = "5m"
+        }
+        metric {
+          name       = "DatabaseConnections"
+          statistics = ["Average"]
+          period     = "5m"
+        }
+        metric {
+          name       = "FreeStorageSpace"
+          statistics = ["Average"]
+          period     = "5m"
+        }
+        metric {
+          name       = "ReadIOPS"
+          statistics = ["Average"]
+          period     = "5m"
+        }
+        metric {
+          name       = "WriteIOPS"
+          statistics = ["Average"]
+          period     = "5m"
+        }
+        metric {
+          name       = "FreeableMemory"
+          statistics = ["Average"]
+          period     = "5m"
+        }
+      }
+
+      // ELB Classic Metrics
+      discovery {
+        type    = "AWS/ELB"
+        regions = [{{ range $i, $r := $account.regions }}{{ if $i }}, {{ end }}"{{ $r }}"{{ end }}]
+        {{- if $account.roleArn }}
+        role {
+          role_arn = "{{ $account.roleArn }}"
+        }
+        {{- end }}
+        metric {
+          name       = "RequestCount"
+          statistics = ["Sum"]
+          period     = "5m"
+        }
+        metric {
+          name       = "Latency"
+          statistics = ["Average"]
+          period     = "5m"
+        }
+        metric {
+          name       = "HealthyHostCount"
+          statistics = ["Average"]
+          period     = "5m"
+        }
+        metric {
+          name       = "UnHealthyHostCount"
+          statistics = ["Average"]
+          period     = "5m"
+        }
+      }
+
+      // ALB Metrics
+      discovery {
+        type    = "AWS/ApplicationELB"
+        regions = [{{ range $i, $r := $account.regions }}{{ if $i }}, {{ end }}"{{ $r }}"{{ end }}]
+        {{- if $account.roleArn }}
+        role {
+          role_arn = "{{ $account.roleArn }}"
+        }
+        {{- end }}
+        metric {
+          name       = "RequestCount"
+          statistics = ["Sum"]
+          period     = "5m"
+        }
+        metric {
+          name       = "TargetResponseTime"
+          statistics = ["Average"]
+          period     = "5m"
+        }
+        metric {
+          name       = "ActiveConnectionCount"
+          statistics = ["Sum"]
+          period     = "5m"
+        }
+        metric {
+          name       = "HTTPCode_Target_2XX_Count"
+          statistics = ["Sum"]
+          period     = "5m"
+        }
+        metric {
+          name       = "HTTPCode_Target_5XX_Count"
+          statistics = ["Sum"]
+          period     = "5m"
+        }
+      }
+
+      // S3 Metrics
+      discovery {
+        type    = "AWS/S3"
+        regions = [{{ range $i, $r := $account.regions }}{{ if $i }}, {{ end }}"{{ $r }}"{{ end }}]
+        {{- if $account.roleArn }}
+        role {
+          role_arn = "{{ $account.roleArn }}"
+        }
+        {{- end }}
+        metric {
+          name       = "BucketSizeBytes"
+          statistics = ["Average"]
+          period     = "24h"
+        }
+        metric {
+          name       = "NumberOfObjects"
+          statistics = ["Average"]
+          period     = "24h"
+        }
+      }
+
+      // Lambda Metrics
+      discovery {
+        type    = "AWS/Lambda"
+        regions = [{{ range $i, $r := $account.regions }}{{ if $i }}, {{ end }}"{{ $r }}"{{ end }}]
+        {{- if $account.roleArn }}
+        role {
+          role_arn = "{{ $account.roleArn }}"
+        }
+        {{- end }}
+        metric {
+          name       = "Invocations"
+          statistics = ["Sum"]
+          period     = "5m"
+        }
+        metric {
+          name       = "Duration"
+          statistics = ["Average"]
+          period     = "5m"
+        }
+        metric {
+          name       = "Errors"
+          statistics = ["Sum"]
+          period     = "5m"
+        }
+        metric {
+          name       = "ConcurrentExecutions"
+          statistics = ["Maximum"]
+          period     = "5m"
+        }
+      }
+
+      // MSK (Kafka) Metrics
+      discovery {
+        type    = "AWS/Kafka"
+        regions = [{{ range $i, $r := $account.regions }}{{ if $i }}, {{ end }}"{{ $r }}"{{ end }}]
+        {{- if $account.roleArn }}
+        role {
+          role_arn = "{{ $account.roleArn }}"
+        }
+        {{- end }}
+        metric {
+          name       = "CpuUser"
+          statistics = ["Average"]
+          period     = "5m"
+        }
+        metric {
+          name       = "MemoryUsed"
+          statistics = ["Average"]
+          period     = "5m"
+        }
+        metric {
+          name       = "KafkaDataLogsDiskUsed"
+          statistics = ["Average"]
+          period     = "5m"
+        }
+      }
+
+      // Glue Metrics
+      discovery {
+        type    = "Glue"
+        regions = [{{ range $i, $r := $account.regions }}{{ if $i }}, {{ end }}"{{ $r }}"{{ end }}]
+        {{- if $account.roleArn }}
+        role {
+          role_arn = "{{ $account.roleArn }}"
+        }
+        {{- end }}
+        metric {
+          name       = "glue.driver.aggregate.bytesRead"
+          statistics = ["Sum"]
+          period     = "5m"
+        }
+        metric {
+          name       = "glue.driver.aggregate.elapsedTime"
+          statistics = ["Average"]
+          period     = "5m"
+        }
+        metric {
+          name       = "glue.driver.aggregate.numCompletedStages"
+          statistics = ["Sum"]
+          period     = "5m"
+        }
+        metric {
+          name       = "glue.driver.aggregate.numFailedTasks"
+          statistics = ["Sum"]
+          period     = "5m"
+        }
+        metric {
+          name       = "glue.driver.aggregate.recordsRead"
+          statistics = ["Sum"]
+          period     = "5m"
+        }
+        metric {
+          name       = "glue.ALL.jvm.heap.usage"
+          statistics = ["Average"]
+          period     = "5m"
+        }
+      }
+
+      // EKS Container Insights Metrics
+      discovery {
+        type    = "ECS/ContainerInsights"
+        regions = [{{ range $i, $r := $account.regions }}{{ if $i }}, {{ end }}"{{ $r }}"{{ end }}]
+        {{- if $account.roleArn }}
+        role {
+          role_arn = "{{ $account.roleArn }}"
+        }
+        {{- end }}
+        metric {
+          name       = "cluster_failed_node_count"
+          statistics = ["Average"]
+          period     = "5m"
+        }
+        metric {
+          name       = "cluster_node_count"
+          statistics = ["Average"]
+          period     = "5m"
+        }
+        metric {
+          name       = "namespace_number_of_running_pods"
+          statistics = ["Average"]
+          period     = "5m"
+        }
+        metric {
+          name       = "node_cpu_utilization"
+          statistics = ["Average"]
+          period     = "5m"
+        }
+        metric {
+          name       = "node_memory_utilization"
+          statistics = ["Average"]
+          period     = "5m"
+        }
+        metric {
+          name       = "node_filesystem_utilization"
+          statistics = ["Average"]
+          period     = "5m"
+        }
+        metric {
+          name       = "pod_cpu_utilization"
+          statistics = ["Average"]
+          period     = "5m"
+        }
+        metric {
+          name       = "pod_memory_utilization"
+          statistics = ["Average"]
+          period     = "5m"
+        }
+      }
+
+    }
+
+    prometheus.scrape "cloudwatch_{{ $account.name }}" {
+      targets    = prometheus.exporter.cloudwatch.{{ $account.name }}.targets
+      forward_to = [prometheus.relabel.add_account_label_{{ $account.name }}.receiver]
+      scrape_interval = "5m"
+      scrape_timeout  = "2m"
+      job_name = "cloudwatch-{{ $account.name }}"
+    }
+
+    prometheus.relabel "add_account_label_{{ $account.name }}" {
+      forward_to = [prometheus.remote_write.greptimedb_aws.receiver]
+      rule {
+        target_label = "aws_account_id"
+        replacement  = "{{ $account.accountId }}"
+      }
+      rule {
+        target_label = "aws_account_name"
+        replacement  = "{{ $account.name }}"
+      }
+    }
+    {{- end }}
+
+    // Remote Write to GreptimeDB
+    prometheus.remote_write "greptimedb_aws" {
+      endpoint {
+        url = "{{ .Values.cloudwatchExporter.greptimedb.url }}/v1/prometheus/write?db=aws"
+        basic_auth {
+          username = "{{ .Values.cloudwatchExporter.greptimedb.username }}"
+          password = "{{ .Values.cloudwatchExporter.greptimedb.password }}"
+        }
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-alloy-cloudwatch
+  labels:
+    app: alloy-cloudwatch
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: alloy-cloudwatch
+  template:
+    metadata:
+      labels:
+        app: alloy-cloudwatch
+      annotations:
+        checksum/config: {{ .Values.cloudwatchExporter | toJson | sha256sum }}
+    spec:
+      serviceAccountName: {{ .Release.Name }}-alloy-cloudwatch
+      containers:
+        - name: alloy
+          image: grafana/alloy:v1.4.2
+          args:
+            - run
+            - /etc/alloy/config.alloy
+            - --storage.path=/tmp/alloy
+            - --server.http.listen-addr=0.0.0.0:12345
+          ports:
+            - containerPort: 12345
+              name: http
+          volumeMounts:
+            - name: config
+              mountPath: /etc/alloy
+          resources:
+            requests:
+              cpu: {{ .Values.cloudwatchExporter.resources.requests.cpu }}
+              memory: {{ .Values.cloudwatchExporter.resources.requests.memory }}
+            limits:
+              cpu: {{ .Values.cloudwatchExporter.resources.limits.cpu }}
+              memory: {{ .Values.cloudwatchExporter.resources.limits.memory }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ .Release.Name }}-alloy-cloudwatch-config

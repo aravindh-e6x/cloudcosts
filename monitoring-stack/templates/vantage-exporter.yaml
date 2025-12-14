@@ -1,0 +1,82 @@
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ .Release.Name }}-vantage-token
+  labels:
+    app: vantage-exporter
+type: Opaque
+data:
+  token: {{ .Values.vantageExporter.apiToken | b64enc | quote }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "monitoring-stack.fullname" . }}-vantage-exporter
+  labels:
+    {{- include "monitoring-stack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: vantage-exporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "monitoring-stack.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: vantage-exporter
+  template:
+    metadata:
+      labels:
+        {{- include "monitoring-stack.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: vantage-exporter
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+      containers:
+        - name: vantage-exporter
+          image: "{{ .Values.vantageExporter.image.repository }}:{{ .Values.vantageExporter.image.tag }}"
+          imagePullPolicy: {{ .Values.vantageExporter.image.pullPolicy }}
+          env:
+            # Vantage API configuration
+            - name: VANTAGE_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-vantage-token
+                  key: token
+            - name: VANTAGE_API_URL
+              value: {{ .Values.vantageExporter.apiUrl | quote }}
+            # GreptimeDB configuration
+            - name: GREPTIMEDB_URL
+              value: {{ .Values.vantageExporter.greptimeUrl | quote }}
+            - name: GREPTIMEDB_USERNAME
+              value: {{ .Values.vantageExporter.greptimeUsername | quote }}
+            - name: GREPTIMEDB_PASSWORD
+              value: {{ .Values.vantageExporter.greptimePassword | quote }}
+            - name: GREPTIMEDB_DATABASE
+              value: {{ .Values.vantageExporter.greptimeDatabase | default "vantage" | quote }}
+            # Collection settings
+            - name: PUSH_INTERVAL
+              value: {{ .Values.vantageExporter.pushInterval | quote }}
+            - name: HISTORICAL_DAYS
+              value: {{ .Values.vantageExporter.historicalDays | quote }}
+            - name: COLLECT_BY_PROVIDER
+              value: {{ .Values.vantageExporter.collectByProvider | quote }}
+            - name: COLLECT_BY_ACCOUNT
+              value: {{ .Values.vantageExporter.collectByAccount | quote }}
+            - name: COLLECT_BY_SERVICE
+              value: {{ .Values.vantageExporter.collectByService | quote }}
+            - name: COLLECT_BY_RESOURCE
+              value: {{ .Values.vantageExporter.collectByResource | quote }}
+            {{- if .Values.vantageExporter.costReportTokens }}
+            - name: COST_REPORT_TOKENS
+              value: {{ .Values.vantageExporter.costReportTokens | quote }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.vantageExporter.resources | nindent 12 }}
+      {{- with .Values.vantageExporter.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.vantageExporter.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
