@@ -1,0 +1,40 @@
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: ${EKS_CLUSTER_NAME}
+  region: ${AWS_REGION}
+  version: "1.31"
+
+iam:
+  withOIDC: true
+
+vpc:
+  nat:
+    gateway: Single
+
+managedNodeGroups:
+  - name: e6-cloudcosts
+    instanceTypes:
+      - t4g.medium
+    desiredCapacity: 2
+    minSize: 1
+    maxSize: 3
+    volumeSize: 20
+    labels:
+      nodegroup: e6-cloudcosts
+    iam:
+      withAddonPolicies:
+        albIngress: true
+
+addons:
+  - name: vpc-cni
+    version: latest
+  - name: coredns
+    version: latest
+  - name: kube-proxy
+    version: latest
+  - name: aws-ebs-csi-driver
+    version: latest
+    wellKnownPolicies:
+      ebsCSIController: true

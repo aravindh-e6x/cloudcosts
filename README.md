@@ -5,6 +5,7 @@ Central monitoring stack for collecting and visualizing cloud infrastructure cos
 ## Structure
 
 ```
+├── eks/                  # eksctl config for cluster provisioning
 ├── monitoring-stack/     # Central Helm chart (Grafana, GreptimeDB, exporters)
 ├── monitoring-agent/     # Agent Helm chart (deploy to each EKS cluster)
 ├── irsa/                 # IAM roles and policies for IRSA

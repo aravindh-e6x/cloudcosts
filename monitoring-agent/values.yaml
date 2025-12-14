@@ -17,6 +17,13 @@ alloy:
       create: false
       name: null
       key: config.alloy
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
   controller:
     type: deployment
     replicas: 1
