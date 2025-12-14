@@ -179,6 +179,7 @@ Resources:
       SecurityGroupIds:
         - !Ref SecurityGroup
       IamInstanceProfile: !Ref InstanceProfile
+      Monitoring: true
       BlockDeviceMappings:
         - DeviceName: /dev/xvda
           Ebs:

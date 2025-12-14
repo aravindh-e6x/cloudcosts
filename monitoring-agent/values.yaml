@@ -69,6 +69,8 @@ opencost:
         account_id: ""
         use_v2: true
     prometheus:
+      username: "${GREPTIMEDB_USERNAME}"
+      password: "${GREPTIMEDB_PASSWORD}"
       internal:
         enabled: false
       external:

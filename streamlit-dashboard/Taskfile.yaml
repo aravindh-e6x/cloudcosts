@@ -1,0 +1,26 @@
+version: '3'
+
+tasks:
+  setup:
+    desc: Create venv and install dependencies
+    cmds:
+      - rm -rf .venv
+      - uv venv --python 3.11
+      - uv pip install -r requirements.txt --python .venv/bin/python
+
+  run:
+    desc: Run streamlit app locally
+    cmds:
+      - lsof -ti:8501 | xargs kill -9 2>/dev/null || true
+      - .venv/bin/streamlit run app.py --server.headless true --server.port 8501
+
+  build:
+    desc: Build Docker image
+    cmds:
+      - docker build --platform linux/arm64 -t 792306802931.dkr.ecr.us-east-1.amazonaws.com/cloudcosts/streamlit-dashboard:latest .
+
+  push:
+    desc: Push Docker image to ECR
+    cmds:
+      - aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 792306802931.dkr.ecr.us-east-1.amazonaws.com
+      - docker push 792306802931.dkr.ecr.us-east-1.amazonaws.com/cloudcosts/streamlit-dashboard:latest
