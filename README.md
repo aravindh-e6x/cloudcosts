@@ -14,6 +14,8 @@ Central monitoring stack for collecting and visualizing cloud infrastructure cos
 └── vantage-exporter/     # Python exporter for Vantage cost data
 ```
 
+![stack-diagram.png](stack-diagram.png)
+
 ## Setup
 
 ```bash
