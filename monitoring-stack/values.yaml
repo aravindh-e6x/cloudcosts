@@ -303,3 +303,25 @@ pocCostExporter:
     limits:
       cpu: 200m
       memory: 256Mi
+
+# MCP Server Configuration
+mcpServer:
+  enabled: true
+
+  image:
+    repository: "${AWS_PRIMARY_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/cloudcosts/mcp-server"
+    tag: "latest"
+    pullPolicy: Always
+
+  greptimedb:
+    url: "http://monitoring-stack-greptimedb-standalone.monitoring.svc:4000"
+    username: "${GREPTIMEDB_USERNAME}"
+    password: "${GREPTIMEDB_PASSWORD}"
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
