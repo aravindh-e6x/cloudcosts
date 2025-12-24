@@ -48,6 +48,10 @@
   --sidebar-accent-foreground: rgb(var(--e6-dark));
   --sidebar-border: rgb(var(--e6-border));
   --sidebar-ring: rgb(var(--e6-green));
+
+  /* Brand colors for laminar-ui components */
+  --brand-primary: rgb(var(--e6-green));
+  --brand-primary-foreground: rgb(var(--e6-dark));
 }
 
 @theme inline {
@@ -87,6 +91,8 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-link: var(--link);
+  --color-brand-primary: var(--brand-primary);
+  --color-brand-primary-foreground: var(--brand-primary-foreground);
 }
 
 * {
@@ -107,4 +113,20 @@
   .btn-primary {
     @apply border border-foreground bg-primary text-primary-foreground;
   }
+}
+
+/* Support for brand-primary colors used by laminar-ui components */
+.bg-brand-primary {
+  background-color: var(--brand-primary) !important;
+  border-radius: 0 !important;
+  border: 1px solid var(--foreground) !important;
+  color: rgb(var(--e6-dark)) !important;
+}
+
+.text-brand-primary-foreground {
+  color: rgb(var(--e6-dark)) !important;
+}
+
+.hover\:bg-brand-primary\/90:hover {
+  background-color: color-mix(in srgb, var(--brand-primary) 90%, transparent) !important;
 }

@@ -3,9 +3,22 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
-import { LayoutDashboard, Server, Cloud, Boxes, ExternalLink, CloudCog, Database, Grid } from "lucide-react"
+import { LayoutDashboard, Server, Cloud, Boxes, ExternalLink, CloudCog, Database, Grid, LucideIcon } from "lucide-react"
 
-const navigation = [
+interface NavItem {
+  name: string
+  href: string
+  icon: LucideIcon
+  badge?: string
+  external?: boolean
+}
+
+interface NavSection {
+  section: string
+  items: NavItem[]
+}
+
+const navigation: NavSection[] = [
   {
     section: "Overview",
     items: [
@@ -27,10 +40,10 @@ const navigation = [
     ]
   },
   {
-    section: "Settings",
+    section: "Tools",
     items: [
-      { name: "Grafana", href: "https://grafana.cloudcosts.in", icon: Grid },
-      { name: "Greptime DB", href: "https://greptimedb.cloudcosts.in/dashboard", icon: Database },
+      { name: "GreptimeDB", href: "/greptimedb", icon: Database },
+      { name: "Grafana", href: "https://grafana.cloudcosts.in", icon: Grid, external: true },
     ]
   },
 ]
@@ -61,6 +74,26 @@ export function Sidebar() {
               <div className="space-y-1">
                 {section.items.map((item) => {
                   const isActive = pathname === item.href
+                  const isExternal = item.external || item.href.startsWith("http")
+
+                  if (isExternal) {
+                    return (
+                      <a
+                        key={item.name}
+                        href={item.href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center justify-between gap-3 px-3 py-2 text-sm font-medium transition-colors text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                      >
+                        <div className="flex items-center gap-3">
+                          <item.icon className="h-4 w-4" />
+                          {item.name}
+                        </div>
+                        <ExternalLink className="h-3 w-3 text-muted-foreground" />
+                      </a>
+                    )
+                  }
+
                   return (
                     <Link
                       key={item.name}
