@@ -1,10 +1,10 @@
-# POC Cost Exporter Configuration
+# E6 Metrics Exporter Configuration
 # Use environment variables or replace with actual values
 
 grafana:
-  url: "${POC_EXPORTER_GRAFANA_URL}"
-  username: "${POC_EXPORTER_GRAFANA_USERNAME}"
-  password: "${POC_EXPORTER_GRAFANA_PASSWORD}"
+  url: "${E6METRICS_GRAFANA_URL}"
+  username: "${E6METRICS_GRAFANA_USERNAME}"
+  password: "${E6METRICS_GRAFANA_PASSWORD}"
 
 greptimedb:
   url: "http://monitoring-stack-greptimedb-standalone.monitoring.svc:4000"

@@ -153,8 +153,8 @@ cloudwatchExporter:
 vantageExporter:
   enabled: false
 
-# Disable POC exporter for local
-pocCostExporter:
+# Disable E6 Metrics exporter for local
+e6metricsExporter:
   enabled: false
 
 # Disable MCP server for local (no image available yet)

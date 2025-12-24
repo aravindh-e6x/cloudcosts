@@ -88,7 +88,9 @@ export function Sidebar() {
               </h3>
               <div className="space-y-1">
                 {section.items.map((item) => {
-                  const isActive = pathname === item.href
+                  // Check for exact match or if current path starts with the item href (for nested routes)
+                  const isActive = pathname === item.href ||
+                    (item.href !== "/" && pathname.startsWith(item.href))
                   const isExternal = item.external || item.href.startsWith("http")
 
                   if (isExternal) {

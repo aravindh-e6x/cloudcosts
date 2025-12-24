@@ -1,7 +1,7 @@
 "use client"
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "laminar-ui"
-import { Server, Box, DollarSign, Cloud } from "lucide-react"
+import { Server, Box, DollarSign, Cloud, Cpu } from "lucide-react"
 
 interface MetricDefinition {
   name: string
@@ -280,6 +280,117 @@ const vantageMetrics: MetricDefinition[] = [
   },
 ]
 
+const e6Metrics: MetricDefinition[] = [
+  {
+    name: "e6_engine_metrics",
+    description: "E6 Engine performance metrics (uptime, threads, memory)",
+    fields: [
+      { name: "ts", type: "timestamp", description: "When the metric was recorded" },
+      { name: "cluster_name", type: "string", description: "E6 cluster name" },
+      { name: "metric_name", type: "string", description: "Metric name (e.g., io_e6x_E6Engine_Uptime)" },
+      { name: "metric_value", type: "float", description: "Metric value" },
+    ],
+    usage: "Used to monitor E6 engine health, uptime, and performance across clusters",
+  },
+  {
+    name: "e6_gateway_metrics",
+    description: "E6 Gateway metrics by workspace",
+    fields: [
+      { name: "ts", type: "timestamp", description: "When the metric was recorded" },
+      { name: "cluster_name", type: "string", description: "E6 cluster name" },
+      { name: "workspace", type: "string", description: "Workspace name" },
+      { name: "metric_name", type: "string", description: "Metric name" },
+      { name: "metric_value", type: "float", description: "Metric value" },
+    ],
+    usage: "Used to track gateway performance per workspace",
+  },
+  {
+    name: "e6_queue_metrics",
+    description: "E6 Queue metrics (query queue depths, pending tasks)",
+    fields: [
+      { name: "ts", type: "timestamp", description: "When the metric was recorded" },
+      { name: "cluster_name", type: "string", description: "E6 cluster name" },
+      { name: "metric_name", type: "string", description: "Metric name" },
+      { name: "metric_value", type: "float", description: "Metric value" },
+    ],
+    usage: "Used to monitor query queue depths and identify bottlenecks",
+  },
+  {
+    name: "e6_executor_metrics",
+    description: "E6 Executor metrics per pod/component",
+    fields: [
+      { name: "ts", type: "timestamp", description: "When the metric was recorded" },
+      { name: "cluster_name", type: "string", description: "E6 cluster name" },
+      { name: "component", type: "string", description: "Component type (executor)" },
+      { name: "pod", type: "string", description: "Pod name" },
+      { name: "metric_name", type: "string", description: "Metric name" },
+      { name: "metric_value", type: "float", description: "Metric value" },
+    ],
+    usage: "Used to track executor performance and identify slow/failing pods",
+  },
+  {
+    name: "e6_schema_metrics",
+    description: "E6 Schema service metrics (catalog operations, metadata reads)",
+    fields: [
+      { name: "ts", type: "timestamp", description: "When the metric was recorded" },
+      { name: "cluster_name", type: "string", description: "E6 cluster name" },
+      { name: "metric_name", type: "string", description: "Metric name" },
+      { name: "metric_value", type: "float", description: "Metric value" },
+    ],
+    usage: "Used to monitor schema/metadata service performance",
+  },
+  {
+    name: "e6_storage_metrics",
+    description: "E6 Storage service metrics (file metadata, cache stats)",
+    fields: [
+      { name: "ts", type: "timestamp", description: "When the metric was recorded" },
+      { name: "cluster_name", type: "string", description: "E6 cluster name" },
+      { name: "metric_name", type: "string", description: "Metric name" },
+      { name: "metric_value", type: "float", description: "Metric value" },
+    ],
+    usage: "Used to monitor storage service and cache performance",
+  },
+  {
+    name: "e6_container_metrics",
+    description: "E6 container-level resource metrics (CPU, memory per container)",
+    fields: [
+      { name: "ts", type: "timestamp", description: "When the metric was recorded" },
+      { name: "cluster_name", type: "string", description: "E6 cluster name" },
+      { name: "component", type: "string", description: "Component type" },
+      { name: "pod", type: "string", description: "Pod name" },
+      { name: "container", type: "string", description: "Container name" },
+      { name: "node", type: "string", description: "Node name" },
+      { name: "resource_type", type: "string", description: "Resource type (cpu, memory)" },
+      { name: "metric_name", type: "string", description: "Metric name" },
+      { name: "metric_value", type: "float", description: "Metric value" },
+    ],
+    usage: "Used to track resource consumption at the container level for cost allocation",
+  },
+  {
+    name: "e6_cluster_metrics",
+    description: "E6 cluster-level aggregate metrics",
+    fields: [
+      { name: "ts", type: "timestamp", description: "When the metric was recorded" },
+      { name: "cluster_name", type: "string", description: "E6 cluster name" },
+      { name: "metric_name", type: "string", description: "Metric name" },
+      { name: "metric_value", type: "float", description: "Metric value" },
+    ],
+    usage: "Used for cluster-level health and capacity monitoring",
+  },
+  {
+    name: "e6_generic_metrics",
+    description: "Other E6 metrics not categorized elsewhere",
+    fields: [
+      { name: "ts", type: "timestamp", description: "When the metric was recorded" },
+      { name: "cluster_name", type: "string", description: "E6 cluster name" },
+      { name: "labels", type: "string", description: "JSON-encoded additional labels" },
+      { name: "metric_name", type: "string", description: "Metric name" },
+      { name: "metric_value", type: "float", description: "Metric value" },
+    ],
+    usage: "Catch-all for additional io_e6x metrics",
+  },
+]
+
 function MetricCard({ metric }: { metric: MetricDefinition }) {
   return (
     <Card>
@@ -329,7 +440,7 @@ export default function MetricsPage() {
         <p className="text-muted-foreground mb-4">
           Metrics from kube-state-metrics providing information about Kubernetes objects (nodes, pods, etc.)
         </p>
-        <div className="grid gap-4">
+        <div className="grid grid-cols-3 gap-4">
           {kubernetesMetrics.map((metric) => (
             <MetricCard key={metric.name} metric={metric} />
           ))}
@@ -345,7 +456,7 @@ export default function MetricsPage() {
         <p className="text-muted-foreground mb-4">
           Metrics from cAdvisor/OpenCost providing container-level resource allocation and usage
         </p>
-        <div className="grid gap-4">
+        <div className="grid grid-cols-3 gap-4">
           {containerMetrics.map((metric) => (
             <MetricCard key={metric.name} metric={metric} />
           ))}
@@ -361,7 +472,7 @@ export default function MetricsPage() {
         <p className="text-muted-foreground mb-4">
           Node-level metrics and cost data from OpenCost for calculating infrastructure spend
         </p>
-        <div className="grid gap-4">
+        <div className="grid grid-cols-3 gap-4">
           {nodeMetrics.map((metric) => (
             <MetricCard key={metric.name} metric={metric} />
           ))}
@@ -377,8 +488,24 @@ export default function MetricsPage() {
         <p className="text-muted-foreground mb-4">
           Cloud cost data from Vantage API for multi-cloud cost visibility
         </p>
-        <div className="grid gap-4">
+        <div className="grid grid-cols-3 gap-4">
           {vantageMetrics.map((metric) => (
+            <MetricCard key={metric.name} metric={metric} />
+          ))}
+        </div>
+      </section>
+
+      {/* E6 Metrics */}
+      <section>
+        <div className="flex items-center gap-2 mb-4">
+          <Cpu className="h-5 w-5 text-cyan-500" />
+          <h2 className="text-xl font-semibold">E6 Data Metrics</h2>
+        </div>
+        <p className="text-muted-foreground mb-4">
+          E6 engine and component metrics collected from customer Mimir instances. Each customer has their own database with <code className="text-xs bg-muted px-1 py-0.5 rounded">e6_</code> prefix (e6_dev_zepto, e6_kantar, e6_tekion, e6_cndata, e6_cisco_sal, e6_swiggy).
+        </p>
+        <div className="grid grid-cols-3 gap-4">
+          {e6Metrics.map((metric) => (
             <MetricCard key={metric.name} metric={metric} />
           ))}
         </div>

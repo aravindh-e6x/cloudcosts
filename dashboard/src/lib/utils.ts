@@ -32,6 +32,16 @@ export function formatTime(date: string | Date): string {
 }
 
 // Constants
-export const ALLOWED_SCHEMAS = ["kubernetes", "vantage"]
+// Static schemas + any e6_* databases are allowed
+export const STATIC_SCHEMAS = ["kubernetes", "vantage"]
+export const E6_SCHEMA_PREFIX = "e6_"
+
+// Helper to check if a schema is allowed
+export function isAllowedSchema(schema: string): boolean {
+  return STATIC_SCHEMAS.includes(schema) || schema.startsWith(E6_SCHEMA_PREFIX)
+}
+
+// For backwards compatibility - will be populated dynamically
+export const ALLOWED_SCHEMAS = [...STATIC_SCHEMAS]
 export const CHART_COLORS = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)", "var(--chart-5)"]
 export const REFETCH_INTERVALS = { fast: 30000, normal: 60000, slow: 300000 }

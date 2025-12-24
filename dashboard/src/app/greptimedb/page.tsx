@@ -20,7 +20,7 @@ import {
   TabsContent,
 } from "laminar-ui"
 import { Database, Table, Columns, RefreshCw, Clock, ExternalLink } from "lucide-react"
-import { ALLOWED_SCHEMAS } from "@/lib/utils"
+import { isAllowedSchema, STATIC_SCHEMAS } from "@/lib/utils"
 
 interface QueryResult {
   columns: string[]
@@ -46,10 +46,30 @@ export default function GreptimeDBPage() {
   const [error, setError] = useState<string | null>(null)
   const [schemaLoading, setSchemaLoading] = useState(true)
 
-  // Fetch databases - only show allowed schemas
+  // Fetch databases - show static schemas + any e6_* databases
   const fetchDatabases = useCallback(async () => {
-    setDatabases([...ALLOWED_SCHEMAS])
-    return ALLOWED_SCHEMAS
+    try {
+      const response = await fetch("/api/query", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          database: "information_schema",
+          sql: "SELECT schema_name FROM schemata ORDER BY schema_name",
+        }),
+      })
+      const data = await response.json()
+      if (data.data) {
+        const allDatabases = data.data.map((row: { schema_name: string }) => row.schema_name)
+        const allowedDatabases = allDatabases.filter(isAllowedSchema)
+        setDatabases(allowedDatabases)
+        return allowedDatabases
+      }
+    } catch (err) {
+      console.error("Failed to fetch databases:", err)
+    }
+    // Fallback to static schemas
+    setDatabases([...STATIC_SCHEMAS])
+    return STATIC_SCHEMAS
   }, [])
 
   // Fetch tables for a database

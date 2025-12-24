@@ -1,0 +1,26 @@
+e6metricsExporter:
+  customers:
+    - name: "dev-zepto"
+      datasourceId: 22
+      database: "e6_dev_zepto"
+      scrapeInterval: 300
+    - name: "kantar"
+      datasourceId: 34
+      database: "e6_kantar"
+      scrapeInterval: 300
+    - name: "tekion"
+      datasourceId: 26
+      database: "e6_tekion"
+      scrapeInterval: 300
+    - name: "cndata"
+      datasourceId: 8
+      database: "e6_cndata"
+      scrapeInterval: 300
+    - name: "cisco-sal"
+      datasourceId: 4
+      database: "e6_cisco_sal"
+      scrapeInterval: 300
+    - name: "swiggy"
+      datasourceId: 44
+      database: "e6_swiggy"
+      scrapeInterval: 300

@@ -1,0 +1,72 @@
+{{- if .Values.e6metricsExporter.enabled }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "monitoring-stack.fullname" . }}-e6metrics-exporter-config
+  labels:
+    {{- include "monitoring-stack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: e6metrics-exporter
+data:
+  config.yaml: |
+    grafana:
+      url: {{ .Values.e6metricsExporter.grafana.url | quote }}
+      username: {{ .Values.e6metricsExporter.grafana.username | quote }}
+      password: {{ .Values.e6metricsExporter.grafana.password | quote }}
+    greptimedb:
+      url: {{ .Values.e6metricsExporter.greptimedb.url | quote }}
+      username: {{ .Values.e6metricsExporter.greptimedb.username | quote }}
+      password: {{ .Values.e6metricsExporter.greptimedb.password | quote }}
+    customers:
+      {{- toYaml .Values.e6metricsExporter.customers | nindent 6 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "monitoring-stack.fullname" . }}-e6metrics-exporter
+  labels:
+    {{- include "monitoring-stack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: e6metrics-exporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "monitoring-stack.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: e6metrics-exporter
+  template:
+    metadata:
+      labels:
+        {{- include "monitoring-stack.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: e6metrics-exporter
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+      containers:
+        - name: e6metrics-exporter
+          image: "{{ .Values.e6metricsExporter.image.repository }}:{{ .Values.e6metricsExporter.image.tag }}"
+          imagePullPolicy: {{ .Values.e6metricsExporter.image.pullPolicy }}
+          env:
+            - name: CONFIG_PATH
+              value: /config/config.yaml
+          volumeMounts:
+            - name: config
+              mountPath: /config
+              readOnly: true
+          resources:
+            {{- toYaml .Values.e6metricsExporter.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "monitoring-stack.fullname" . }}-e6metrics-exporter-config
+      {{- with .Values.e6metricsExporter.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.e6metricsExporter.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      imagePullSecrets:
+        - name: ecr-pull-secret
+{{- end }}
