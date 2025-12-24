@@ -9,7 +9,6 @@ import {
   CardHeader,
   CardTitle,
   CardDescription,
-  Badge,
   Skeleton,
 } from "laminar-ui"
 import { InfoPopover, DateBanner } from "@/components/shared"
@@ -62,7 +61,6 @@ function ClusterCard({ cluster, selectedDate, startTimestamp, endTimestamp }: { 
 
   const stats = statsData?.[0]
   const totalCost = stats?.total_cost || 0
-  const monthlyCost = totalCost * 30
 
   return (
     <Link href={`/kubernetes/${encodeURIComponent(cluster.cluster)}?date=${selectedDate}`}>
@@ -124,17 +122,6 @@ function ClusterCard({ cluster, selectedDate, startTimestamp, endTimestamp }: { 
               </div>
               <p className="text-lg font-semibold">{formatCurrency(totalCost, 2)}</p>
             </div>
-          </div>
-
-          {/* Cost Estimates */}
-          <div className="pt-2 border-t flex items-center justify-between text-sm">
-            <div>
-              <span className="text-muted-foreground">Est. Monthly: </span>
-              <span className="font-medium">{formatCurrency(monthlyCost, 0)}</span>
-            </div>
-            <Badge variant="outline" className="text-xs">
-              View Details
-            </Badge>
           </div>
         </CardContent>
       </Card>

@@ -16,13 +16,18 @@ import {
   PieChart,
   StackedBarChart,
   Badge,
+  Button,
   Tabs,
   TabsList,
   TabsTrigger,
   TabsContent,
   Skeleton,
   CircularProgress,
-  Button,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
 } from "laminar-ui"
 import {
   NamespaceSelector,
@@ -37,7 +42,7 @@ import { useDate } from "@/components/providers"
 import { useQuery, formatBytes, formatCpu, formatCurrency, formatTime } from "@/hooks/useQuery"
 import { kubernetesQueries } from "@/lib/queries"
 import { CHART_COLORS } from "@/lib/utils"
-import { Activity, AlertCircle, CheckCircle, ArrowLeft } from "lucide-react"
+import { Activity, ArrowLeft, BarChart2 } from "lucide-react"
 
 interface ClusterPageProps {
   params: Promise<{ cluster: string }>
@@ -48,6 +53,9 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
 
   const { selectedDate, startTimestamp, endTimestamp } = useDate()
   const [selectedNamespace, setSelectedNamespace] = useState<string>("all")
+
+  // Modal state for time series charts
+  const [openModal, setOpenModal] = useState<'cpu' | 'memory' | 'pod' | 'efficiency' | null>(null)
 
   // Fetch data with loading and error states - all queries filtered by local timezone day
   const { data: namespaces } = useQuery("kubernetes", kubernetesQueries.namespaces(selectedCluster, startTimestamp, endTimestamp), { refetchInterval: 60000 })
@@ -65,6 +73,12 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
   const { data: capacityTypes } = useQuery("kubernetes", kubernetesQueries.nodeCapacityTypes(selectedCluster, startTimestamp, endTimestamp), { refetchInterval: 60000 })
   const { data: nsEfficiency } = useQuery("kubernetes", kubernetesQueries.namespaceEfficiency(selectedCluster, startTimestamp, endTimestamp), { refetchInterval: 60000 })
   const { data: nodeAllocatable } = useQuery("kubernetes", kubernetesQueries.nodeAllocatable(selectedCluster, startTimestamp, endTimestamp), { refetchInterval: 60000 })
+
+  // Time series data for modal charts (only fetch when modal is open)
+  const { data: cpuAllocTimeSeries } = useQuery("kubernetes", kubernetesQueries.cpuAllocationTimeSeries(selectedCluster, startTimestamp, endTimestamp), { refetchInterval: 60000, enabled: openModal === 'cpu' })
+  const { data: memAllocTimeSeries } = useQuery("kubernetes", kubernetesQueries.memoryAllocationTimeSeries(selectedCluster, startTimestamp, endTimestamp), { refetchInterval: 60000, enabled: openModal === 'memory' })
+  const { data: podCountTimeSeries } = useQuery("kubernetes", kubernetesQueries.podCountTimeSeries(selectedCluster, startTimestamp, endTimestamp), { refetchInterval: 60000, enabled: openModal === 'pod' })
+  const { data: efficiencyTimeSeries } = useQuery("kubernetes", kubernetesQueries.efficiencyTimeSeries(selectedCluster, startTimestamp, endTimestamp), { refetchInterval: 60000, enabled: openModal === 'efficiency' })
 
   const namespaceList = useMemo(() => namespaces?.map((n: Record<string, unknown>) => n.namespace as string) || [], [namespaces])
 
@@ -103,9 +117,6 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
   // Sorted data with lodash
   const sortedNamespaceCosts = useMemo(() => orderBy(namespaceCosts || [], ['total_cost'], ['desc']), [namespaceCosts])
   const sortedNodesByCost = useMemo(() => orderBy(filteredNodes, ['total_cost'], ['desc']), [filteredNodes])
-
-  // Health check
-  const clusterHealth = clusterUtilization.cpu > 90 || clusterUtilization.memory > 90 ? 'critical' : clusterUtilization.cpu > 75 || clusterUtilization.memory > 75 ? 'warning' : 'healthy'
 
   // Pod capacity calculation
   const podCapacity = useMemo(() => {
@@ -202,24 +213,11 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <Link href="/kubernetes">
-            <Button variant="ghost" size="sm" className="gap-2">
+            <Button variant="ghost" size="icon" className="h-8 w-8">
               <ArrowLeft className="h-4 w-4" />
-              All Clusters
             </Button>
           </Link>
-          <div>
-            <h1 className="text-2xl font-bold">{selectedCluster}</h1>
-            <p className="text-muted-foreground">
-              Cluster resources, pod metrics, and costs
-            </p>
-          </div>
-          <Badge
-            variant={clusterHealth === 'healthy' ? 'default' : clusterHealth === 'warning' ? 'secondary' : 'destructive'}
-            className="flex items-center gap-1"
-          >
-            {clusterHealth === 'healthy' ? <CheckCircle className="h-3 w-3" /> : <AlertCircle className="h-3 w-3" />}
-            {clusterHealth === 'healthy' ? 'Healthy' : clusterHealth === 'warning' ? 'Warning' : 'Critical'}
-          </Badge>
+          <h1 className="text-2xl font-bold">{selectedCluster}</h1>
         </div>
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -236,8 +234,20 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
 
       {/* KPI Gauges */}
       <div className="grid grid-cols-2 gap-6 md:grid-cols-4">
+        {/* CPU Utilization Card */}
         <Card className="relative">
-          <div className="absolute top-2 right-2">
+          <div className="absolute top-1 left-1 z-10">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6"
+              onClick={() => setOpenModal('cpu')}
+              title="View time series"
+            >
+              <BarChart2 className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+          <div className="absolute top-1 right-1">
             <InfoPopover
               title="CPU Utilization"
               description="Percentage of CPU used vs allocated across all pods. Calculated from container_cpu_usage_seconds_total / container_cpu_allocation. Red indicates >80%, yellow >60%."
@@ -256,8 +266,20 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
           </CardContent>
         </Card>
 
+        {/* Memory Utilization Card */}
         <Card className="relative">
-          <div className="absolute top-2 right-2">
+          <div className="absolute top-1 left-1 z-10">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6"
+              onClick={() => setOpenModal('memory')}
+              title="View time series"
+            >
+              <BarChart2 className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+          <div className="absolute top-1 right-1">
             <InfoPopover
               title="Memory Utilization"
               description="Percentage of memory used vs allocated across all pods. Calculated from container_memory_working_set_bytes / container_memory_allocation_bytes. Red indicates >80%, yellow >60%."
@@ -276,8 +298,20 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
           </CardContent>
         </Card>
 
+        {/* Pod Capacity Card */}
         <Card className="relative">
-          <div className="absolute top-2 right-2">
+          <div className="absolute top-1 left-1 z-10">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6"
+              onClick={() => setOpenModal('pod')}
+              title="View time series"
+            >
+              <BarChart2 className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+          <div className="absolute top-1 right-1">
             <InfoPopover
               title="Pod Capacity"
               description="Running pods vs total allocatable pod capacity across all nodes. Shows how close the cluster is to its pod scheduling limit."
@@ -294,16 +328,28 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
                 className={podCapacity.percent > 80 ? 'text-red-500' : podCapacity.percent > 60 ? 'text-yellow-500' : 'text-primary'}
               />
               <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <span className="text-lg font-bold">{podCapacity.used}</span>
-                <span className="text-[10px] text-muted-foreground">/{podCapacity.total}</span>
+                <span className="text-xl font-bold">{podCapacity.used}</span>
+                <span className="text-xs text-muted-foreground font-medium">of {podCapacity.total}</span>
               </div>
             </div>
-            <p className="text-xs text-muted-foreground mt-2">Pod Capacity</p>
+            <p className="text-xs text-muted-foreground mt-2">Pods Running</p>
           </CardContent>
         </Card>
 
+        {/* Resource Efficiency Card */}
         <Card className="relative">
-          <div className="absolute top-2 right-2">
+          <div className="absolute top-1 left-1 z-10">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6"
+              onClick={() => setOpenModal('efficiency')}
+              title="View time series"
+            >
+              <BarChart2 className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+          <div className="absolute top-1 right-1">
             <InfoPopover
               title="Resource Efficiency"
               description="Average efficiency score across namespaces. Measures how much of the allocated CPU is actually being used. Higher is better - low values indicate over-provisioning."
@@ -322,6 +368,107 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
           </CardContent>
         </Card>
       </div>
+
+      {/* Time Series Modals */}
+      <Dialog open={openModal === 'cpu'} onOpenChange={(open) => !open && setOpenModal(null)}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>CPU Allocation Trend</DialogTitle>
+            <DialogDescription>CPU cores allocated over time for {selectedDate}</DialogDescription>
+          </DialogHeader>
+          <div className="mt-4">
+            {cpuAllocTimeSeries && cpuAllocTimeSeries.length > 0 ? (
+              <LineChart
+                data={cpuAllocTimeSeries.map((d: Record<string, unknown>) => ({
+                  time: formatTime(d.time as string),
+                  value: Number(d.cpu_allocated) || 0
+                }))}
+                xAxisKey="time"
+                lines={[{ dataKey: "value", name: "CPU Cores", color: CHART_COLORS[0] }]}
+                height={300}
+                showLegend={false}
+              />
+            ) : (
+              <div className="flex items-center justify-center h-[300px] text-muted-foreground">Loading...</div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={openModal === 'memory'} onOpenChange={(open) => !open && setOpenModal(null)}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Memory Allocation Trend</DialogTitle>
+            <DialogDescription>Memory (GB) allocated over time for {selectedDate}</DialogDescription>
+          </DialogHeader>
+          <div className="mt-4">
+            {memAllocTimeSeries && memAllocTimeSeries.length > 0 ? (
+              <LineChart
+                data={memAllocTimeSeries.map((d: Record<string, unknown>) => ({
+                  time: formatTime(d.time as string),
+                  value: Number(d.memory_allocated_gb) || 0
+                }))}
+                xAxisKey="time"
+                lines={[{ dataKey: "value", name: "Memory (GB)", color: CHART_COLORS[1] }]}
+                height={300}
+                showLegend={false}
+              />
+            ) : (
+              <div className="flex items-center justify-center h-[300px] text-muted-foreground">Loading...</div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={openModal === 'pod'} onOpenChange={(open) => !open && setOpenModal(null)}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Pod Count Trend</DialogTitle>
+            <DialogDescription>Number of running pods over time for {selectedDate}</DialogDescription>
+          </DialogHeader>
+          <div className="mt-4">
+            {podCountTimeSeries && podCountTimeSeries.length > 0 ? (
+              <LineChart
+                data={podCountTimeSeries.map((d: Record<string, unknown>) => ({
+                  time: formatTime(d.time as string),
+                  value: Number(d.pod_count) || 0
+                }))}
+                xAxisKey="time"
+                lines={[{ dataKey: "value", name: "Pods", color: CHART_COLORS[2] }]}
+                height={300}
+                showLegend={false}
+              />
+            ) : (
+              <div className="flex items-center justify-center h-[300px] text-muted-foreground">Loading...</div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={openModal === 'efficiency'} onOpenChange={(open) => !open && setOpenModal(null)}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Resource Efficiency Trend</DialogTitle>
+            <DialogDescription>CPU efficiency percentage over time for {selectedDate}</DialogDescription>
+          </DialogHeader>
+          <div className="mt-4">
+            {efficiencyTimeSeries && efficiencyTimeSeries.length > 0 ? (
+              <LineChart
+                data={efficiencyTimeSeries.map((d: Record<string, unknown>) => ({
+                  time: formatTime(d.time as string),
+                  value: Number(d.efficiency_pct) || 0
+                }))}
+                xAxisKey="time"
+                lines={[{ dataKey: "value", name: "Efficiency %", color: CHART_COLORS[3] }]}
+                height={300}
+                showLegend={false}
+              />
+            ) : (
+              <div className="flex items-center justify-center h-[300px] text-muted-foreground">Loading...</div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Cost Summary Row */}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-3">

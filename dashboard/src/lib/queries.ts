@@ -28,7 +28,7 @@ export const kubernetesQueries = {
       GROUP BY pod, namespace, node, created_by_kind, created_by_name
     ),
     cpu_alloc AS (
-      SELECT pod, namespace, SUM(greptime_value) as cpu_allocated
+      SELECT pod, namespace, AVG(greptime_value) as cpu_allocated
       FROM container_cpu_allocation
       WHERE cluster = '${cluster}' ${namespace && namespace !== 'all' ? `AND namespace = '${namespace}'` : ''}
         AND greptime_timestamp >= '${startTs}'::timestamp
@@ -36,7 +36,7 @@ export const kubernetesQueries = {
       GROUP BY pod, namespace
     ),
     mem_alloc AS (
-      SELECT pod, namespace, SUM(greptime_value) as memory_allocated
+      SELECT pod, namespace, AVG(greptime_value) as memory_allocated
       FROM container_memory_allocation_bytes
       WHERE cluster = '${cluster}' ${namespace && namespace !== 'all' ? `AND namespace = '${namespace}'` : ''}
         AND greptime_timestamp >= '${startTs}'::timestamp
@@ -44,7 +44,8 @@ export const kubernetesQueries = {
       GROUP BY pod, namespace
     ),
     cpu_usage AS (
-      SELECT pod, namespace, SUM(greptime_value) as cpu_used
+      SELECT pod, namespace,
+        (MAX(greptime_value) - MIN(greptime_value)) / NULLIF(EXTRACT(EPOCH FROM (MAX(greptime_timestamp) - MIN(greptime_timestamp))), 0) as cpu_used
       FROM container_cpu_usage_seconds_total
       WHERE cluster = '${cluster}' ${namespace && namespace !== 'all' ? `AND namespace = '${namespace}'` : ''}
         AND greptime_timestamp >= '${startTs}'::timestamp
@@ -52,7 +53,7 @@ export const kubernetesQueries = {
       GROUP BY pod, namespace
     ),
     mem_usage AS (
-      SELECT pod, namespace, SUM(greptime_value) as memory_used
+      SELECT pod, namespace, AVG(greptime_value) as memory_used
       FROM container_memory_working_set_bytes
       WHERE cluster = '${cluster}' ${namespace && namespace !== 'all' ? `AND namespace = '${namespace}'` : ''}
         AND greptime_timestamp >= '${startTs}'::timestamp
@@ -136,7 +137,8 @@ export const kubernetesQueries = {
   `,
 
   podCpuTimeSeries: (cluster: string, startTs: string, endTs: string, namespace?: string) => `
-    SELECT DATE_TRUNC('hour', greptime_timestamp) as time, pod, AVG(greptime_value) as cpu_usage
+    SELECT DATE_TRUNC('hour', greptime_timestamp) as time, pod,
+      (MAX(greptime_value) - MIN(greptime_value)) / NULLIF(EXTRACT(EPOCH FROM (MAX(greptime_timestamp) - MIN(greptime_timestamp))), 0) as cpu_usage
     FROM container_cpu_usage_seconds_total
     WHERE cluster = '${cluster}'
       ${namespace && namespace !== 'all' ? `AND namespace = '${namespace}'` : ''}
@@ -158,7 +160,8 @@ export const kubernetesQueries = {
   `,
 
   nodeCpuTimeSeries: (cluster: string, startTs: string, endTs: string) => `
-    SELECT DATE_TRUNC('hour', greptime_timestamp) as time, node, AVG(greptime_value) as cpu_seconds
+    SELECT DATE_TRUNC('hour', greptime_timestamp) as time, node,
+      (MAX(greptime_value) - MIN(greptime_value)) / NULLIF(EXTRACT(EPOCH FROM (MAX(greptime_timestamp) - MIN(greptime_timestamp))), 0) as cpu_seconds
     FROM node_cpu_seconds_total
     WHERE cluster = '${cluster}'
       AND greptime_timestamp >= '${startTs}'::timestamp
@@ -207,20 +210,37 @@ export const kubernetesQueries = {
     ),
     hours_in_range AS (
       SELECT EXTRACT(EPOCH FROM ('${endTs}'::timestamp - '${startTs}'::timestamp)) / 3600 as hours
+    ),
+    cpu_alloc_avg AS (
+      SELECT pod, AVG(greptime_value) as avg_cpu
+      FROM container_cpu_allocation
+      WHERE cluster = '${cluster}'
+        AND greptime_timestamp >= '${startTs}'::timestamp
+        AND greptime_timestamp < '${endTs}'::timestamp
+      GROUP BY pod
+    ),
+    mem_alloc_avg AS (
+      SELECT pod, AVG(greptime_value) as avg_mem
+      FROM container_memory_allocation_bytes
+      WHERE cluster = '${cluster}'
+        AND greptime_timestamp >= '${startTs}'::timestamp
+        AND greptime_timestamp < '${endTs}'::timestamp
+      GROUP BY pod
     )
     SELECT
       (SELECT COUNT(DISTINCT pod) FROM kube_pod_info WHERE cluster = '${cluster}' AND greptime_timestamp >= '${startTs}'::timestamp AND greptime_timestamp < '${endTs}'::timestamp) as pod_count,
       (SELECT COUNT(DISTINCT node) FROM kube_node_info WHERE cluster = '${cluster}' AND greptime_timestamp >= '${startTs}'::timestamp AND greptime_timestamp < '${endTs}'::timestamp) as node_count,
-      (SELECT SUM(greptime_value) FROM container_cpu_allocation WHERE cluster = '${cluster}' AND greptime_timestamp >= '${startTs}'::timestamp AND greptime_timestamp < '${endTs}'::timestamp) as total_cpu_alloc,
-      (SELECT SUM(greptime_value) FROM container_memory_allocation_bytes WHERE cluster = '${cluster}' AND greptime_timestamp >= '${startTs}'::timestamp AND greptime_timestamp < '${endTs}'::timestamp) as total_mem_alloc,
+      (SELECT SUM(avg_cpu) FROM cpu_alloc_avg) as total_cpu_alloc,
+      (SELECT SUM(avg_mem) FROM mem_alloc_avg) as total_mem_alloc,
       (SELECT SUM(avg_hourly_rate) * (SELECT hours FROM hours_in_range) FROM node_hourly_rates) as total_cost
   `,
 
   // CPU usage by namespace over time (for stacked area chart)
+  // Calculate rate per hour bucket: (max - min) / seconds in bucket
   cpuByNamespaceTimeSeries: (cluster: string, startTs: string, endTs: string) => `
     SELECT DATE_TRUNC('hour', greptime_timestamp) as time,
            namespace,
-           SUM(greptime_value) as cpu_usage
+           (MAX(greptime_value) - MIN(greptime_value)) / NULLIF(EXTRACT(EPOCH FROM (MAX(greptime_timestamp) - MIN(greptime_timestamp))), 0) as cpu_usage
     FROM container_cpu_usage_seconds_total
     WHERE cluster = '${cluster}'
       AND greptime_timestamp >= '${startTs}'::timestamp
@@ -233,7 +253,7 @@ export const kubernetesQueries = {
   memoryByNamespaceTimeSeries: (cluster: string, startTs: string, endTs: string) => `
     SELECT DATE_TRUNC('hour', greptime_timestamp) as time,
            namespace,
-           SUM(greptime_value) / (1024 * 1024) as memory_mb
+           AVG(greptime_value) / (1024 * 1024) as memory_mb
     FROM container_memory_working_set_bytes
     WHERE cluster = '${cluster}'
       AND greptime_timestamp >= '${startTs}'::timestamp
@@ -270,7 +290,7 @@ export const kubernetesQueries = {
   // Resource efficiency by namespace (requests vs actual usage)
   namespaceEfficiency: (cluster: string, startTs: string, endTs: string) => `
     WITH requests AS (
-      SELECT namespace, SUM(greptime_value) as cpu_requested
+      SELECT namespace, AVG(greptime_value) as cpu_requested
       FROM container_cpu_allocation
       WHERE cluster = '${cluster}'
         AND greptime_timestamp >= '${startTs}'::timestamp
@@ -278,7 +298,8 @@ export const kubernetesQueries = {
       GROUP BY namespace
     ),
     usage AS (
-      SELECT namespace, SUM(greptime_value) as cpu_used
+      SELECT namespace,
+        (MAX(greptime_value) - MIN(greptime_value)) / NULLIF(EXTRACT(EPOCH FROM (MAX(greptime_timestamp) - MIN(greptime_timestamp))), 0) as cpu_used
       FROM container_cpu_usage_seconds_total
       WHERE cluster = '${cluster}'
         AND greptime_timestamp >= '${startTs}'::timestamp
@@ -309,6 +330,71 @@ export const kubernetesQueries = {
     GROUP BY node
   `,
 
+  // Time series for pod count over time
+  podCountTimeSeries: (cluster: string, startTs: string, endTs: string) => `
+    SELECT DATE_TRUNC('hour', greptime_timestamp) as time,
+           COUNT(DISTINCT pod) as pod_count
+    FROM kube_pod_info
+    WHERE cluster = '${cluster}'
+      AND greptime_timestamp >= '${startTs}'::timestamp
+      AND greptime_timestamp < '${endTs}'::timestamp
+    GROUP BY 1
+    ORDER BY time
+  `,
+
+  // Time series for CPU allocation over time
+  cpuAllocationTimeSeries: (cluster: string, startTs: string, endTs: string) => `
+    SELECT DATE_TRUNC('hour', greptime_timestamp) as time,
+           SUM(greptime_value) as cpu_allocated
+    FROM container_cpu_allocation
+    WHERE cluster = '${cluster}'
+      AND greptime_timestamp >= '${startTs}'::timestamp
+      AND greptime_timestamp < '${endTs}'::timestamp
+    GROUP BY 1
+    ORDER BY time
+  `,
+
+  // Time series for memory allocation over time
+  memoryAllocationTimeSeries: (cluster: string, startTs: string, endTs: string) => `
+    SELECT DATE_TRUNC('hour', greptime_timestamp) as time,
+           SUM(greptime_value) / (1024 * 1024 * 1024) as memory_allocated_gb
+    FROM container_memory_allocation_bytes
+    WHERE cluster = '${cluster}'
+      AND greptime_timestamp >= '${startTs}'::timestamp
+      AND greptime_timestamp < '${endTs}'::timestamp
+    GROUP BY 1
+    ORDER BY time
+  `,
+
+  // Time series for resource efficiency over time
+  efficiencyTimeSeries: (cluster: string, startTs: string, endTs: string) => `
+    WITH hourly_requests AS (
+      SELECT DATE_TRUNC('hour', greptime_timestamp) as time,
+             SUM(greptime_value) as cpu_requested
+      FROM container_cpu_allocation
+      WHERE cluster = '${cluster}'
+        AND greptime_timestamp >= '${startTs}'::timestamp
+        AND greptime_timestamp < '${endTs}'::timestamp
+      GROUP BY 1
+    ),
+    hourly_usage AS (
+      SELECT DATE_TRUNC('hour', greptime_timestamp) as time,
+             (MAX(greptime_value) - MIN(greptime_value)) / NULLIF(EXTRACT(EPOCH FROM (MAX(greptime_timestamp) - MIN(greptime_timestamp))), 0) as cpu_used
+      FROM container_cpu_usage_seconds_total
+      WHERE cluster = '${cluster}'
+        AND greptime_timestamp >= '${startTs}'::timestamp
+        AND greptime_timestamp < '${endTs}'::timestamp
+      GROUP BY 1
+    )
+    SELECT r.time,
+           CASE WHEN r.cpu_requested > 0
+                THEN (COALESCE(u.cpu_used, 0) / r.cpu_requested) * 100
+                ELSE 0 END as efficiency_pct
+    FROM hourly_requests r
+    LEFT JOIN hourly_usage u ON r.time = u.time
+    ORDER BY r.time
+  `,
+
   // Summary for all clusters (for cluster list page) - simplified query
   allClustersSummary: (startTs: string, endTs: string) => `
     SELECT
@@ -336,13 +422,29 @@ export const kubernetesQueries = {
     ),
     hours_in_range AS (
       SELECT EXTRACT(EPOCH FROM ('${endTs}'::timestamp - '${startTs}'::timestamp)) / 3600 as hours
+    ),
+    cpu_alloc_avg AS (
+      SELECT pod, AVG(greptime_value) as avg_cpu
+      FROM container_cpu_allocation
+      WHERE cluster = '${cluster}'
+        AND greptime_timestamp >= '${startTs}'::timestamp
+        AND greptime_timestamp < '${endTs}'::timestamp
+      GROUP BY pod
+    ),
+    mem_alloc_avg AS (
+      SELECT pod, AVG(greptime_value) as avg_mem
+      FROM container_memory_allocation_bytes
+      WHERE cluster = '${cluster}'
+        AND greptime_timestamp >= '${startTs}'::timestamp
+        AND greptime_timestamp < '${endTs}'::timestamp
+      GROUP BY pod
     )
     SELECT
       (SELECT COUNT(DISTINCT pod) FROM kube_pod_info WHERE cluster = '${cluster}' AND greptime_timestamp >= '${startTs}'::timestamp AND greptime_timestamp < '${endTs}'::timestamp) as pod_count,
       (SELECT COUNT(DISTINCT namespace) FROM kube_pod_info WHERE cluster = '${cluster}' AND greptime_timestamp >= '${startTs}'::timestamp AND greptime_timestamp < '${endTs}'::timestamp) as namespace_count,
       (SELECT SUM(avg_hourly_rate) * (SELECT hours FROM hours_in_range) FROM node_hourly_rates) as total_cost,
-      (SELECT SUM(greptime_value) FROM container_cpu_allocation WHERE cluster = '${cluster}' AND greptime_timestamp >= '${startTs}'::timestamp AND greptime_timestamp < '${endTs}'::timestamp) as cpu_allocated,
-      (SELECT SUM(greptime_value) FROM container_memory_allocation_bytes WHERE cluster = '${cluster}' AND greptime_timestamp >= '${startTs}'::timestamp AND greptime_timestamp < '${endTs}'::timestamp) as memory_allocated
+      (SELECT SUM(avg_cpu) FROM cpu_alloc_avg) as cpu_allocated,
+      (SELECT SUM(avg_mem) FROM mem_alloc_avg) as memory_allocated
   `,
 }
 
