@@ -20,6 +20,7 @@ import {
   TabsContent,
 } from "laminar-ui"
 import { Database, Table, Columns, RefreshCw, Clock, ExternalLink } from "lucide-react"
+import { ALLOWED_SCHEMAS } from "@/lib/utils"
 
 interface QueryResult {
   columns: string[]
@@ -45,27 +46,10 @@ export default function GreptimeDBPage() {
   const [error, setError] = useState<string | null>(null)
   const [schemaLoading, setSchemaLoading] = useState(true)
 
-  // Fetch databases
+  // Fetch databases - only show allowed schemas
   const fetchDatabases = useCallback(async () => {
-    try {
-      const response = await fetch("/api/query", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          database: "information_schema",
-          sql: "SELECT schema_name FROM schemata WHERE schema_name NOT IN ('information_schema', 'pg_catalog') ORDER BY schema_name",
-        }),
-      })
-      const data = await response.json()
-      if (data.data) {
-        const dbList = data.data.map((row: { schema_name: string }) => row.schema_name)
-        setDatabases(dbList)
-        return dbList
-      }
-    } catch (err) {
-      console.error("Failed to fetch databases:", err)
-    }
-    return []
+    setDatabases([...ALLOWED_SCHEMAS])
+    return ALLOWED_SCHEMAS
   }, [])
 
   // Fetch tables for a database
@@ -131,12 +115,11 @@ export default function GreptimeDBPage() {
     const loadSchema = async () => {
       setSchemaLoading(true)
       const dbList = await fetchDatabases()
-      // Auto-expand vantage and kubernetes if they exist
-      const autoExpand = dbList.filter((db: string) => ["vantage", "kubernetes"].includes(db))
-      setExpandedIds(autoExpand)
+      // Auto-expand all allowed schemas
+      setExpandedIds(dbList)
 
-      // Fetch tables for auto-expanded databases
-      for (const db of autoExpand) {
+      // Fetch tables for all schemas
+      for (const db of dbList) {
         await fetchTables(db)
       }
       setSchemaLoading(false)

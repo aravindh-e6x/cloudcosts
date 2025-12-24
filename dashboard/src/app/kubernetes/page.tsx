@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useMemo } from "react"
+import { groupBy, sumBy, uniq, orderBy, takeRight } from "lodash-es"
 import {
   Card,
   CardContent,
@@ -16,247 +17,86 @@ import {
   TabsContent,
   Skeleton,
 } from "laminar-ui"
-import { TimeRangePicker, ClusterSelector, NamespaceSelector, MockBadge, type DateRange } from "@/components/shared"
+import {
+  TimeRangePicker,
+  ClusterSelector,
+  NamespaceSelector,
+  MockBadge,
+  TableSkeleton,
+  ChartSkeleton,
+  StatCardSkeleton,
+  QueryError,
+  EmptyState,
+  type DateRange,
+} from "@/components/shared"
 import { useQuery, formatBytes, formatCpu, formatCurrency, formatTime } from "@/hooks/useQuery"
 import { kubernetesQueries } from "@/lib/queries"
+import { CHART_COLORS } from "@/lib/utils"
 import { Activity, AlertCircle, CheckCircle } from "lucide-react"
-
-interface Cluster {
-  cluster: string
-}
-
-interface Namespace {
-  namespace: string
-}
-
-interface Pod {
-  name: string
-  namespace: string
-  node: string
-  created_by_kind: string
-  created_by_name: string
-  cpu_alloc: number
-  mem_alloc: number
-  cpu_used: number
-  mem_used: number
-  [key: string]: unknown
-}
-
-interface Node {
-  name: string
-  instance_type: string
-  region: string
-  cost_hourly: number
-  cpu_capacity: number
-  mem_capacity: number
-  mem_used: number
-  pods: number
-  [key: string]: unknown
-}
-
-interface CpuTimeSeries {
-  time: string
-  pod: string
-  cpu_usage: number
-}
-
-interface MemoryTimeSeries {
-  time: string
-  pod: string
-  memory_usage: number
-}
-
-interface NodeCpuTimeSeries {
-  time: string
-  node: string
-  cpu_seconds: number
-}
-
-interface NamespaceCost {
-  namespace: string
-  total_cpu: number
-  total_mem: number
-  estimated_cost_hourly: number
-}
-
-interface ClusterSummary {
-  pod_count: number
-  node_count: number
-  total_cpu_alloc: number
-  total_mem_alloc: number
-  cluster_hourly_cost: number
-}
 
 export default function KubernetesPage() {
   const [timeRange, setTimeRange] = useState<DateRange | undefined>()
   const [selectedCluster, setSelectedCluster] = useState<string>("")
   const [selectedNamespace, setSelectedNamespace] = useState<string>("all")
 
-  // Fetch clusters
-  const { data: clusters, loading: clustersLoading } = useQuery<Cluster>(
-    "kubernetes",
-    kubernetesQueries.clusters,
-    { refetchInterval: 60000 }
-  )
+  // Fetch data with loading and error states
+  const { data: clusters, loading: clustersLoading, error: clustersError } = useQuery("kubernetes", kubernetesQueries.clusters, { refetchInterval: 60000 })
+  const { data: namespaces } = useQuery("kubernetes", kubernetesQueries.namespaces(selectedCluster), { enabled: !!selectedCluster, refetchInterval: 60000 })
+  const { data: pods, loading: podsLoading, error: podsError, refetch: refetchPods } = useQuery("kubernetes", kubernetesQueries.pods(selectedCluster, selectedNamespace), { enabled: !!selectedCluster, refetchInterval: 30000 })
+  const { data: nodes, loading: nodesLoading, error: nodesError, refetch: refetchNodes } = useQuery("kubernetes", kubernetesQueries.nodes(selectedCluster), { enabled: !!selectedCluster, refetchInterval: 30000 })
+  const { data: summary, loading: summaryLoading } = useQuery("kubernetes", kubernetesQueries.clusterSummary(selectedCluster), { enabled: !!selectedCluster, refetchInterval: 30000 })
+  const { data: namespaceCosts } = useQuery("kubernetes", kubernetesQueries.costByNamespace(selectedCluster), { enabled: !!selectedCluster, refetchInterval: 60000 })
+  const { data: cpuTimeSeries, loading: cpuLoading } = useQuery("kubernetes", kubernetesQueries.podCpuTimeSeries(selectedCluster, selectedNamespace, "1 hour"), { enabled: !!selectedCluster, refetchInterval: 60000 })
+  const { data: memoryTimeSeries, loading: memoryLoading } = useQuery("kubernetes", kubernetesQueries.podMemoryTimeSeries(selectedCluster, selectedNamespace, "1 hour"), { enabled: !!selectedCluster, refetchInterval: 60000 })
+  const { data: nodeCpuTimeSeries, loading: nodeCpuLoading } = useQuery("kubernetes", kubernetesQueries.nodeCpuTimeSeries(selectedCluster, "1 hour"), { enabled: !!selectedCluster, refetchInterval: 60000 })
 
-  // Set default cluster when loaded
+  // Derived data with lodash
   const clusterList = useMemo(() => {
-    const list = clusters?.map(c => c.cluster) || []
-    if (list.length > 0 && !selectedCluster) {
-      setSelectedCluster(list[0])
-    }
+    const list = clusters?.map((c: Record<string, unknown>) => c.cluster as string) || []
+    if (list.length > 0 && !selectedCluster) setSelectedCluster(list[0])
     return list
   }, [clusters, selectedCluster])
 
-  // Fetch namespaces for selected cluster
-  const { data: namespaces } = useQuery<Namespace>(
-    "kubernetes",
-    kubernetesQueries.namespaces(selectedCluster),
-    { enabled: !!selectedCluster, refetchInterval: 60000 }
-  )
+  const namespaceList = useMemo(() => namespaces?.map((n: Record<string, unknown>) => n.namespace as string) || [], [namespaces])
 
-  const namespaceList = useMemo(() =>
-    namespaces?.map(n => n.namespace) || [],
-    [namespaces]
-  )
+  // Transform time series for charts using lodash
+  const transformTimeSeries = (data: Record<string, unknown>[] | null, valueKey: string, groupKey: string, transform?: (v: number) => number) => {
+    if (!data) return []
+    const grouped = groupBy(data, (r) => formatTime(r.time as string))
+    return takeRight(Object.entries(grouped).map(([time, rows]) => ({
+      time,
+      ...Object.fromEntries(rows.map(r => [r[groupKey], transform ? transform(r[valueKey] as number) : r[valueKey]]))
+    })), 20)
+  }
 
-  // Fetch pods
-  const { data: pods, loading: podsLoading } = useQuery<Pod>(
-    "kubernetes",
-    kubernetesQueries.pods(selectedCluster, selectedNamespace),
-    { enabled: !!selectedCluster, refetchInterval: 30000 }
-  )
+  const cpuChartData = useMemo(() => transformTimeSeries(cpuTimeSeries, 'cpu_usage', 'pod'), [cpuTimeSeries])
+  const memoryChartData = useMemo(() => transformTimeSeries(memoryTimeSeries, 'memory_usage', 'pod', v => v / (1024 * 1024)), [memoryTimeSeries])
+  const nodeCpuChartData = useMemo(() => transformTimeSeries(nodeCpuTimeSeries, 'cpu_seconds', 'node'), [nodeCpuTimeSeries])
 
-  // Fetch nodes
-  const { data: nodes, loading: nodesLoading } = useQuery<Node>(
-    "kubernetes",
-    kubernetesQueries.nodes(selectedCluster),
-    { enabled: !!selectedCluster, refetchInterval: 30000 }
-  )
+  // Unique names for chart lines
+  const podNames = useMemo(() => uniq(cpuTimeSeries?.map((r: Record<string, unknown>) => r.pod as string).filter(Boolean) || []).slice(0, 5), [cpuTimeSeries])
+  const nodeNames = useMemo(() => uniq(nodeCpuTimeSeries?.map((r: Record<string, unknown>) => r.node as string).filter(Boolean) || []).slice(0, 5), [nodeCpuTimeSeries])
 
-  // Fetch cluster summary
-  const { data: summary } = useQuery<ClusterSummary>(
-    "kubernetes",
-    kubernetesQueries.clusterSummary(selectedCluster),
-    { enabled: !!selectedCluster, refetchInterval: 30000 }
-  )
+  const summaryData = summary?.[0] as Record<string, number> | undefined
+  const filteredPods = (pods || []) as Record<string, unknown>[]
+  const filteredNodes = (nodes || []) as Record<string, unknown>[]
 
-  // Fetch cost by namespace
-  const { data: namespaceCosts } = useQuery<NamespaceCost>(
-    "kubernetes",
-    kubernetesQueries.costByNamespace(selectedCluster),
-    { enabled: !!selectedCluster, refetchInterval: 60000 }
-  )
-
-  // Fetch CPU time series
-  const { data: cpuTimeSeries } = useQuery<CpuTimeSeries>(
-    "kubernetes",
-    kubernetesQueries.podCpuTimeSeries(selectedCluster, selectedNamespace, "1 hour"),
-    { enabled: !!selectedCluster, refetchInterval: 60000 }
-  )
-
-  // Fetch Memory time series
-  const { data: memoryTimeSeries } = useQuery<MemoryTimeSeries>(
-    "kubernetes",
-    kubernetesQueries.podMemoryTimeSeries(selectedCluster, selectedNamespace, "1 hour"),
-    { enabled: !!selectedCluster, refetchInterval: 60000 }
-  )
-
-  // Fetch Node CPU time series
-  const { data: nodeCpuTimeSeries } = useQuery<NodeCpuTimeSeries>(
-    "kubernetes",
-    kubernetesQueries.nodeCpuTimeSeries(selectedCluster, "1 hour"),
-    { enabled: !!selectedCluster, refetchInterval: 60000 }
-  )
-
-  // Transform time series data for charts
-  const cpuChartData = useMemo(() => {
-    if (!cpuTimeSeries) return []
-    const grouped = new Map<string, Record<string, string | number>>()
-    cpuTimeSeries.forEach(item => {
-      const time = formatTime(item.time)
-      if (!grouped.has(time)) {
-        grouped.set(time, { time })
-      }
-      grouped.get(time)![item.pod] = item.cpu_usage
-    })
-    return Array.from(grouped.values()).slice(-20)
-  }, [cpuTimeSeries])
-
-  const memoryChartData = useMemo(() => {
-    if (!memoryTimeSeries) return []
-    const grouped = new Map<string, Record<string, string | number>>()
-    memoryTimeSeries.forEach(item => {
-      const time = formatTime(item.time)
-      if (!grouped.has(time)) {
-        grouped.set(time, { time })
-      }
-      grouped.get(time)![item.pod] = item.memory_usage / (1024 * 1024) // Convert to MB
-    })
-    return Array.from(grouped.values()).slice(-20)
-  }, [memoryTimeSeries])
-
-  const nodeCpuChartData = useMemo(() => {
-    if (!nodeCpuTimeSeries) return []
-    const grouped = new Map<string, Record<string, string | number>>()
-    nodeCpuTimeSeries.forEach(item => {
-      const time = formatTime(item.time)
-      if (!grouped.has(time)) {
-        grouped.set(time, { time })
-      }
-      grouped.get(time)![item.node] = item.cpu_seconds
-    })
-    return Array.from(grouped.values()).slice(-20)
-  }, [nodeCpuTimeSeries])
-
-  // Get unique pod/node names for chart lines (filter out nulls)
-  const podNames = useMemo(() => {
-    if (!cpuTimeSeries) return []
-    return [...new Set(cpuTimeSeries.map(item => item.pod).filter(Boolean))].slice(0, 5)
-  }, [cpuTimeSeries])
-
-  const nodeNames = useMemo(() => {
-    if (!nodeCpuTimeSeries) return []
-    return [...new Set(nodeCpuTimeSeries.map(item => item.node).filter(Boolean))].slice(0, 5)
-  }, [nodeCpuTimeSeries])
-
-  const chartColors = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)", "var(--chart-5)"]
-
-  const summaryData = summary?.[0]
-  const filteredPods = pods || []
-  const filteredNodes = nodes || []
-
-  // Calculate utilization percentages
+  // Utilization with lodash
   const clusterUtilization = useMemo(() => {
     if (!filteredPods.length) return { cpu: 0, memory: 0 }
-    const totalCpuAlloc = filteredPods.reduce((sum, p) => sum + (p.cpu_alloc || 0), 0)
-    const totalCpuUsed = filteredPods.reduce((sum, p) => sum + (p.cpu_used || 0), 0)
-    const totalMemAlloc = filteredPods.reduce((sum, p) => sum + (p.mem_alloc || 0), 0)
-    const totalMemUsed = filteredPods.reduce((sum, p) => sum + (p.mem_used || 0), 0)
-    return {
-      cpu: totalCpuAlloc > 0 ? (totalCpuUsed / totalCpuAlloc) * 100 : 0,
-      memory: totalMemAlloc > 0 ? (totalMemUsed / totalMemAlloc) * 100 : 0
-    }
+    const cpuAlloc = sumBy(filteredPods, p => (p.cpu_alloc as number) || 0)
+    const cpuUsed = sumBy(filteredPods, p => (p.cpu_used as number) || 0)
+    const memAlloc = sumBy(filteredPods, p => (p.mem_alloc as number) || 0)
+    const memUsed = sumBy(filteredPods, p => (p.mem_used as number) || 0)
+    return { cpu: cpuAlloc > 0 ? (cpuUsed / cpuAlloc) * 100 : 0, memory: memAlloc > 0 ? (memUsed / memAlloc) * 100 : 0 }
   }, [filteredPods])
 
-  // Sorted namespace costs for table
-  const sortedNamespaceCosts = useMemo(() => {
-    if (!namespaceCosts || namespaceCosts.length === 0) return []
-    return [...namespaceCosts].sort((a, b) => (b.estimated_cost_hourly || 0) - (a.estimated_cost_hourly || 0))
-  }, [namespaceCosts])
+  // Sorted data with lodash
+  const sortedNamespaceCosts = useMemo(() => orderBy(namespaceCosts || [], ['estimated_cost_hourly'], ['desc']), [namespaceCosts])
+  const sortedNodesByCost = useMemo(() => orderBy(filteredNodes, ['cost_hourly'], ['desc']), [filteredNodes])
 
-  // Sorted nodes by cost for table
-  const sortedNodesByCost = useMemo(() => {
-    if (!filteredNodes || filteredNodes.length === 0) return []
-    return [...filteredNodes].sort((a, b) => (b.cost_hourly || 0) - (a.cost_hourly || 0))
-  }, [filteredNodes])
-
-  // Health check based on utilization
-  const clusterHealth = useMemo(() => {
-    if (clusterUtilization.cpu > 90 || clusterUtilization.memory > 90) return 'critical'
-    if (clusterUtilization.cpu > 75 || clusterUtilization.memory > 75) return 'warning'
-    return 'healthy'
-  }, [clusterUtilization])
+  // Health check
+  const clusterHealth = clusterUtilization.cpu > 90 || clusterUtilization.memory > 90 ? 'critical' : clusterUtilization.cpu > 75 || clusterUtilization.memory > 75 ? 'warning' : 'healthy'
 
   const podColumns = [
     { key: "name", header: "Pod Name", sortable: true },
@@ -430,7 +270,7 @@ export default function KubernetesPage() {
           <MockBadge className="absolute top-1 right-1" />
           <CardContent className="py-3 flex items-center justify-between">
             <span className="text-sm">NS Cost/hr</span>
-            <span className="font-mono font-semibold">{formatCurrency(namespaceCosts?.filter(n => selectedNamespace === 'all' || n.namespace === selectedNamespace).reduce((sum, n) => sum + (n.estimated_cost_hourly || 0), 0) || 0, 2)}</span>
+            <span className="font-mono font-semibold">{formatCurrency(sumBy(namespaceCosts?.filter(n => selectedNamespace === 'all' || n.namespace === selectedNamespace) || [], r => Number(r.estimated_cost_hourly) || 0), 2)}</span>
           </CardContent>
         </Card>
         <Card className="bg-muted/50 relative">
@@ -461,14 +301,13 @@ export default function KubernetesPage() {
             </CardHeader>
             <CardContent>
               {podsLoading ? (
-                <Skeleton className="h-64" />
+                <TableSkeleton rows={8} />
+              ) : podsError ? (
+                <QueryError message={podsError} onRetry={refetchPods} />
+              ) : filteredPods.length > 0 ? (
+                <DataTable data={filteredPods} columns={podColumns} hoverable striped />
               ) : (
-                <DataTable
-                  data={filteredPods}
-                  columns={podColumns}
-                  hoverable
-                  striped
-                />
+                <EmptyState message="No pods found" />
               )}
             </CardContent>
           </Card>
@@ -482,22 +321,22 @@ export default function KubernetesPage() {
                 <CardDescription>CPU usage over time (last hour)</CardDescription>
               </CardHeader>
               <CardContent>
-                {cpuChartData.length > 0 ? (
+                {cpuLoading ? (
+                  <ChartSkeleton height={300} />
+                ) : cpuChartData.length > 0 ? (
                   <LineChart
                     data={cpuChartData}
                     xAxisKey="time"
                     lines={podNames.map((pod, i) => ({
                       dataKey: pod,
                       name: pod.substring(0, 20),
-                      color: chartColors[i % chartColors.length],
+                      color: CHART_COLORS[i % CHART_COLORS.length],
                     }))}
                     height={300}
                     showLegend
                   />
                 ) : (
-                  <div className="flex items-center justify-center h-[300px] text-muted-foreground">
-                    No data available
-                  </div>
+                  <EmptyState />
                 )}
               </CardContent>
             </Card>
@@ -509,23 +348,23 @@ export default function KubernetesPage() {
                 <CardDescription>Memory usage in MB over time (last hour)</CardDescription>
               </CardHeader>
               <CardContent>
-                {memoryChartData.length > 0 ? (
+                {memoryLoading ? (
+                  <ChartSkeleton height={300} />
+                ) : memoryChartData.length > 0 ? (
                   <LineChart
                     data={memoryChartData}
                     xAxisKey="time"
                     lines={podNames.map((pod, i) => ({
                       dataKey: pod,
                       name: pod.substring(0, 20),
-                      color: chartColors[i % chartColors.length],
+                      color: CHART_COLORS[i % CHART_COLORS.length],
                     }))}
                     height={300}
                     yAxisFormatter={(value) => `${value}Mi`}
                     showLegend
                   />
                 ) : (
-                  <div className="flex items-center justify-center h-[300px] text-muted-foreground">
-                    No data available
-                  </div>
+                  <EmptyState />
                 )}
               </CardContent>
             </Card>
@@ -577,14 +416,13 @@ export default function KubernetesPage() {
             </CardHeader>
             <CardContent>
               {nodesLoading ? (
-                <Skeleton className="h-64" />
+                <TableSkeleton rows={6} />
+              ) : nodesError ? (
+                <QueryError message={nodesError} onRetry={refetchNodes} />
+              ) : filteredNodes.length > 0 ? (
+                <DataTable data={filteredNodes} columns={nodeColumns} hoverable striped />
               ) : (
-                <DataTable
-                  data={filteredNodes}
-                  columns={nodeColumns}
-                  hoverable
-                  striped
-                />
+                <EmptyState message="No nodes found" />
               )}
             </CardContent>
           </Card>
@@ -597,22 +435,22 @@ export default function KubernetesPage() {
               <CardDescription>CPU seconds per node (last hour)</CardDescription>
             </CardHeader>
             <CardContent>
-              {nodeCpuChartData.length > 0 ? (
+              {nodeCpuLoading ? (
+                <ChartSkeleton height={300} />
+              ) : nodeCpuChartData.length > 0 ? (
                 <LineChart
                   data={nodeCpuChartData}
                   xAxisKey="time"
                   lines={nodeNames.map((node, i) => ({
                     dataKey: node,
                     name: node.substring(0, 15),
-                    color: chartColors[i % chartColors.length],
+                    color: CHART_COLORS[i % CHART_COLORS.length],
                   }))}
                   height={300}
                   showLegend
                 />
               ) : (
-                <div className="flex items-center justify-center h-[300px] text-muted-foreground">
-                  No data available
-                </div>
+                <EmptyState />
               )}
             </CardContent>
           </Card>
@@ -624,7 +462,9 @@ export default function KubernetesPage() {
               <CardDescription>Hourly cost per node (high to low)</CardDescription>
             </CardHeader>
             <CardContent>
-              {sortedNodesByCost.length > 0 ? (
+              {nodesLoading ? (
+                <TableSkeleton rows={5} />
+              ) : sortedNodesByCost.length > 0 ? (
                 <DataTable
                   data={sortedNodesByCost}
                   columns={[
@@ -637,9 +477,7 @@ export default function KubernetesPage() {
                   striped
                 />
               ) : (
-                <div className="flex items-center justify-center h-[200px] text-muted-foreground">
-                  No data available
-                </div>
+                <EmptyState />
               )}
             </CardContent>
           </Card>

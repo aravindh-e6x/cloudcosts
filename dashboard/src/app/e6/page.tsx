@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useMemo } from "react"
+import { sumBy, orderBy } from "lodash-es"
 import {
   Card,
   CardContent,
@@ -10,15 +11,6 @@ import {
   DataTable,
   LineChart,
   Badge,
-  Tabs,
-  TabsList,
-  TabsTrigger,
-  TabsContent,
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectContent,
-  SelectItem,
 } from "laminar-ui"
 import { TimeRangePicker, MockBadge, type DateRange } from "@/components/shared"
 import { Activity, AlertTriangle, CheckCircle, ArrowLeft, Building2, Server, ChevronRight } from "lucide-react"
@@ -354,14 +346,10 @@ const clusterListColumns = [
       </Badge>
     )
   }},
-  { key: "components", header: "Components", render: (value: unknown) => {
-    const components = value as ComponentData[]
-    return components.length
-  }},
-  { key: "totalCost", header: "Cost/hr", sortable: true, render: (_: unknown, row: E6Cluster) => {
-    const total = row.components.reduce((sum, c) => sum + c.cost_hourly, 0)
-    return `$${total.toFixed(2)}`
-  }},
+  { key: "components", header: "Components", render: (value: unknown) => (value as unknown[]).length },
+  { key: "totalCost", header: "Cost/hr", sortable: true, render: (_: unknown, row: E6Cluster) => (
+    `$${sumBy(row.components, 'cost_hourly').toFixed(2)}`
+  )},
 ]
 
 const componentColumns = [
@@ -408,14 +396,14 @@ export default function E6ClustersPage() {
   // Calculate cluster stats
   const clusterStats = useMemo(() => {
     if (!selectedCluster) return null
-    const totalPods = selectedCluster.components.reduce((sum, c) => sum + c.pods, 0)
-    const totalCostHourly = selectedCluster.components.reduce((sum, c) => sum + c.cost_hourly, 0)
+    const totalPods = sumBy(selectedCluster.components, 'pods')
+    const totalCostHourly = sumBy(selectedCluster.components, 'cost_hourly')
     const avgCpuUtil = selectedCluster.pods.length > 0
-      ? selectedCluster.pods.reduce((sum, p) => sum + p.cpu_pct, 0) / selectedCluster.pods.length
-      : 70 // Default estimate
+      ? sumBy(selectedCluster.pods, 'cpu_pct') / selectedCluster.pods.length
+      : 70
     const avgMemUtil = selectedCluster.pods.length > 0
-      ? selectedCluster.pods.reduce((sum, p) => sum + p.mem_pct, 0) / selectedCluster.pods.length
-      : 70 // Default estimate
+      ? sumBy(selectedCluster.pods, 'mem_pct') / selectedCluster.pods.length
+      : 70
     return { totalPods, totalCostHourly, avgCpuUtil, avgMemUtil }
   }, [selectedCluster])
 
@@ -464,9 +452,7 @@ export default function E6ClustersPage() {
               </div>
               <div>
                 <p className="text-3xl font-bold">
-                  ${Object.values(mockClustersByCustomer).flat().reduce((sum, c) =>
-                    sum + c.components.reduce((s, comp) => s + comp.cost_hourly, 0), 0
-                  ).toFixed(0)}/hr
+                  ${sumBy(Object.values(mockClustersByCustomer).flat(), c => sumBy(c.components, 'cost_hourly')).toFixed(0)}/hr
                 </p>
                 <p className="text-sm text-muted-foreground">Total Cost</p>
               </div>
@@ -537,50 +523,45 @@ export default function E6ClustersPage() {
 
         {/* Cluster Cards */}
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {customerClusters.map((cluster) => {
-            const totalCost = cluster.components.reduce((sum, c) => sum + c.cost_hourly, 0)
-            const totalPods = cluster.components.reduce((sum, c) => sum + c.pods, 0)
-
-            return (
-              <Card
-                key={cluster.id}
-                className="cursor-pointer hover:border-primary transition-colors relative"
-                onClick={() => setSelectedCluster(cluster)}
-              >
-                <MockBadge className="absolute top-2 right-2" />
-                <CardContent className="pt-6">
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 bg-primary/10 rounded-lg">
-                        <Server className="h-6 w-6 text-primary" />
-                      </div>
-                      <div>
-                        <h3 className="font-semibold">{cluster.name}</h3>
-                        <p className="text-sm text-muted-foreground">{cluster.region}</p>
-                      </div>
-                    </div>
-                    <Badge variant={cluster.status === 'healthy' ? 'default' : cluster.status === 'warning' ? 'secondary' : 'destructive'}>
-                      {cluster.status}
-                    </Badge>
-                  </div>
-                  <div className="mt-4 pt-4 border-t grid grid-cols-3 gap-4 text-center">
-                    <div>
-                      <p className="text-lg font-semibold">{cluster.components.length}</p>
-                      <p className="text-xs text-muted-foreground">Components</p>
+          {customerClusters.map((cluster) => (
+            <Card
+              key={cluster.id}
+              className="cursor-pointer hover:border-primary transition-colors relative"
+              onClick={() => setSelectedCluster(cluster)}
+            >
+              <MockBadge className="absolute top-2 right-2" />
+              <CardContent className="pt-6">
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-primary/10 rounded-lg">
+                      <Server className="h-6 w-6 text-primary" />
                     </div>
                     <div>
-                      <p className="text-lg font-semibold">{totalPods}</p>
-                      <p className="text-xs text-muted-foreground">Pods</p>
-                    </div>
-                    <div>
-                      <p className="text-lg font-semibold">${totalCost.toFixed(0)}</p>
-                      <p className="text-xs text-muted-foreground">/hr</p>
+                      <h3 className="font-semibold">{cluster.name}</h3>
+                      <p className="text-sm text-muted-foreground">{cluster.region}</p>
                     </div>
                   </div>
-                </CardContent>
-              </Card>
-            )
-          })}
+                  <Badge variant={cluster.status === 'healthy' ? 'default' : cluster.status === 'warning' ? 'secondary' : 'destructive'}>
+                    {cluster.status}
+                  </Badge>
+                </div>
+                <div className="mt-4 pt-4 border-t grid grid-cols-3 gap-4 text-center">
+                  <div>
+                    <p className="text-lg font-semibold">{cluster.components.length}</p>
+                    <p className="text-xs text-muted-foreground">Components</p>
+                  </div>
+                  <div>
+                    <p className="text-lg font-semibold">{sumBy(cluster.components, 'pods')}</p>
+                    <p className="text-xs text-muted-foreground">Pods</p>
+                  </div>
+                  <div>
+                    <p className="text-lg font-semibold">${sumBy(cluster.components, 'cost_hourly').toFixed(0)}</p>
+                    <p className="text-xs text-muted-foreground">/hr</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
         </div>
 
         {/* Cluster List Table */}
@@ -714,7 +695,7 @@ export default function E6ClustersPage() {
           </CardHeader>
           <CardContent>
             <DataTable
-              data={[...selectedCluster.components].sort((a, b) => b.cost_hourly - a.cost_hourly)}
+              data={orderBy(selectedCluster.components, ['cost_hourly'], ['desc'])}
               columns={componentColumns}
               hoverable
               striped

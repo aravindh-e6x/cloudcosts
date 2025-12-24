@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useMemo } from "react"
+import { sumBy } from "lodash-es"
 import {
   Card,
   CardContent,
@@ -9,7 +10,6 @@ import {
   CardDescription,
   DataTable,
   BarChart,
-  Skeleton,
   Badge,
 } from "laminar-ui"
 import {
@@ -17,57 +17,15 @@ import {
   ComparisonCard,
   ChangeBadge,
   InfoPopover,
+  ComparisonCardSkeleton,
+  TableSkeleton,
+  ChartSkeleton,
+  QueryError,
+  EmptyState,
   type DateRange,
 } from "@/components/shared"
 import { useQuery, formatCurrency, formatDate } from "@/hooks/useQuery"
 import { overviewQueries } from "@/lib/queries"
-
-// ============================================
-// TYPE DEFINITIONS
-// ============================================
-
-interface DailyCost {
-  date: string
-  cost: number
-}
-
-interface ExecutiveSummary {
-  today: number
-  yesterday: number
-  this_week: number
-  last_week: number
-  same_week_last_month: number
-  mtd: number
-  same_period_last_month: number
-}
-
-interface ProviderCost {
-  provider: string
-  cost: number
-  today: number
-  yesterday: number
-  last_7d: number
-  prev_7d: number
-  mtd: number
-  prev_mtd: number
-  [key: string]: string | number
-}
-
-interface ServiceCost {
-  service: string
-  cost: number
-  today: number
-  yesterday: number
-  last_7d: number
-  prev_7d: number
-  mtd: number
-  prev_mtd: number
-  [key: string]: string | number
-}
-
-// ============================================
-// HELPER COMPONENTS
-// ============================================
 
 function ChangeCell({ current, previous }: { current: number; previous: number }) {
   if (previous === 0) return <span className="text-muted-foreground">-</span>
@@ -75,55 +33,30 @@ function ChangeCell({ current, previous }: { current: number; previous: number }
   return <ChangeBadge value={change} />
 }
 
-// ============================================
-// MAIN COMPONENT
-// ============================================
-
 export default function OverviewPage() {
-  const [timeRange, setTimeRange] = useState<DateRange | undefined>(() => {
-    const today = new Date()
-    return { from: today, to: today }
-  })
+  const [timeRange, setTimeRange] = useState<DateRange | undefined>(() => ({ from: new Date(), to: new Date() }))
 
-  // Format selected date for SQL queries (YYYY-MM-DD)
   const selectedDate = useMemo(() => {
-    if (!timeRange?.from) return new Date().toISOString().split('T')[0]
-    return timeRange.from.toISOString().split('T')[0]
+    return (timeRange?.from || new Date()).toISOString().split('T')[0]
   }, [timeRange])
 
-  // Compute date labels for display
   const dateLabels = useMemo(() => {
     const selected = timeRange?.from || new Date()
     const fmt = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-    const fmtFull = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    const addDays = (d: Date, n: number) => { const r = new Date(d); r.setDate(r.getDate() + n); return r }
 
-    const yesterday = new Date(selected)
-    yesterday.setDate(yesterday.getDate() - 1)
-
-    const weekStart = new Date(selected)
-    weekStart.setDate(weekStart.getDate() - weekStart.getDay()) // Start of current week (Sunday)
-
-    const lastWeekStart = new Date(weekStart)
-    lastWeekStart.setDate(lastWeekStart.getDate() - 7)
-    const lastWeekEnd = new Date(weekStart)
-    lastWeekEnd.setDate(lastWeekEnd.getDate() - 1)
-
-    const sameWeekLastMonthStart = new Date(selected)
-    sameWeekLastMonthStart.setDate(sameWeekLastMonthStart.getDate() - 28)
-    const sameWeekLastMonthEnd = new Date(selected)
-    sameWeekLastMonthEnd.setDate(sameWeekLastMonthEnd.getDate() - 21)
-
+    const yesterday = addDays(selected, -1)
+    const weekStart = addDays(selected, -selected.getDay())
+    const lastWeekStart = addDays(weekStart, -7)
+    const lastWeekEnd = addDays(weekStart, -1)
+    const sameWeekLastMonthStart = addDays(selected, -28)
+    const sameWeekLastMonthEnd = addDays(selected, -21)
     const monthStart = new Date(selected.getFullYear(), selected.getMonth(), 1)
     const prevMonthStart = new Date(selected.getFullYear(), selected.getMonth() - 1, 1)
-    const dayOfMonth = selected.getDate()
-    const prevMonthSameDay = new Date(selected.getFullYear(), selected.getMonth() - 1, dayOfMonth)
-
-    const last7dStart = new Date(selected)
-    last7dStart.setDate(last7dStart.getDate() - 6)
-    const prev7dStart = new Date(selected)
-    prev7dStart.setDate(prev7dStart.getDate() - 13)
-    const prev7dEnd = new Date(selected)
-    prev7dEnd.setDate(prev7dEnd.getDate() - 7)
+    const prevMonthSameDay = new Date(selected.getFullYear(), selected.getMonth() - 1, selected.getDate())
+    const last7dStart = addDays(selected, -6)
+    const prev7dStart = addDays(selected, -13)
+    const prev7dEnd = addDays(selected, -7)
 
     return {
       today: fmt(selected),
@@ -138,128 +71,76 @@ export default function OverviewPage() {
     }
   }, [timeRange])
 
-  // Fetch executive summary
-  const { data: execSummaryData } = useQuery<ExecutiveSummary>(
-    "vantage",
-    overviewQueries.executiveSummary(selectedDate),
-    { refetchInterval: 300000 }
-  )
+  const { data: execSummaryData, loading: execLoading, error: execError, refetch: refetchExec } = useQuery("vantage", overviewQueries.executiveSummary(selectedDate), { refetchInterval: 300000 })
+  const { data: providerCostData, loading: providerLoading, error: providerError, refetch: refetchProvider } = useQuery("vantage", overviewQueries.costByProviderFull(selectedDate), { refetchInterval: 300000 })
+  const { data: topServicesData, loading: servicesLoading, error: servicesError, refetch: refetchServices } = useQuery("vantage", overviewQueries.topServicesFull(selectedDate), { refetchInterval: 300000 })
+  const { data: dailyCostTrend, loading: trendLoading, error: trendError, refetch: refetchTrend } = useQuery("vantage", overviewQueries.dailyCostTrendByDate(selectedDate), { refetchInterval: 300000 })
 
-  // Fetch cost by provider full
-  const { data: providerCostData } = useQuery<ProviderCost>(
-    "vantage",
-    overviewQueries.costByProviderFull(selectedDate),
-    { refetchInterval: 300000 }
-  )
+  const execSummary = execSummaryData?.[0] as Record<string, number> | undefined
 
-  // Fetch top services
-  const { data: topServicesData } = useQuery<ServiceCost>(
-    "vantage",
-    overviewQueries.topServicesFull(selectedDate),
-    { refetchInterval: 300000 }
-  )
-
-  // Fetch daily cost trend
-  const { data: dailyCostTrend } = useQuery<DailyCost>(
-    "vantage",
-    overviewQueries.dailyCostTrendByDate(selectedDate),
-    { refetchInterval: 300000 }
-  )
-
-  // ============================================
-  // COMPUTED VALUES
-  // ============================================
-
-  const execSummary = execSummaryData?.[0]
-
-  // Provider cost data with totals row
   const providerCostWithTotals = useMemo(() => {
-    if (!providerCostData || providerCostData.length === 0) return []
-
-    const totals: ProviderCost = {
+    if (!providerCostData?.length) return []
+    const totals = {
       provider: "TOTAL",
-      cost: 0,
-      today: 0,
-      yesterday: 0,
-      last_7d: 0,
-      prev_7d: 0,
-      mtd: 0,
-      prev_mtd: 0,
+      cost: sumBy(providerCostData, r => Number(r.cost) || 0),
+      today: sumBy(providerCostData, r => Number(r.today) || 0),
+      yesterday: sumBy(providerCostData, r => Number(r.yesterday) || 0),
+      last_7d: sumBy(providerCostData, r => Number(r.last_7d) || 0),
+      prev_7d: sumBy(providerCostData, r => Number(r.prev_7d) || 0),
+      mtd: sumBy(providerCostData, r => Number(r.mtd) || 0),
+      prev_mtd: sumBy(providerCostData, r => Number(r.prev_mtd) || 0),
     }
-
-    providerCostData.forEach(row => {
-      totals.cost += Number(row.cost) || 0
-      totals.today += Number(row.today) || 0
-      totals.yesterday += Number(row.yesterday) || 0
-      totals.last_7d += Number(row.last_7d) || 0
-      totals.prev_7d += Number(row.prev_7d) || 0
-      totals.mtd += Number(row.mtd) || 0
-      totals.prev_mtd += Number(row.prev_mtd) || 0
-    })
-
     return [...providerCostData, totals]
   }, [providerCostData])
 
-  // Daily cost chart data
   const dailyCostChartData = useMemo(() => {
-    if (!dailyCostTrend) return []
-    return dailyCostTrend.map(item => ({
-      date: formatDate(item.date),
-      cost: item.cost,
+    return (dailyCostTrend || []).map((item: Record<string, unknown>) => ({
+      date: formatDate(item.date as string),
+      cost: Number(item.cost) || 0,
     }))
   }, [dailyCostTrend])
 
-  // ============================================
-  // COLUMN DEFINITIONS
-  // ============================================
-
   const providerColumns = [
-    { key: "provider", header: "Provider", sortable: true, render: (value: unknown, row: ProviderCost) => (
-      row.provider === "TOTAL"
-        ? <span className="font-bold">{String(value)}</span>
-        : <Badge variant="outline">{String(value).toUpperCase()}</Badge>
+    { key: "provider", header: "Provider", sortable: true, render: (v: unknown, r: Record<string, unknown>) => (
+      r.provider === "TOTAL" ? <span className="font-bold">{String(v)}</span> : <Badge variant="outline">{String(v).toUpperCase()}</Badge>
     )},
-    { key: "today", header: `Today (${dateLabels.today})`, sortable: true, render: (value: unknown, row: ProviderCost) => (
-      <span className={row.provider === "TOTAL" ? "font-bold" : ""}>{formatCurrency(Number(value))}</span>
+    { key: "today", header: `Today (${dateLabels.today})`, sortable: true, render: (v: unknown, r: Record<string, unknown>) => (
+      <span className={r.provider === "TOTAL" ? "font-bold" : ""}>{formatCurrency(Number(v))}</span>
     )},
-    { key: "yesterday", header: `Yesterday (${dateLabels.yesterday})`, sortable: true, render: (value: unknown, row: ProviderCost) => (
-      <span className={row.provider === "TOTAL" ? "font-bold" : ""}>{formatCurrency(Number(value))}</span>
+    { key: "yesterday", header: `Yesterday (${dateLabels.yesterday})`, sortable: true, render: (v: unknown, r: Record<string, unknown>) => (
+      <span className={r.provider === "TOTAL" ? "font-bold" : ""}>{formatCurrency(Number(v))}</span>
     )},
-    { key: "day_change", header: "DoD", render: (_: unknown, row: ProviderCost) => (
-      <ChangeCell current={row.today} previous={row.yesterday} />
+    { key: "day_change", header: "DoD", render: (_: unknown, r: Record<string, unknown>) => (
+      <ChangeCell current={Number(r.today)} previous={Number(r.yesterday)} />
     )},
-    { key: "last_7d", header: `Last 7D (${dateLabels.last7d})`, sortable: true, render: (value: unknown, row: ProviderCost) => (
-      <span className={row.provider === "TOTAL" ? "font-bold" : ""}>{formatCurrency(Number(value))}</span>
+    { key: "last_7d", header: `Last 7D (${dateLabels.last7d})`, sortable: true, render: (v: unknown, r: Record<string, unknown>) => (
+      <span className={r.provider === "TOTAL" ? "font-bold" : ""}>{formatCurrency(Number(v))}</span>
     )},
-    { key: "mtd", header: `MTD (${dateLabels.mtd})`, sortable: true, render: (value: unknown, row: ProviderCost) => (
-      <span className={row.provider === "TOTAL" ? "font-bold" : ""}>{formatCurrency(Number(value))}</span>
+    { key: "mtd", header: `MTD (${dateLabels.mtd})`, sortable: true, render: (v: unknown, r: Record<string, unknown>) => (
+      <span className={r.provider === "TOTAL" ? "font-bold" : ""}>{formatCurrency(Number(v))}</span>
     )},
-    { key: "prev_mtd", header: `Prev MTD (${dateLabels.prevMtd})`, sortable: true, render: (value: unknown, row: ProviderCost) => (
-      <span className={row.provider === "TOTAL" ? "font-bold" : ""}>{formatCurrency(Number(value))}</span>
+    { key: "prev_mtd", header: `Prev MTD (${dateLabels.prevMtd})`, sortable: true, render: (v: unknown, r: Record<string, unknown>) => (
+      <span className={r.provider === "TOTAL" ? "font-bold" : ""}>{formatCurrency(Number(v))}</span>
     )},
-    { key: "mom", header: "MoM", render: (_: unknown, row: ProviderCost) => (
-      <ChangeCell current={row.mtd} previous={row.prev_mtd} />
+    { key: "mom", header: "MoM", render: (_: unknown, r: Record<string, unknown>) => (
+      <ChangeCell current={Number(r.mtd)} previous={Number(r.prev_mtd)} />
     )},
   ]
 
   const serviceColumns = [
     { key: "service", header: "Service", sortable: true },
-    { key: "today", header: `Today (${dateLabels.today})`, sortable: true, render: (value: unknown) => formatCurrency(Number(value)) },
-    { key: "yesterday", header: `Yesterday (${dateLabels.yesterday})`, sortable: true, render: (value: unknown) => formatCurrency(Number(value)) },
-    { key: "day_change", header: "DoD", render: (_: unknown, row: ServiceCost) => (
-      <ChangeCell current={row.today} previous={row.yesterday} />
+    { key: "today", header: `Today (${dateLabels.today})`, sortable: true, render: (v: unknown) => formatCurrency(Number(v)) },
+    { key: "yesterday", header: `Yesterday (${dateLabels.yesterday})`, sortable: true, render: (v: unknown) => formatCurrency(Number(v)) },
+    { key: "day_change", header: "DoD", render: (_: unknown, r: Record<string, unknown>) => (
+      <ChangeCell current={Number(r.today)} previous={Number(r.yesterday)} />
     )},
-    { key: "last_7d", header: `Last 7D (${dateLabels.last7d})`, sortable: true, render: (value: unknown) => formatCurrency(Number(value)) },
-    { key: "mtd", header: `MTD (${dateLabels.mtd})`, sortable: true, render: (value: unknown) => formatCurrency(Number(value)) },
-    { key: "prev_mtd", header: `Prev MTD (${dateLabels.prevMtd})`, sortable: true, render: (value: unknown) => formatCurrency(Number(value)) },
-    { key: "mom", header: "MoM", render: (_: unknown, row: ServiceCost) => (
-      <ChangeCell current={row.mtd} previous={row.prev_mtd} />
+    { key: "last_7d", header: `Last 7D (${dateLabels.last7d})`, sortable: true, render: (v: unknown) => formatCurrency(Number(v)) },
+    { key: "mtd", header: `MTD (${dateLabels.mtd})`, sortable: true, render: (v: unknown) => formatCurrency(Number(v)) },
+    { key: "prev_mtd", header: `Prev MTD (${dateLabels.prevMtd})`, sortable: true, render: (v: unknown) => formatCurrency(Number(v)) },
+    { key: "mom", header: "MoM", render: (_: unknown, r: Record<string, unknown>) => (
+      <ChangeCell current={Number(r.mtd)} previous={Number(r.prev_mtd)} />
     )},
   ]
-
-  // ============================================
-  // RENDER
-  // ============================================
 
   return (
     <div className="space-y-8">
@@ -276,45 +157,58 @@ export default function OverviewPage() {
         </div>
       </div>
 
-      <div>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <ComparisonCard
-            title="Today vs Yesterday"
-            current={execSummary?.today || 0}
-            previous={execSummary?.yesterday || 0}
-            currentLabel={dateLabels.today}
-            previousLabel={dateLabels.yesterday}
-            description="Compares total cloud spend for the selected date against the previous day."
-            sql={overviewQueries.todayVsYesterdaySql(selectedDate)}
-          />
-          <ComparisonCard
-            title="This Week vs Last Week"
-            current={execSummary?.this_week || 0}
-            previous={execSummary?.last_week || 0}
-            currentLabel={dateLabels.thisWeek}
-            previousLabel={dateLabels.lastWeek}
-            description="Compares week-to-date spend (from start of current week) against the full previous week."
-            sql={overviewQueries.thisWeekVsLastWeekSql(selectedDate)}
-          />
-          <ComparisonCard
-            title="This Week vs Same Week Last Month"
-            current={execSummary?.this_week || 0}
-            previous={execSummary?.same_week_last_month || 0}
-            currentLabel={dateLabels.thisWeek}
-            previousLabel={dateLabels.sameWeekLastMonth}
-            description="Compares week-to-date spend against the same week (approximately 4 weeks ago) from last month."
-            sql={overviewQueries.thisWeekVsSameWeekLastMonthSql(selectedDate)}
-          />
-          <ComparisonCard
-            title="MTD vs Same Period Last Month"
-            current={execSummary?.mtd || 0}
-            previous={execSummary?.same_period_last_month || 0}
-            currentLabel={dateLabels.mtd}
-            previousLabel={dateLabels.prevMtd}
-            description="Compares month-to-date spend against the same number of days in the previous month."
-            sql={overviewQueries.mtdVsSamePeriodLastMonthSql(selectedDate)}
-          />
-        </div>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+        {execLoading ? (
+          <>
+            <ComparisonCardSkeleton />
+            <ComparisonCardSkeleton />
+            <ComparisonCardSkeleton />
+            <ComparisonCardSkeleton />
+          </>
+        ) : execError ? (
+          <Card className="col-span-4">
+            <QueryError message={execError} onRetry={refetchExec} />
+          </Card>
+        ) : (
+          <>
+            <ComparisonCard
+              title="Today vs Yesterday"
+              current={execSummary?.today || 0}
+              previous={execSummary?.yesterday || 0}
+              currentLabel={dateLabels.today}
+              previousLabel={dateLabels.yesterday}
+              description="Compares total cloud spend for the selected date against the previous day."
+              sql={overviewQueries.todayVsYesterdaySql(selectedDate)}
+            />
+            <ComparisonCard
+              title="This Week vs Last Week"
+              current={execSummary?.this_week || 0}
+              previous={execSummary?.last_week || 0}
+              currentLabel={dateLabels.thisWeek}
+              previousLabel={dateLabels.lastWeek}
+              description="Compares week-to-date spend (from start of current week) against the full previous week."
+              sql={overviewQueries.thisWeekVsLastWeekSql(selectedDate)}
+            />
+            <ComparisonCard
+              title="This Week vs Same Week Last Month"
+              current={execSummary?.this_week || 0}
+              previous={execSummary?.same_week_last_month || 0}
+              currentLabel={dateLabels.thisWeek}
+              previousLabel={dateLabels.sameWeekLastMonth}
+              description="Compares week-to-date spend against the same week (approximately 4 weeks ago) from last month."
+              sql={overviewQueries.thisWeekVsSameWeekLastMonthSql(selectedDate)}
+            />
+            <ComparisonCard
+              title="MTD vs Same Period Last Month"
+              current={execSummary?.mtd || 0}
+              previous={execSummary?.same_period_last_month || 0}
+              currentLabel={dateLabels.mtd}
+              previousLabel={dateLabels.prevMtd}
+              description="Compares month-to-date spend against the same number of days in the previous month."
+              sql={overviewQueries.mtdVsSamePeriodLastMonthSql(selectedDate)}
+            />
+          </>
+        )}
       </div>
 
       {/* Costs by Cloud Provider */}
@@ -331,16 +225,14 @@ export default function OverviewPage() {
           <CardDescription>Cost breakdown by cloud provider with daily, weekly, and monthly comparisons</CardDescription>
         </CardHeader>
         <CardContent>
-          {providerCostWithTotals && providerCostWithTotals.length > 0 ? (
-            <DataTable
-              data={providerCostWithTotals}
-              columns={providerColumns}
-              hoverable
-            />
+          {providerLoading ? (
+            <TableSkeleton rows={4} />
+          ) : providerError ? (
+            <QueryError message={providerError} onRetry={refetchProvider} />
+          ) : providerCostWithTotals.length > 0 ? (
+            <DataTable data={providerCostWithTotals} columns={providerColumns} hoverable />
           ) : (
-            <div className="flex items-center justify-center h-32 text-muted-foreground">
-              No data available
-            </div>
+            <EmptyState />
           )}
         </CardContent>
       </Card>
@@ -359,21 +251,21 @@ export default function OverviewPage() {
           <CardDescription>Daily cloud spend over the last 30 days</CardDescription>
         </CardHeader>
         <CardContent>
-          {dailyCostChartData.length > 0 ? (
+          {trendLoading ? (
+            <ChartSkeleton height={300} />
+          ) : trendError ? (
+            <QueryError message={trendError} onRetry={refetchTrend} />
+          ) : dailyCostChartData.length > 0 ? (
             <BarChart
               data={dailyCostChartData}
               xAxisKey="date"
-              bars={[
-                { dataKey: "cost", name: "Cost", color: "var(--chart-1)" },
-              ]}
+              bars={[{ dataKey: "cost", name: "Cost", color: "var(--chart-1)" }]}
               height={300}
               yAxisFormatter={(value) => `$${value}`}
               tooltipFormatter={(value) => formatCurrency(Number(value))}
             />
           ) : (
-            <div className="flex items-center justify-center h-[300px] text-muted-foreground">
-              No data available
-            </div>
+            <EmptyState />
           )}
         </CardContent>
       </Card>
@@ -392,16 +284,14 @@ export default function OverviewPage() {
           <CardDescription>Highest cost services across all providers</CardDescription>
         </CardHeader>
         <CardContent>
-          {topServicesData && topServicesData.length > 0 ? (
-            <DataTable
-              data={topServicesData}
-              columns={serviceColumns}
-              hoverable
-            />
+          {servicesLoading ? (
+            <TableSkeleton rows={10} />
+          ) : servicesError ? (
+            <QueryError message={servicesError} onRetry={refetchServices} />
+          ) : topServicesData && topServicesData.length > 0 ? (
+            <DataTable data={topServicesData} columns={serviceColumns} hoverable />
           ) : (
-            <div className="flex items-center justify-center h-32 text-muted-foreground">
-              No data available
-            </div>
+            <EmptyState />
           )}
         </CardContent>
       </Card>

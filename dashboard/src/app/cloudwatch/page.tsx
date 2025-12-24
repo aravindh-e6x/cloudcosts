@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useMemo } from "react"
+import { sumBy, orderBy } from "lodash-es"
 import {
   Card,
   CardContent,
@@ -16,7 +17,7 @@ import {
   Badge,
 } from "laminar-ui"
 import { TimeRangePicker, MockBadge, type DateRange } from "@/components/shared"
-import { Activity, AlertTriangle, Server, Database, HardDrive, Radio } from "lucide-react"
+import { Activity, Server, Database, HardDrive, Radio } from "lucide-react"
 
 // Mock EC2 data
 const mockEC2Instances = [
@@ -123,23 +124,21 @@ const mskColumns = [
 export default function CloudWatchPage() {
   const [timeRange, setTimeRange] = useState<DateRange | undefined>()
 
-  const totalEC2Cost = mockEC2Instances.reduce((sum, i) => sum + i.cost_daily, 0)
-  const totalRDSCost = mockRDSInstances.reduce((sum, i) => sum + i.cost_daily, 0)
-  const totalS3Cost = mockS3Buckets.reduce((sum, b) => sum + b.cost_daily, 0)
-  const totalMSKCost = mockMSKClusters.reduce((sum, c) => sum + c.cost_daily, 0)
+  const totalEC2Cost = sumBy(mockEC2Instances, 'cost_daily')
+  const totalRDSCost = sumBy(mockRDSInstances, 'cost_daily')
+  const totalS3Cost = sumBy(mockS3Buckets, 'cost_daily')
+  const totalMSKCost = sumBy(mockMSKClusters, 'cost_daily')
   const totalDailyCost = totalEC2Cost + totalRDSCost + totalS3Cost + totalMSKCost
 
-  // Calculate running instances
-  const runningEC2 = mockEC2Instances.filter(i => i.state === "running").length
-  const avgEC2Cpu = mockEC2Instances.filter(i => i.state === "running").reduce((sum, i) => sum + i.cpu_avg, 0) / runningEC2 || 0
+  const runningEC2 = mockEC2Instances.filter(i => i.state === "running")
+  const avgEC2Cpu = runningEC2.length ? sumBy(runningEC2, 'cpu_avg') / runningEC2.length : 0
 
-  // Cost breakdown for table (sorted high to low)
-  const costBreakdown = useMemo(() => [
+  const costBreakdown = useMemo(() => orderBy([
     { service: "EC2", cost: totalEC2Cost, instances: mockEC2Instances.length },
     { service: "RDS", cost: totalRDSCost, instances: mockRDSInstances.length },
     { service: "S3", cost: totalS3Cost, instances: mockS3Buckets.length },
     { service: "MSK", cost: totalMSKCost, instances: mockMSKClusters.length },
-  ].sort((a, b) => b.cost - a.cost), [totalEC2Cost, totalRDSCost, totalS3Cost, totalMSKCost])
+  ], ['cost'], ['desc']), [totalEC2Cost, totalRDSCost, totalS3Cost, totalMSKCost])
 
   return (
     <div className="space-y-6">
@@ -182,7 +181,7 @@ export default function CloudWatchPage() {
           <MockBadge className="absolute top-2 right-2" />
           <CardContent className="pt-6">
             <p className="text-sm text-muted-foreground">EC2 Instances</p>
-            <p className="text-3xl font-bold">{runningEC2}<span className="text-lg font-normal text-muted-foreground">/{mockEC2Instances.length}</span></p>
+            <p className="text-3xl font-bold">{runningEC2.length}<span className="text-lg font-normal text-muted-foreground">/{mockEC2Instances.length}</span></p>
             <p className="text-xs text-muted-foreground mt-1">Avg CPU: {avgEC2Cpu.toFixed(1)}%</p>
           </CardContent>
         </Card>
@@ -410,7 +409,7 @@ export default function CloudWatchPage() {
             </CardHeader>
             <CardContent>
               <DataTable
-                data={[...mockS3Buckets].sort((a, b) => b.cost_daily - a.cost_daily)}
+                data={orderBy(mockS3Buckets, ['cost_daily'], ['desc'])}
                 columns={s3Columns}
                 hoverable
                 striped
@@ -429,7 +428,7 @@ export default function CloudWatchPage() {
             </CardHeader>
             <CardContent>
               <DataTable
-                data={[...mockMSKClusters].sort((a, b) => b.cost_daily - a.cost_daily)}
+                data={orderBy(mockMSKClusters, ['cost_daily'], ['desc'])}
                 columns={mskColumns}
                 hoverable
                 striped

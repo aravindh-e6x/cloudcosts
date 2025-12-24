@@ -1,125 +1,88 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
-import { clientLogger } from "@/lib/logger"
+import { useQuery as useTanstackQuery, useQueryClient } from "@tanstack/react-query"
 
-interface QueryResult<T> {
-  data: T[] | null
-  loading: boolean
-  error: string | null
-  refetch: () => Promise<void>
+// Re-export formatters from utils for backward compatibility
+export { formatBytes, formatCpu, formatCurrency, formatDate, formatTime } from "@/lib/utils"
+
+interface QueryOptions {
+  enabled?: boolean
+  refetchInterval?: number
+  staleTime?: number
+}
+
+async function fetchQuery<T>(database: string, sql: string): Promise<T[]> {
+  const response = await fetch("/api/query", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ database, sql }),
+  })
+
+  if (!response.ok) throw new Error(`Query failed: ${response.status}`)
+
+  const result = await response.json()
+  if (result.error) throw new Error(result.error)
+
+  return result.data || []
+}
+
+// Generate a stable query key from database and SQL
+function getQueryKey(database: string, sql: string): string[] {
+  // Create a hash of the SQL for the key (simple version)
+  const sqlHash = sql.replace(/\s+/g, " ").trim().slice(0, 100)
+  return ["greptimedb", database, sqlHash]
 }
 
 export function useQuery<T = Record<string, unknown>>(
   database: string,
   sql: string,
-  options?: { enabled?: boolean; refetchInterval?: number }
-): QueryResult<T> {
-  const [data, setData] = useState<T[] | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  options?: QueryOptions
+) {
+  const queryKey = getQueryKey(database, sql)
 
-  const enabled = options?.enabled ?? true
+  const {
+    data,
+    isLoading,
+    error,
+    refetch,
+  } = useTanstackQuery({
+    queryKey,
+    queryFn: () => fetchQuery<T>(database, sql),
+    enabled: options?.enabled ?? true,
+    refetchInterval: options?.refetchInterval,
+    staleTime: options?.staleTime ?? 60 * 1000,
+  })
 
-  const fetchData = useCallback(async () => {
-    if (!enabled || !sql) {
-      setLoading(false)
-      return
-    }
-
-    const startTime = Date.now()
-
-    try {
-      setLoading(true)
-      setError(null)
-
-      clientLogger.info("Fetching data", { database, sql })
-
-      const response = await fetch("/api/query", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ database, sql }),
-      })
-
-      if (!response.ok) {
-        throw new Error(`Query failed: ${response.status}`)
-      }
-
-      const result = await response.json()
-
-      if (result.error) {
-        throw new Error(result.error)
-      }
-
-      const duration = Date.now() - startTime
-      clientLogger.info("Data received", {
-        database,
-        rowCount: result.data?.length || 0,
-        durationMs: duration
-      })
-
-      setData(result.data)
-    } catch (err) {
-      const duration = Date.now() - startTime
-      const errorMsg = err instanceof Error ? err.message : "Query failed"
-      clientLogger.error("Query failed", {
-        database,
-        sql,
-        error: errorMsg,
-        durationMs: duration
-      })
-      setError(errorMsg)
-      setData(null)
-    } finally {
-      setLoading(false)
-    }
-  }, [database, sql, enabled])
-
-  useEffect(() => {
-    fetchData()
-  }, [fetchData])
-
-  // Auto refetch interval
-  useEffect(() => {
-    if (options?.refetchInterval && enabled) {
-      const interval = setInterval(fetchData, options.refetchInterval)
-      return () => clearInterval(interval)
-    }
-  }, [fetchData, options?.refetchInterval, enabled])
-
-  return { data, loading, error, refetch: fetchData }
-}
-
-// Helper to format bytes
-export function formatBytes(bytes: number, decimals = 2): string {
-  if (bytes === 0) return "0 B"
-  const k = 1024
-  const sizes = ["B", "Ki", "Mi", "Gi", "Ti"]
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(decimals))} ${sizes[i]}`
-}
-
-// Helper to format CPU (millicores to cores)
-export function formatCpu(millicores: number): string {
-  if (millicores >= 1000) {
-    return `${(millicores / 1000).toFixed(2)} cores`
+  return {
+    data: data ?? null,
+    loading: isLoading,
+    error: error?.message ?? null,
+    refetch,
   }
-  return `${millicores.toFixed(0)}m`
 }
 
-// Helper to format currency
-export function formatCurrency(value: number, decimals = 2): string {
-  return `$${value.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}`
+// Hook to prefetch queries
+export function usePrefetchQuery() {
+  const queryClient = useQueryClient()
+
+  return (database: string, sql: string) => {
+    const queryKey = getQueryKey(database, sql)
+    queryClient.prefetchQuery({
+      queryKey,
+      queryFn: () => fetchQuery(database, sql),
+    })
+  }
 }
 
-// Helper to format date
-export function formatDate(date: string | Date): string {
-  const d = new Date(date)
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" })
-}
+// Hook to invalidate queries
+export function useInvalidateQuery() {
+  const queryClient = useQueryClient()
 
-// Helper to format time
-export function formatTime(date: string | Date): string {
-  const d = new Date(date)
-  return d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })
+  return (database?: string) => {
+    if (database) {
+      queryClient.invalidateQueries({ queryKey: ["greptimedb", database] })
+    } else {
+      queryClient.invalidateQueries({ queryKey: ["greptimedb"] })
+    }
+  }
 }
