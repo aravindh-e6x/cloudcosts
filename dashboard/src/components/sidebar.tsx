@@ -3,7 +3,9 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
-import { LayoutDashboard, Server, Cloud, Boxes, ExternalLink, CloudCog, Database, Grid, LucideIcon } from "lucide-react"
+import { LayoutDashboard, Server, Cloud, Boxes, ExternalLink, CloudCog, Database, Grid, LucideIcon, BookOpen, Network } from "lucide-react"
+import { TimeRangePicker } from "@/components/shared"
+import { useDate } from "@/components/providers"
 
 interface NavItem {
   name: string
@@ -46,10 +48,17 @@ const navigation: NavSection[] = [
       { name: "Grafana", href: "https://grafana.cloudcosts.in", icon: Grid, external: true },
     ]
   },
+  {
+    section: "Documentation",
+    items: [
+      { name: "Architecture", href: "/docs/architecture", icon: Network },
+    ]
+  },
 ]
 
 export function Sidebar() {
   const pathname = usePathname()
+  const { timeRange, setTimeRange, selectedDate } = useDate()
 
   return (
     <aside className="fixed left-0 top-0 z-40 h-screen w-64 border-r border-sidebar-border bg-sidebar">
@@ -62,6 +71,11 @@ export function Sidebar() {
             </div>
             <span className="text-lg font-bold text-sidebar-foreground">CloudCosts</span>
           </div>
+        </div>
+
+        {/* Date Selector */}
+        <div className="border-b border-sidebar-border px-4 py-3">
+          <TimeRangePicker value={timeRange} onChange={setTimeRange} />
         </div>
 
         {/* Navigation */}

@@ -12,7 +12,8 @@ import {
   LineChart,
   Badge,
 } from "laminar-ui"
-import { TimeRangePicker, MockBadge, type DateRange } from "@/components/shared"
+import { MockBadge, DateBanner } from "@/components/shared"
+import { useDate } from "@/components/providers"
 import { Activity, AlertTriangle, CheckCircle, ArrowLeft, Building2, Server, ChevronRight } from "lucide-react"
 
 // ============================================
@@ -386,7 +387,7 @@ const podColumns = [
 // ============================================
 
 export default function E6ClustersPage() {
-  const [timeRange, setTimeRange] = useState<DateRange | undefined>()
+  const { selectedDate } = useDate()
   const [selectedCustomer, setSelectedCustomer] = useState<string | null>(null)
   const [selectedCluster, setSelectedCluster] = useState<E6Cluster | null>(null)
 
@@ -413,16 +414,15 @@ export default function E6ClustersPage() {
   if (!selectedCustomer) {
     return (
       <div className="space-y-6">
+        <DateBanner />
+
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold">E6 Clusters</h1>
             <p className="text-muted-foreground">Select a customer to view their E6 clusters</p>
           </div>
-          <div className="flex items-center gap-3">
-            <MockBadge />
-            <TimeRangePicker value={timeRange} onChange={setTimeRange} />
-          </div>
+          <MockBadge />
         </div>
 
         {/* Overview */}
@@ -501,6 +501,8 @@ export default function E6ClustersPage() {
 
     return (
       <div className="space-y-6">
+        <DateBanner />
+
         {/* Header with back button */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
@@ -515,10 +517,7 @@ export default function E6ClustersPage() {
               <p className="text-muted-foreground">Select a cluster to view details</p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            <MockBadge />
-            <TimeRangePicker value={timeRange} onChange={setTimeRange} />
-          </div>
+          <MockBadge />
         </div>
 
         {/* Cluster Cards */}
@@ -590,6 +589,8 @@ export default function E6ClustersPage() {
 
   return (
     <div className="space-y-6">
+      <DateBanner />
+
       {/* Header with breadcrumb */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
@@ -628,12 +629,9 @@ export default function E6ClustersPage() {
             {selectedCluster.status.charAt(0).toUpperCase() + selectedCluster.status.slice(1)}
           </Badge>
         </div>
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Activity className="h-4 w-4" />
-            <span>Live</span>
-          </div>
-          <TimeRangePicker value={timeRange} onChange={setTimeRange} />
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Activity className="h-4 w-4" />
+          <span>Live</span>
         </div>
       </div>
 

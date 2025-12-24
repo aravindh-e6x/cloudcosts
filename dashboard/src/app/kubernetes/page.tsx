@@ -1,7 +1,6 @@
 "use client"
 
-import { useState, useMemo, useEffect, Suspense } from "react"
-import { useRouter, useSearchParams } from "next/navigation"
+import { useMemo, Suspense } from "react"
 import { groupBy, sumBy, maxBy } from "lodash-es"
 import Link from "next/link"
 import {
@@ -13,7 +12,8 @@ import {
   Badge,
   Skeleton,
 } from "laminar-ui"
-import { InfoPopover, TimeRangePicker, type DateRange } from "@/components/shared"
+import { InfoPopover, DateBanner } from "@/components/shared"
+import { useDate } from "@/components/providers"
 import { useQuery, formatBytes, formatCurrency } from "@/hooks/useQuery"
 import { kubernetesQueries } from "@/lib/queries"
 import { Server, Cpu, HardDrive, Box, Layers, DollarSign, ArrowRight } from "lucide-react"
@@ -26,7 +26,7 @@ interface ClusterBasic {
 interface ClusterStats {
   pod_count: number
   namespace_count: number
-  hourly_cost: number
+  total_cost: number
   cpu_allocated: number
   memory_allocated: number
 }
@@ -52,18 +52,17 @@ function ClusterCardSkeleton() {
   )
 }
 
-function ClusterCard({ cluster, selectedDate }: { cluster: ClusterBasic; selectedDate: string }) {
+function ClusterCard({ cluster, selectedDate, startTimestamp, endTimestamp }: { cluster: ClusterBasic; selectedDate: string; startTimestamp: string; endTimestamp: string }) {
   // Fetch additional stats for this cluster
   const { data: statsData } = useQuery<ClusterStats>(
     "kubernetes",
-    kubernetesQueries.clusterStats(cluster.cluster, selectedDate),
+    kubernetesQueries.clusterStats(cluster.cluster, startTimestamp, endTimestamp),
     { refetchInterval: 300000 }
   )
 
   const stats = statsData?.[0]
-  const hourly = stats?.hourly_cost || 0
-  const dailyCost = hourly * 24
-  const monthlyCost = dailyCost * 30
+  const totalCost = stats?.total_cost || 0
+  const monthlyCost = totalCost * 30
 
   return (
     <Link href={`/kubernetes/${encodeURIComponent(cluster.cluster)}?date=${selectedDate}`}>
@@ -121,20 +120,16 @@ function ClusterCard({ cluster, selectedDate }: { cluster: ClusterBasic; selecte
             <div className="space-y-1">
               <div className="flex items-center gap-1 text-xs text-muted-foreground">
                 <DollarSign className="h-3 w-3" />
-                Cost/hr
+                Total Cost
               </div>
-              <p className="text-lg font-semibold">{formatCurrency(hourly, 2)}</p>
+              <p className="text-lg font-semibold">{formatCurrency(totalCost, 2)}</p>
             </div>
           </div>
 
           {/* Cost Estimates */}
           <div className="pt-2 border-t flex items-center justify-between text-sm">
             <div>
-              <span className="text-muted-foreground">Daily: </span>
-              <span className="font-medium">{formatCurrency(dailyCost, 0)}</span>
-            </div>
-            <div>
-              <span className="text-muted-foreground">Monthly: </span>
+              <span className="text-muted-foreground">Est. Monthly: </span>
               <span className="font-medium">{formatCurrency(monthlyCost, 0)}</span>
             </div>
             <Badge variant="outline" className="text-xs">
@@ -148,32 +143,11 @@ function ClusterCard({ cluster, selectedDate }: { cluster: ClusterBasic; selecte
 }
 
 function KubernetesPageContent() {
-  const router = useRouter()
-  const searchParams = useSearchParams()
-  const dateParam = searchParams.get('date')
-
-  const [timeRange, setTimeRange] = useState<DateRange | undefined>(() => {
-    if (dateParam) {
-      const date = new Date(dateParam)
-      return { from: date, to: date }
-    }
-    return { from: new Date(), to: new Date() }
-  })
-
-  const selectedDate = useMemo(() => {
-    return (timeRange?.from || new Date()).toISOString().split('T')[0]
-  }, [timeRange])
-
-  // Update URL when date changes (only if different from current)
-  useEffect(() => {
-    if (dateParam !== selectedDate) {
-      router.replace(`/kubernetes?date=${selectedDate}`, { scroll: false })
-    }
-  }, [selectedDate, dateParam, router])
+  const { selectedDate, startTimestamp, endTimestamp } = useDate()
 
   const { data: rawClusters, loading, error } = useQuery<ClusterBasic>(
     "kubernetes",
-    kubernetesQueries.allClustersSummary(selectedDate),
+    kubernetesQueries.allClustersSummary(startTimestamp, endTimestamp),
     { refetchInterval: 300000 }
   )
 
@@ -190,22 +164,21 @@ function KubernetesPageContent() {
 
   return (
     <div className="space-y-6">
+      <DateBanner />
+
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-start gap-2">
-          <div>
-            <h1 className="text-3xl font-bold">Kubernetes Clusters</h1>
-            <p className="text-muted-foreground">
-              Select a cluster to view detailed metrics and resources
-            </p>
-          </div>
-          <InfoPopover
-            title="Kubernetes Clusters"
-            description="Lists all Kubernetes clusters with their resource metrics for the selected date. Each card shows node count, pod count, namespaces, CPU/memory allocation, and estimated hourly cost based on node pricing."
-            sql={`-- Cluster list query:\n${kubernetesQueries.allClustersSummary(selectedDate)}\n\n-- Per-cluster stats query (example):\n${kubernetesQueries.clusterStats('CLUSTER_NAME', selectedDate)}`}
-          />
+      <div className="flex items-start gap-2">
+        <div>
+          <h1 className="text-3xl font-bold">Kubernetes Clusters</h1>
+          <p className="text-muted-foreground">
+            Select a cluster to view detailed metrics
+          </p>
         </div>
-        <TimeRangePicker value={timeRange} onChange={setTimeRange} />
+        <InfoPopover
+          title="Kubernetes Clusters"
+          description="Lists all Kubernetes clusters with their resource metrics for the selected date. Each card shows node count, pod count, namespaces, CPU/memory allocation, and total cost based on node pricing."
+          sql={`-- Cluster list query:\n${kubernetesQueries.allClustersSummary(startTimestamp, endTimestamp)}\n\n-- Per-cluster stats query (example):\n${kubernetesQueries.clusterStats('CLUSTER_NAME', startTimestamp, endTimestamp)}`}
+        />
       </div>
 
       {/* Cluster Cards */}
@@ -224,7 +197,7 @@ function KubernetesPageContent() {
       ) : clusters && clusters.length > 0 ? (
         <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
           {clusters.map((cluster) => (
-            <ClusterCard key={cluster.cluster} cluster={cluster} selectedDate={selectedDate} />
+            <ClusterCard key={cluster.cluster} cluster={cluster} selectedDate={selectedDate} startTimestamp={startTimestamp} endTimestamp={endTimestamp} />
           ))}
         </div>
       ) : (

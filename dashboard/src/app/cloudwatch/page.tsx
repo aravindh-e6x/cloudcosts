@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useMemo } from "react"
 import { sumBy, orderBy } from "lodash-es"
 import {
   Card,
@@ -16,7 +16,8 @@ import {
   TabsContent,
   Badge,
 } from "laminar-ui"
-import { TimeRangePicker, MockBadge, type DateRange } from "@/components/shared"
+import { MockBadge, DateBanner } from "@/components/shared"
+import { useDate } from "@/components/providers"
 import { Activity, Server, Database, HardDrive, Radio } from "lucide-react"
 
 // Mock EC2 data
@@ -122,7 +123,7 @@ const mskColumns = [
 ]
 
 export default function CloudWatchPage() {
-  const [timeRange, setTimeRange] = useState<DateRange | undefined>()
+  const { selectedDate } = useDate()
 
   const totalEC2Cost = sumBy(mockEC2Instances, 'cost_daily')
   const totalRDSCost = sumBy(mockRDSInstances, 'cost_daily')
@@ -142,6 +143,8 @@ export default function CloudWatchPage() {
 
   return (
     <div className="space-y-6">
+      <DateBanner />
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
@@ -158,7 +161,6 @@ export default function CloudWatchPage() {
             <Activity className="h-4 w-4" />
             <span>1h polling</span>
           </div>
-          <TimeRangePicker value={timeRange} onChange={setTimeRange} />
         </div>
       </div>
 

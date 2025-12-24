@@ -1,8 +1,7 @@
 "use client"
 
-import { useState, useMemo, use, useEffect, Suspense } from "react"
+import { useState, useMemo, use, Suspense } from "react"
 import Link from "next/link"
-import { useRouter, useSearchParams } from "next/navigation"
 import { groupBy, sumBy, uniq, orderBy, takeRight } from "lodash-es"
 import {
   Card,
@@ -26,15 +25,15 @@ import {
   Button,
 } from "laminar-ui"
 import {
-  TimeRangePicker,
   NamespaceSelector,
-  MockBadge,
+  InfoPopover,
   TableSkeleton,
   ChartSkeleton,
   QueryError,
   EmptyState,
-  type DateRange,
+  DateBanner,
 } from "@/components/shared"
+import { useDate } from "@/components/providers"
 import { useQuery, formatBytes, formatCpu, formatCurrency, formatTime } from "@/hooks/useQuery"
 import { kubernetesQueries } from "@/lib/queries"
 import { CHART_COLORS } from "@/lib/utils"
@@ -47,46 +46,25 @@ interface ClusterPageProps {
 function ClusterDetailContent({ cluster }: { cluster: string }) {
   const selectedCluster = decodeURIComponent(cluster)
 
-  const router = useRouter()
-  const searchParams = useSearchParams()
-  const dateParam = searchParams.get('date')
-
-  const [timeRange, setTimeRange] = useState<DateRange | undefined>(() => {
-    if (dateParam) {
-      const date = new Date(dateParam)
-      return { from: date, to: date }
-    }
-    return { from: new Date(), to: new Date() }
-  })
+  const { selectedDate, startTimestamp, endTimestamp } = useDate()
   const [selectedNamespace, setSelectedNamespace] = useState<string>("all")
 
-  const selectedDate = useMemo(() => {
-    return (timeRange?.from || new Date()).toISOString().split('T')[0]
-  }, [timeRange])
+  // Fetch data with loading and error states - all queries filtered by local timezone day
+  const { data: namespaces } = useQuery("kubernetes", kubernetesQueries.namespaces(selectedCluster, startTimestamp, endTimestamp), { refetchInterval: 60000 })
+  const { data: pods, loading: podsLoading, error: podsError, refetch: refetchPods } = useQuery("kubernetes", kubernetesQueries.pods(selectedCluster, startTimestamp, endTimestamp, selectedNamespace), { refetchInterval: 30000 })
+  const { data: nodes, loading: nodesLoading, error: nodesError, refetch: refetchNodes } = useQuery("kubernetes", kubernetesQueries.nodes(selectedCluster, startTimestamp, endTimestamp), { refetchInterval: 30000 })
+  const { data: summary } = useQuery("kubernetes", kubernetesQueries.clusterSummary(selectedCluster, startTimestamp, endTimestamp), { refetchInterval: 30000 })
+  const { data: namespaceCosts } = useQuery("kubernetes", kubernetesQueries.costByNamespace(selectedCluster, startTimestamp, endTimestamp), { refetchInterval: 60000 })
+  const { data: cpuTimeSeries, loading: cpuLoading } = useQuery("kubernetes", kubernetesQueries.podCpuTimeSeries(selectedCluster, startTimestamp, endTimestamp, selectedNamespace), { refetchInterval: 60000 })
+  const { data: memoryTimeSeries, loading: memoryLoading } = useQuery("kubernetes", kubernetesQueries.podMemoryTimeSeries(selectedCluster, startTimestamp, endTimestamp, selectedNamespace), { refetchInterval: 60000 })
+  const { data: nodeCpuTimeSeries, loading: nodeCpuLoading } = useQuery("kubernetes", kubernetesQueries.nodeCpuTimeSeries(selectedCluster, startTimestamp, endTimestamp), { refetchInterval: 60000 })
 
-  // Update URL when date changes (only if different from current)
-  useEffect(() => {
-    if (dateParam !== selectedDate) {
-      router.replace(`/kubernetes/${encodeURIComponent(selectedCluster)}?date=${selectedDate}`, { scroll: false })
-    }
-  }, [selectedDate, dateParam, router, selectedCluster])
-
-  // Fetch data with loading and error states
-  const { data: namespaces } = useQuery("kubernetes", kubernetesQueries.namespaces(selectedCluster), { refetchInterval: 60000 })
-  const { data: pods, loading: podsLoading, error: podsError, refetch: refetchPods } = useQuery("kubernetes", kubernetesQueries.pods(selectedCluster, selectedNamespace), { refetchInterval: 30000 })
-  const { data: nodes, loading: nodesLoading, error: nodesError, refetch: refetchNodes } = useQuery("kubernetes", kubernetesQueries.nodes(selectedCluster), { refetchInterval: 30000 })
-  const { data: summary } = useQuery("kubernetes", kubernetesQueries.clusterSummary(selectedCluster), { refetchInterval: 30000 })
-  const { data: namespaceCosts } = useQuery("kubernetes", kubernetesQueries.costByNamespace(selectedCluster), { refetchInterval: 60000 })
-  const { data: cpuTimeSeries, loading: cpuLoading } = useQuery("kubernetes", kubernetesQueries.podCpuTimeSeries(selectedCluster, selectedNamespace, "1 hour"), { refetchInterval: 60000 })
-  const { data: memoryTimeSeries, loading: memoryLoading } = useQuery("kubernetes", kubernetesQueries.podMemoryTimeSeries(selectedCluster, selectedNamespace, "1 hour"), { refetchInterval: 60000 })
-  const { data: nodeCpuTimeSeries, loading: nodeCpuLoading } = useQuery("kubernetes", kubernetesQueries.nodeCpuTimeSeries(selectedCluster, "1 hour"), { refetchInterval: 60000 })
-
-  // New queries for enhanced visualizations
-  const { data: cpuByNsTimeSeries } = useQuery("kubernetes", kubernetesQueries.cpuByNamespaceTimeSeries(selectedCluster, "1 hour"), { refetchInterval: 60000 })
-  const { data: memByNsTimeSeries } = useQuery("kubernetes", kubernetesQueries.memoryByNamespaceTimeSeries(selectedCluster, "1 hour"), { refetchInterval: 60000 })
-  const { data: capacityTypes } = useQuery("kubernetes", kubernetesQueries.nodeCapacityTypes(selectedCluster), { refetchInterval: 60000 })
-  const { data: nsEfficiency } = useQuery("kubernetes", kubernetesQueries.namespaceEfficiency(selectedCluster), { refetchInterval: 60000 })
-  const { data: nodeAllocatable } = useQuery("kubernetes", kubernetesQueries.nodeAllocatable(selectedCluster), { refetchInterval: 60000 })
+  // Enhanced visualization queries - all filtered by local timezone day
+  const { data: cpuByNsTimeSeries } = useQuery("kubernetes", kubernetesQueries.cpuByNamespaceTimeSeries(selectedCluster, startTimestamp, endTimestamp), { refetchInterval: 60000 })
+  const { data: memByNsTimeSeries } = useQuery("kubernetes", kubernetesQueries.memoryByNamespaceTimeSeries(selectedCluster, startTimestamp, endTimestamp), { refetchInterval: 60000 })
+  const { data: capacityTypes } = useQuery("kubernetes", kubernetesQueries.nodeCapacityTypes(selectedCluster, startTimestamp, endTimestamp), { refetchInterval: 60000 })
+  const { data: nsEfficiency } = useQuery("kubernetes", kubernetesQueries.namespaceEfficiency(selectedCluster, startTimestamp, endTimestamp), { refetchInterval: 60000 })
+  const { data: nodeAllocatable } = useQuery("kubernetes", kubernetesQueries.nodeAllocatable(selectedCluster, startTimestamp, endTimestamp), { refetchInterval: 60000 })
 
   const namespaceList = useMemo(() => namespaces?.map((n: Record<string, unknown>) => n.namespace as string) || [], [namespaces])
 
@@ -123,8 +101,8 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
   }, [filteredPods])
 
   // Sorted data with lodash
-  const sortedNamespaceCosts = useMemo(() => orderBy(namespaceCosts || [], ['estimated_cost_hourly'], ['desc']), [namespaceCosts])
-  const sortedNodesByCost = useMemo(() => orderBy(filteredNodes, ['cost_hourly'], ['desc']), [filteredNodes])
+  const sortedNamespaceCosts = useMemo(() => orderBy(namespaceCosts || [], ['total_cost'], ['desc']), [namespaceCosts])
+  const sortedNodesByCost = useMemo(() => orderBy(filteredNodes, ['total_cost'], ['desc']), [filteredNodes])
 
   // Health check
   const clusterHealth = clusterUtilization.cpu > 90 || clusterUtilization.memory > 90 ? 'critical' : clusterUtilization.cpu > 75 || clusterUtilization.memory > 75 ? 'warning' : 'healthy'
@@ -146,7 +124,7 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
   const costDonutData = useMemo(() => {
     return (sortedNamespaceCosts.slice(0, 8) as Record<string, unknown>[]).map((n, i) => ({
       name: String(n.namespace),
-      value: Number(n.estimated_cost_hourly) || 0,
+      value: Number(n.total_cost) || 0,
       color: CHART_COLORS[i % CHART_COLORS.length],
     }))
   }, [sortedNamespaceCosts])
@@ -155,7 +133,7 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
   const topNamespacesBarData = useMemo(() => {
     return (sortedNamespaceCosts.slice(0, 10) as Record<string, unknown>[]).map(n => ({
       namespace: String(n.namespace).slice(0, 15),
-      cost: Number(n.estimated_cost_hourly) || 0,
+      cost: Number(n.total_cost) || 0,
     }))
   }, [sortedNamespaceCosts])
 
@@ -213,15 +191,17 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
     { key: "mem_capacity", header: "Mem Cap", sortable: true, render: (value: unknown) => formatBytes(Number(value)) },
     { key: "mem_used", header: "Mem Used", sortable: true, render: (value: unknown) => formatBytes(Number(value)) },
     { key: "pods", header: "Pods", sortable: true },
-    { key: "cost_hourly", header: "Cost/hr", sortable: true, render: (value: unknown) => formatCurrency(Number(value), 3) },
+    { key: "total_cost", header: "Total Cost", sortable: true, render: (value: unknown) => formatCurrency(Number(value), 2) },
   ]
 
   return (
     <div className="space-y-6">
+      <DateBanner />
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Link href={`/kubernetes?date=${selectedDate}`}>
+          <Link href="/kubernetes">
             <Button variant="ghost" size="sm" className="gap-2">
               <ArrowLeft className="h-4 w-4" />
               All Clusters
@@ -242,7 +222,6 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
           </Badge>
         </div>
         <div className="flex items-center gap-4">
-          <MockBadge />
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Activity className="h-4 w-4" />
             <span>30s refresh</span>
@@ -252,14 +231,19 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
             value={selectedNamespace}
             onChange={setSelectedNamespace}
           />
-          <TimeRangePicker value={timeRange} onChange={setTimeRange} />
         </div>
       </div>
 
       {/* KPI Gauges */}
       <div className="grid grid-cols-2 gap-6 md:grid-cols-4">
         <Card className="relative">
-          <MockBadge className="absolute top-2 right-2" />
+          <div className="absolute top-2 right-2">
+            <InfoPopover
+              title="CPU Utilization"
+              description="Percentage of CPU used vs allocated across all pods. Calculated from container_cpu_usage_seconds_total / container_cpu_allocation. Red indicates >80%, yellow >60%."
+              sql={kubernetesQueries.pods(selectedCluster, startTimestamp, endTimestamp, selectedNamespace)}
+            />
+          </div>
           <CardContent className="pt-6 flex flex-col items-center">
             <CircularProgress
               value={clusterUtilization.cpu}
@@ -273,7 +257,13 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
         </Card>
 
         <Card className="relative">
-          <MockBadge className="absolute top-2 right-2" />
+          <div className="absolute top-2 right-2">
+            <InfoPopover
+              title="Memory Utilization"
+              description="Percentage of memory used vs allocated across all pods. Calculated from container_memory_working_set_bytes / container_memory_allocation_bytes. Red indicates >80%, yellow >60%."
+              sql={kubernetesQueries.pods(selectedCluster, startTimestamp, endTimestamp, selectedNamespace)}
+            />
+          </div>
           <CardContent className="pt-6 flex flex-col items-center">
             <CircularProgress
               value={clusterUtilization.memory}
@@ -287,25 +277,39 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
         </Card>
 
         <Card className="relative">
-          <MockBadge className="absolute top-2 right-2" />
-          <CardContent className="pt-6 flex flex-col items-center">
-            <CircularProgress
-              value={podCapacity.percent}
-              size={100}
-              strokeWidth={8}
-              showValue={false}
-              className={podCapacity.percent > 80 ? 'text-red-500' : podCapacity.percent > 60 ? 'text-yellow-500' : 'text-primary'}
+          <div className="absolute top-2 right-2">
+            <InfoPopover
+              title="Pod Capacity"
+              description="Running pods vs total allocatable pod capacity across all nodes. Shows how close the cluster is to its pod scheduling limit."
+              sql={kubernetesQueries.nodeAllocatable(selectedCluster, startTimestamp, endTimestamp)}
             />
-            <div className="absolute inset-0 flex flex-col items-center justify-center pt-6">
-              <span className="text-lg font-bold">{podCapacity.used}</span>
-              <span className="text-[10px] text-muted-foreground">/{podCapacity.total}</span>
+          </div>
+          <CardContent className="pt-6 flex flex-col items-center">
+            <div className="relative">
+              <CircularProgress
+                value={podCapacity.percent}
+                size={100}
+                strokeWidth={8}
+                showValue={false}
+                className={podCapacity.percent > 80 ? 'text-red-500' : podCapacity.percent > 60 ? 'text-yellow-500' : 'text-primary'}
+              />
+              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <span className="text-lg font-bold">{podCapacity.used}</span>
+                <span className="text-[10px] text-muted-foreground">/{podCapacity.total}</span>
+              </div>
             </div>
             <p className="text-xs text-muted-foreground mt-2">Pod Capacity</p>
           </CardContent>
         </Card>
 
         <Card className="relative">
-          <MockBadge className="absolute top-2 right-2" />
+          <div className="absolute top-2 right-2">
+            <InfoPopover
+              title="Resource Efficiency"
+              description="Average efficiency score across namespaces. Measures how much of the allocated CPU is actually being used. Higher is better - low values indicate over-provisioning."
+              sql={kubernetesQueries.namespaceEfficiency(selectedCluster, startTimestamp, endTimestamp)}
+            />
+          </div>
           <CardContent className="pt-6 flex flex-col items-center">
             <CircularProgress
               value={avgEfficiency}
@@ -320,23 +324,17 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
       </div>
 
       {/* Cost Summary Row */}
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
         <Card className="bg-muted/50">
           <CardContent className="py-4">
-            <p className="text-sm text-muted-foreground">Hourly Cost</p>
-            <p className="text-2xl font-bold">{formatCurrency(summaryData?.cluster_hourly_cost || 0, 2)}</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-muted/50">
-          <CardContent className="py-4">
-            <p className="text-sm text-muted-foreground">Daily Estimate</p>
-            <p className="text-2xl font-bold">{formatCurrency((summaryData?.cluster_hourly_cost || 0) * 24, 0)}</p>
+            <p className="text-sm text-muted-foreground">Total Cost ({selectedDate})</p>
+            <p className="text-2xl font-bold">{formatCurrency(summaryData?.total_cost || 0, 2)}</p>
           </CardContent>
         </Card>
         <Card className="bg-muted/50">
           <CardContent className="py-4">
             <p className="text-sm text-muted-foreground">Monthly Estimate</p>
-            <p className="text-2xl font-bold">{formatCurrency((summaryData?.cluster_hourly_cost || 0) * 24 * 30, 0)}</p>
+            <p className="text-2xl font-bold">{formatCurrency((summaryData?.total_cost || 0) * 30, 0)}</p>
           </CardContent>
         </Card>
         <Card className="bg-muted/50">
@@ -350,11 +348,17 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
       {/* Cost Distribution Charts */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Cost by Namespace Donut */}
-        <Card className="relative">
-          <MockBadge className="absolute top-2 right-2" />
+        <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Cost by Namespace</CardTitle>
-            <CardDescription>Top 8 namespaces by hourly cost</CardDescription>
+            <div className="flex items-center gap-2">
+              <CardTitle className="text-base">Cost by Namespace</CardTitle>
+              <InfoPopover
+                title="Cost by Namespace"
+                description="Donut chart showing the top 8 namespaces by estimated total cost for the selected date. Cost is calculated based on CPU allocation ($0.03/core-hour) and memory allocation ($0.004/GB-hour)."
+                sql={kubernetesQueries.costByNamespace(selectedCluster, startTimestamp, endTimestamp)}
+              />
+            </div>
+            <CardDescription>Top 8 namespaces by total cost</CardDescription>
           </CardHeader>
           <CardContent>
             {costDonutData.length > 0 ? (
@@ -374,18 +378,24 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
         </Card>
 
         {/* Top Namespaces Bar Chart */}
-        <Card className="relative">
-          <MockBadge className="absolute top-2 right-2" />
+        <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Top Namespaces</CardTitle>
-            <CardDescription>Hourly cost ranking</CardDescription>
+            <div className="flex items-center gap-2">
+              <CardTitle className="text-base">Top Namespaces</CardTitle>
+              <InfoPopover
+                title="Top Namespaces by Cost"
+                description="Horizontal bar chart ranking the top 10 namespaces by estimated total cost for the selected date. Useful for identifying which workloads are consuming the most resources."
+                sql={kubernetesQueries.costByNamespace(selectedCluster, startTimestamp, endTimestamp)}
+              />
+            </div>
+            <CardDescription>Cost ranking for {selectedDate}</CardDescription>
           </CardHeader>
           <CardContent>
             {topNamespacesBarData.length > 0 ? (
               <BarChart
                 data={topNamespacesBarData}
                 xAxisKey="namespace"
-                bars={[{ dataKey: "cost", name: "Cost/hr", color: CHART_COLORS[0] }]}
+                bars={[{ dataKey: "cost", name: "Total Cost", color: CHART_COLORS[0] }]}
                 height={220}
                 layout="vertical"
                 yAxisFormatter={(value) => `$${value.toFixed(2)}`}
@@ -400,10 +410,16 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
         </Card>
 
         {/* Capacity Types Pie */}
-        <Card className="relative">
-          <MockBadge className="absolute top-2 right-2" />
+        <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Node Capacity Types</CardTitle>
+            <div className="flex items-center gap-2">
+              <CardTitle className="text-base">Node Capacity Types</CardTitle>
+              <InfoPopover
+                title="Node Capacity Types"
+                description="Breakdown of node costs by capacity type (Spot vs On-Demand). Shows total cost for the selected date by capacity type from EKS node labels."
+                sql={kubernetesQueries.nodeCapacityTypes(selectedCluster, startTimestamp, endTimestamp)}
+              />
+            </div>
             <CardDescription>Spot vs On-Demand cost</CardDescription>
           </CardHeader>
           <CardContent>
@@ -426,11 +442,17 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
       {/* Resource Usage Over Time */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* CPU by Namespace Stacked Area */}
-        <Card className="relative">
-          <MockBadge className="absolute top-2 right-2" />
+        <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">CPU Usage by Namespace</CardTitle>
-            <CardDescription>Stacked CPU consumption over time (last hour)</CardDescription>
+            <div className="flex items-center gap-2">
+              <CardTitle className="text-base">CPU Usage by Namespace</CardTitle>
+              <InfoPopover
+                title="CPU Usage by Namespace"
+                description="Stacked area chart showing CPU consumption for the selected date, broken down by namespace. Helps identify which namespaces are consuming the most CPU over time."
+                sql={kubernetesQueries.cpuByNamespaceTimeSeries(selectedCluster, startTimestamp, endTimestamp)}
+              />
+            </div>
+            <CardDescription>Stacked CPU consumption over time (selected date)</CardDescription>
           </CardHeader>
           <CardContent>
             {cpuAreaData.length > 0 && cpuAreaNamespaces.length > 0 ? (
@@ -454,10 +476,16 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
         </Card>
 
         {/* Resource Efficiency Stacked Bar */}
-        <Card className="relative">
-          <MockBadge className="absolute top-2 right-2" />
+        <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Resource Efficiency</CardTitle>
+            <div className="flex items-center gap-2">
+              <CardTitle className="text-base">Resource Efficiency</CardTitle>
+              <InfoPopover
+                title="Resource Efficiency"
+                description="Stacked bar chart showing CPU requests vs actual usage per namespace. The 'unused' portion represents over-provisioned resources that could be reclaimed."
+                sql={kubernetesQueries.namespaceEfficiency(selectedCluster, startTimestamp, endTimestamp)}
+              />
+            </div>
             <CardDescription>CPU used vs unused per namespace</CardDescription>
           </CardHeader>
           <CardContent>
@@ -482,43 +510,37 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
 
       {/* Quick Stats Row */}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4 lg:grid-cols-6">
-        <Card className="bg-muted/50 relative">
-          <MockBadge className="absolute top-1 right-1" />
+        <Card className="bg-muted/50">
           <CardContent className="py-3 flex items-center justify-between">
             <span className="text-sm">Nodes</span>
             <span className="font-mono font-semibold">{summaryData?.node_count || filteredNodes.length}</span>
           </CardContent>
         </Card>
-        <Card className="bg-muted/50 relative">
-          <MockBadge className="absolute top-1 right-1" />
+        <Card className="bg-muted/50">
           <CardContent className="py-3 flex items-center justify-between">
             <span className="text-sm">CPU Cores</span>
             <span className="font-mono font-semibold">{summaryData?.total_cpu_alloc?.toFixed(1) || 0}</span>
           </CardContent>
         </Card>
-        <Card className="bg-muted/50 relative">
-          <MockBadge className="absolute top-1 right-1" />
+        <Card className="bg-muted/50">
           <CardContent className="py-3 flex items-center justify-between">
             <span className="text-sm">Memory</span>
             <span className="font-mono font-semibold">{(summaryData?.total_mem_alloc ? summaryData.total_mem_alloc / (1024 * 1024 * 1024) : 0).toFixed(0)}Gi</span>
           </CardContent>
         </Card>
-        <Card className="bg-muted/50 relative">
-          <MockBadge className="absolute top-1 right-1" />
+        <Card className="bg-muted/50">
           <CardContent className="py-3 flex items-center justify-between">
             <span className="text-sm">Namespaces</span>
             <span className="font-mono font-semibold">{namespaceList.length}</span>
           </CardContent>
         </Card>
-        <Card className="bg-muted/50 relative">
-          <MockBadge className="absolute top-1 right-1" />
+        <Card className="bg-muted/50">
           <CardContent className="py-3 flex items-center justify-between">
-            <span className="text-sm">NS Cost/hr</span>
-            <span className="font-mono font-semibold">{formatCurrency(sumBy(namespaceCosts?.filter(n => selectedNamespace === 'all' || n.namespace === selectedNamespace) || [], r => Number(r.estimated_cost_hourly) || 0), 2)}</span>
+            <span className="text-sm">NS Cost</span>
+            <span className="font-mono font-semibold">{formatCurrency(sumBy(namespaceCosts?.filter(n => selectedNamespace === 'all' || n.namespace === selectedNamespace) || [], r => Number(r.total_cost) || 0), 2)}</span>
           </CardContent>
         </Card>
-        <Card className="bg-muted/50 relative">
-          <MockBadge className="absolute top-1 right-1" />
+        <Card className="bg-muted/50">
           <CardContent className="py-3 flex items-center justify-between">
             <span className="text-sm">Cluster</span>
             <span className="font-mono font-semibold text-xs">{selectedCluster.split('-').slice(-1)[0] || '-'}</span>
@@ -535,10 +557,16 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
 
         <TabsContent value="pods" className="space-y-6 mt-4">
           {/* Pod Table */}
-          <Card className="relative">
-            <MockBadge className="absolute top-2 right-2" />
+          <Card>
             <CardHeader>
-              <CardTitle>Pod Resources</CardTitle>
+              <div className="flex items-center gap-2">
+                <CardTitle>Pod Resources</CardTitle>
+                <InfoPopover
+                  title="Pod Resources"
+                  description="Lists all pods with their CPU and memory allocation vs actual usage. Data is aggregated from container_cpu_allocation, container_memory_allocation_bytes, container_cpu_usage_seconds_total, and container_memory_working_set_bytes."
+                  sql={kubernetesQueries.pods(selectedCluster, startTimestamp, endTimestamp, selectedNamespace)}
+                />
+              </div>
               <CardDescription>
                 Resource allocation and usage for pods in {selectedNamespace === "all" ? "all namespaces" : selectedNamespace}
               </CardDescription>
@@ -558,11 +586,17 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
 
           {/* Pod Time Series Charts */}
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            <Card className="relative">
-              <MockBadge className="absolute top-2 right-2" />
+            <Card>
               <CardHeader>
-                <CardTitle>Pod CPU Usage</CardTitle>
-                <CardDescription>CPU usage over time (last hour)</CardDescription>
+                <div className="flex items-center gap-2">
+                  <CardTitle>Pod CPU Usage</CardTitle>
+                  <InfoPopover
+                    title="Pod CPU Usage"
+                    description="Line chart showing CPU usage for the selected date for the top 5 pods. Data is sampled per hour from container_cpu_usage_seconds_total."
+                    sql={kubernetesQueries.podCpuTimeSeries(selectedCluster, startTimestamp, endTimestamp, selectedNamespace)}
+                  />
+                </div>
+                <CardDescription>CPU usage over time (selected date)</CardDescription>
               </CardHeader>
               <CardContent>
                 {cpuLoading ? (
@@ -585,11 +619,17 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
               </CardContent>
             </Card>
 
-            <Card className="relative">
-              <MockBadge className="absolute top-2 right-2" />
+            <Card>
               <CardHeader>
-                <CardTitle>Pod Memory Usage</CardTitle>
-                <CardDescription>Memory usage in MB over time (last hour)</CardDescription>
+                <div className="flex items-center gap-2">
+                  <CardTitle>Pod Memory Usage</CardTitle>
+                  <InfoPopover
+                    title="Pod Memory Usage"
+                    description="Line chart showing memory usage (working set) for the selected date for the top 5 pods. Values are converted to MB for readability."
+                    sql={kubernetesQueries.podMemoryTimeSeries(selectedCluster, startTimestamp, endTimestamp, selectedNamespace)}
+                  />
+                </div>
+                <CardDescription>Memory usage in MB over time (selected date)</CardDescription>
               </CardHeader>
               <CardContent>
                 {memoryLoading ? (
@@ -615,11 +655,17 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
           </div>
 
           {/* Cost Breakdown */}
-          <Card className="relative">
-            <MockBadge className="absolute top-2 right-2" />
+          <Card>
             <CardHeader>
-              <CardTitle>Cost by Namespace</CardTitle>
-              <CardDescription>Estimated hourly cost by namespace (high to low)</CardDescription>
+              <div className="flex items-center gap-2">
+                <CardTitle>Cost by Namespace</CardTitle>
+                <InfoPopover
+                  title="Cost by Namespace"
+                  description="Table showing estimated total cost per namespace for the selected date, based on CPU ($0.03/core-hour) and memory ($0.004/GB-hour) allocation. Sorted by highest cost first."
+                  sql={kubernetesQueries.costByNamespace(selectedCluster, startTimestamp, endTimestamp)}
+                />
+              </div>
+              <CardDescription>Total cost by namespace for {selectedDate}</CardDescription>
             </CardHeader>
             <CardContent>
               {sortedNamespaceCosts.length > 0 ? (
@@ -628,13 +674,13 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
                     namespace: n.namespace,
                     total_cpu: n.total_cpu,
                     total_mem: n.total_mem,
-                    estimated_cost_hourly: n.estimated_cost_hourly || 0,
+                    total_cost: n.total_cost || 0,
                   }))}
                   columns={[
                     { key: "namespace", header: "Namespace", sortable: true },
                     { key: "total_cpu", header: "CPU", sortable: true, render: (value: unknown) => formatCpu(Number(value) * 1000) },
                     { key: "total_mem", header: "Memory", sortable: true, render: (value: unknown) => formatBytes(Number(value)) },
-                    { key: "estimated_cost_hourly", header: "Cost/hr", sortable: true, render: (value: unknown) => formatCurrency(Number(value), 3) },
+                    { key: "total_cost", header: "Total Cost", sortable: true, render: (value: unknown) => formatCurrency(Number(value), 2) },
                   ]}
                   hoverable
                   striped
@@ -650,10 +696,16 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
 
         <TabsContent value="nodes" className="space-y-6 mt-4">
           {/* Node Table */}
-          <Card className="relative">
-            <MockBadge className="absolute top-2 right-2" />
+          <Card>
             <CardHeader>
-              <CardTitle>Node Resources</CardTitle>
+              <div className="flex items-center gap-2">
+                <CardTitle>Node Resources</CardTitle>
+                <InfoPopover
+                  title="Node Resources"
+                  description="Lists all cluster nodes with instance type, region, CPU/memory capacity, memory used, pod count, and total cost for the selected date. Data is from kube_node_info, node_total_hourly_cost, and kube_node_status_capacity."
+                  sql={kubernetesQueries.nodes(selectedCluster, startTimestamp, endTimestamp)}
+                />
+              </div>
               <CardDescription>
                 Resource capacity and usage for cluster nodes
               </CardDescription>
@@ -672,11 +724,17 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
           </Card>
 
           {/* Node CPU Time Series */}
-          <Card className="relative">
-            <MockBadge className="absolute top-2 right-2" />
+          <Card>
             <CardHeader>
-              <CardTitle>Node CPU Usage</CardTitle>
-              <CardDescription>CPU seconds per node (last hour)</CardDescription>
+              <div className="flex items-center gap-2">
+                <CardTitle>Node CPU Usage</CardTitle>
+                <InfoPopover
+                  title="Node CPU Usage"
+                  description="Line chart showing CPU seconds consumed per node for the selected date. Sampled per hour from node_cpu_seconds_total metric."
+                  sql={kubernetesQueries.nodeCpuTimeSeries(selectedCluster, startTimestamp, endTimestamp)}
+                />
+              </div>
+              <CardDescription>CPU seconds per node (selected date)</CardDescription>
             </CardHeader>
             <CardContent>
               {nodeCpuLoading ? (
@@ -702,8 +760,15 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
           {/* Node Cost Table */}
           <Card>
             <CardHeader>
-              <CardTitle>Node Cost Breakdown</CardTitle>
-              <CardDescription>Hourly cost per node (high to low)</CardDescription>
+              <div className="flex items-center gap-2">
+                <CardTitle>Node Cost Breakdown</CardTitle>
+                <InfoPopover
+                  title="Node Cost Breakdown"
+                  description="Table showing total cost per node for the selected date from node_total_hourly_cost metric. Sorted by highest cost first. Includes instance type and pod count for cost attribution."
+                  sql={kubernetesQueries.nodes(selectedCluster, startTimestamp, endTimestamp)}
+                />
+              </div>
+              <CardDescription>Total cost per node for {selectedDate}</CardDescription>
             </CardHeader>
             <CardContent>
               {nodesLoading ? (
@@ -715,7 +780,7 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
                     { key: "name", header: "Node Name", sortable: true },
                     { key: "instance_type", header: "Instance Type", sortable: true },
                     { key: "pods", header: "Pods", sortable: true },
-                    { key: "cost_hourly", header: "Cost/hr", sortable: true, render: (value: unknown) => formatCurrency(Number(value), 3) },
+                    { key: "total_cost", header: "Total Cost", sortable: true, render: (value: unknown) => formatCurrency(Number(value), 2) },
                   ]}
                   hoverable
                   striped

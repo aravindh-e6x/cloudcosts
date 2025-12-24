@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useMemo } from "react"
 import { sumBy } from "lodash-es"
 import {
   Card,
@@ -13,7 +13,6 @@ import {
   Badge,
 } from "laminar-ui"
 import {
-  TimeRangePicker,
   ComparisonCard,
   ChangeBadge,
   InfoPopover,
@@ -22,8 +21,9 @@ import {
   ChartSkeleton,
   QueryError,
   EmptyState,
-  type DateRange,
+  DateBanner,
 } from "@/components/shared"
+import { useDate } from "@/components/providers"
 import { useQuery, formatCurrency, formatDate } from "@/hooks/useQuery"
 import { overviewQueries } from "@/lib/queries"
 
@@ -34,11 +34,7 @@ function ChangeCell({ current, previous }: { current: number; previous: number }
 }
 
 export default function OverviewPage() {
-  const [timeRange, setTimeRange] = useState<DateRange | undefined>(() => ({ from: new Date(), to: new Date() }))
-
-  const selectedDate = useMemo(() => {
-    return (timeRange?.from || new Date()).toISOString().split('T')[0]
-  }, [timeRange])
+  const { timeRange, selectedDate } = useDate()
 
   const dateLabels = useMemo(() => {
     const selected = timeRange?.from || new Date()
@@ -144,16 +140,12 @@ export default function OverviewPage() {
 
   return (
     <div className="space-y-8">
+      <DateBanner />
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">Cloud Cost Report</h1>
-          <p className="text-muted-foreground">
-            {new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <TimeRangePicker value={timeRange} onChange={setTimeRange} />
         </div>
       </div>
 

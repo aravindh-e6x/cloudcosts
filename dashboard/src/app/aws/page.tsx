@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useMemo } from "react"
 import {
   Card,
   CardContent,
@@ -11,11 +11,11 @@ import {
   Badge,
 } from "laminar-ui"
 import {
-  TimeRangePicker,
   ChangeBadge,
   ExpandableSection,
-  type DateRange,
+  DateBanner,
 } from "@/components/shared"
+import { useDate } from "@/components/providers"
 import { useQuery, formatCurrency } from "@/hooks/useQuery"
 import { overviewQueries } from "@/lib/queries"
 
@@ -206,16 +206,7 @@ function ChangeCell({ current, previous }: { current: number; previous: number }
 // ============================================
 
 export default function AWSPage() {
-  const [timeRange, setTimeRange] = useState<DateRange | undefined>(() => {
-    const today = new Date()
-    return { from: today, to: today }
-  })
-
-  // Format selected date for SQL queries (YYYY-MM-DD)
-  const selectedDate = useMemo(() => {
-    if (!timeRange?.from) return new Date().toISOString().split('T')[0]
-    return timeRange.from.toISOString().split('T')[0]
-  }, [timeRange])
+  const { selectedDate, timeRange } = useDate()
 
   // Compute date labels for display
   const dateLabels = useMemo(() => {
@@ -261,6 +252,8 @@ export default function AWSPage() {
 
   return (
     <div className="space-y-8">
+      <DateBanner />
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -268,9 +261,6 @@ export default function AWSPage() {
           <p className="text-muted-foreground">
             Cost breakdown by AWS account with compute/non-compute split
           </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <TimeRangePicker value={timeRange} onChange={setTimeRange} />
         </div>
       </div>
 

@@ -30,7 +30,28 @@ export function TimeRangePicker({ value, onChange }: TimeRangePickerProps) {
     if (!value?.from) return
     const nextDate = new Date(value.from)
     nextDate.setDate(nextDate.getDate() + 1)
+    // Don't allow navigating past today
+    const today = new Date()
+    today.setHours(23, 59, 59, 999)
+    if (nextDate > today) return
     onChange?.({ from: nextDate, to: nextDate })
+  }
+
+  // Disable future dates
+  const disableFutureDates = (date: Date) => {
+    const today = new Date()
+    today.setHours(23, 59, 59, 999)
+    return date > today
+  }
+
+  // Check if next button should be disabled
+  const isNextDisabled = () => {
+    if (!value?.from) return true
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const selected = new Date(value.from)
+    selected.setHours(0, 0, 0, 0)
+    return selected >= today
   }
 
   return (
@@ -40,7 +61,7 @@ export function TimeRangePicker({ value, onChange }: TimeRangePickerProps) {
       </Button>
       <Popover>
         <PopoverTrigger asChild>
-          <Button variant="outline" className="justify-start text-left font-normal">
+          <Button variant="outline" className="h-9 justify-start text-left font-normal">
             <CalendarIcon className="mr-2 h-4 w-4" />
             {value?.from ? format(value.from, "MMM d, yyyy") : "Select date"}
           </Button>
@@ -50,10 +71,11 @@ export function TimeRangePicker({ value, onChange }: TimeRangePickerProps) {
             mode="single"
             selected={value?.from}
             onSelect={handleSelect}
+            disabled={disableFutureDates}
           />
         </PopoverContent>
       </Popover>
-      <Button variant="outline" size="icon" onClick={handleNext} className="h-9 w-9">
+      <Button variant="outline" size="icon" onClick={handleNext} disabled={isNextDisabled()} className="h-9 w-9">
         <ChevronRight className="h-4 w-4" />
       </Button>
     </div>
