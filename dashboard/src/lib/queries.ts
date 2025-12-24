@@ -170,6 +170,106 @@ export const kubernetesQueries = {
       (SELECT SUM(greptime_value) FROM container_memory_allocation_bytes WHERE cluster = '${cluster}' AND greptime_timestamp > NOW() - INTERVAL '5 minutes') as total_mem_alloc,
       (SELECT SUM(greptime_value) FROM node_total_hourly_cost WHERE cluster = '${cluster}' AND greptime_timestamp > NOW() - INTERVAL '1 hour') as cluster_hourly_cost
   `,
+
+  // CPU usage by namespace over time (for stacked area chart)
+  cpuByNamespaceTimeSeries: (cluster: string, interval = '1 hour') => `
+    SELECT DATE_TRUNC('minute', greptime_timestamp) as time,
+           namespace,
+           SUM(greptime_value) as cpu_usage
+    FROM container_cpu_usage_seconds_total
+    WHERE cluster = '${cluster}'
+      AND greptime_timestamp > NOW() - INTERVAL '${interval}'
+    GROUP BY 1, 2
+    ORDER BY time
+  `,
+
+  // Memory usage by namespace over time (for stacked area chart)
+  memoryByNamespaceTimeSeries: (cluster: string, interval = '1 hour') => `
+    SELECT DATE_TRUNC('minute', greptime_timestamp) as time,
+           namespace,
+           SUM(greptime_value) / (1024 * 1024) as memory_mb
+    FROM container_memory_working_set_bytes
+    WHERE cluster = '${cluster}'
+      AND greptime_timestamp > NOW() - INTERVAL '${interval}'
+    GROUP BY 1, 2
+    ORDER BY time
+  `,
+
+  // Node capacity type breakdown (spot vs on-demand)
+  nodeCapacityTypes: (cluster: string) => `
+    SELECT
+      COALESCE(label_eks_amazonaws_com_capacityType, 'on-demand') as capacity_type,
+      COUNT(DISTINCT nl.node) as node_count,
+      SUM(c.greptime_value) as total_cost
+    FROM kube_node_labels nl
+    LEFT JOIN node_total_hourly_cost c
+      ON nl.node = c.node AND nl.cluster = c.cluster
+      AND c.greptime_timestamp > NOW() - INTERVAL '1 hour'
+    WHERE nl.cluster = '${cluster}'
+      AND nl.greptime_timestamp > NOW() - INTERVAL '1 hour'
+    GROUP BY 1
+  `,
+
+  // Resource efficiency by namespace (requests vs actual usage)
+  namespaceEfficiency: (cluster: string) => `
+    WITH requests AS (
+      SELECT namespace, SUM(greptime_value) as cpu_requested
+      FROM container_cpu_allocation
+      WHERE cluster = '${cluster}' AND greptime_timestamp > NOW() - INTERVAL '5 minutes'
+      GROUP BY namespace
+    ),
+    usage AS (
+      SELECT namespace, SUM(greptime_value) as cpu_used
+      FROM container_cpu_usage_seconds_total
+      WHERE cluster = '${cluster}' AND greptime_timestamp > NOW() - INTERVAL '5 minutes'
+      GROUP BY namespace
+    )
+    SELECT r.namespace,
+           COALESCE(u.cpu_used, 0) as cpu_used,
+           GREATEST(r.cpu_requested - COALESCE(u.cpu_used, 0), 0) as cpu_unused,
+           r.cpu_requested as cpu_total,
+           CASE WHEN r.cpu_requested > 0
+                THEN (COALESCE(u.cpu_used, 0) / r.cpu_requested) * 100
+                ELSE 0 END as efficiency_pct
+    FROM requests r
+    LEFT JOIN usage u ON r.namespace = u.namespace
+    ORDER BY r.cpu_requested DESC
+    LIMIT 10
+  `,
+
+  // Pod allocatable capacity per node
+  nodeAllocatable: (cluster: string) => `
+    SELECT node,
+      MAX(CASE WHEN resource = 'pods' THEN greptime_value END) as allocatable_pods
+    FROM kube_node_status_allocatable
+    WHERE cluster = '${cluster}'
+      AND greptime_timestamp > NOW() - INTERVAL '5 minutes'
+    GROUP BY node
+  `,
+
+  // Summary for all clusters (for cluster list page) - simplified query
+  allClustersSummary: (date: string) => `
+    SELECT
+      TRIM(cluster) as cluster,
+      COUNT(DISTINCT node) as node_count
+    FROM kube_node_info
+    WHERE greptime_timestamp >= '${date}'::timestamp
+      AND greptime_timestamp < '${date}'::timestamp + INTERVAL '1 day'
+      AND cluster IS NOT NULL
+      AND TRIM(cluster) != ''
+    GROUP BY TRIM(cluster)
+    ORDER BY cluster
+  `,
+
+  // Get individual cluster stats (called per cluster)
+  clusterStats: (cluster: string, date: string) => `
+    SELECT
+      (SELECT COUNT(DISTINCT pod) FROM kube_pod_info WHERE cluster = '${cluster}' AND greptime_timestamp >= '${date}'::timestamp AND greptime_timestamp < '${date}'::timestamp + INTERVAL '1 day') as pod_count,
+      (SELECT COUNT(DISTINCT namespace) FROM kube_pod_info WHERE cluster = '${cluster}' AND greptime_timestamp >= '${date}'::timestamp AND greptime_timestamp < '${date}'::timestamp + INTERVAL '1 day') as namespace_count,
+      (SELECT SUM(greptime_value) FROM node_total_hourly_cost WHERE cluster = '${cluster}' AND greptime_timestamp >= '${date}'::timestamp AND greptime_timestamp < '${date}'::timestamp + INTERVAL '1 day') as hourly_cost,
+      (SELECT SUM(greptime_value) FROM container_cpu_allocation WHERE cluster = '${cluster}' AND greptime_timestamp >= '${date}'::timestamp AND greptime_timestamp < '${date}'::timestamp + INTERVAL '1 day') as cpu_allocated,
+      (SELECT SUM(greptime_value) FROM container_memory_allocation_bytes WHERE cluster = '${cluster}' AND greptime_timestamp >= '${date}'::timestamp AND greptime_timestamp < '${date}'::timestamp + INTERVAL '1 day') as memory_allocated
+  `,
 }
 
 export const overviewQueries = {

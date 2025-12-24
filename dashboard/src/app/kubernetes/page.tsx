@@ -1,488 +1,257 @@
 "use client"
 
-import { useState, useMemo } from "react"
-import { groupBy, sumBy, uniq, orderBy, takeRight } from "lodash-es"
+import { useState, useMemo, useEffect, Suspense } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
+import { groupBy, sumBy, maxBy } from "lodash-es"
+import Link from "next/link"
 import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
   CardDescription,
-  DataTable,
-  LineChart,
   Badge,
-  Tabs,
-  TabsList,
-  TabsTrigger,
-  TabsContent,
   Skeleton,
 } from "laminar-ui"
-import {
-  TimeRangePicker,
-  ClusterSelector,
-  NamespaceSelector,
-  MockBadge,
-  TableSkeleton,
-  ChartSkeleton,
-  StatCardSkeleton,
-  QueryError,
-  EmptyState,
-  type DateRange,
-} from "@/components/shared"
-import { useQuery, formatBytes, formatCpu, formatCurrency, formatTime } from "@/hooks/useQuery"
+import { InfoPopover, TimeRangePicker, type DateRange } from "@/components/shared"
+import { useQuery, formatBytes, formatCurrency } from "@/hooks/useQuery"
 import { kubernetesQueries } from "@/lib/queries"
-import { CHART_COLORS } from "@/lib/utils"
-import { Activity, AlertCircle, CheckCircle } from "lucide-react"
+import { Server, Cpu, HardDrive, Box, Layers, DollarSign, ArrowRight } from "lucide-react"
 
-export default function KubernetesPage() {
-  const [timeRange, setTimeRange] = useState<DateRange | undefined>()
-  const [selectedCluster, setSelectedCluster] = useState<string>("")
-  const [selectedNamespace, setSelectedNamespace] = useState<string>("all")
+interface ClusterBasic {
+  cluster: string
+  node_count: number
+}
 
-  // Fetch data with loading and error states
-  const { data: clusters, loading: clustersLoading, error: clustersError } = useQuery("kubernetes", kubernetesQueries.clusters, { refetchInterval: 60000 })
-  const { data: namespaces } = useQuery("kubernetes", kubernetesQueries.namespaces(selectedCluster), { enabled: !!selectedCluster, refetchInterval: 60000 })
-  const { data: pods, loading: podsLoading, error: podsError, refetch: refetchPods } = useQuery("kubernetes", kubernetesQueries.pods(selectedCluster, selectedNamespace), { enabled: !!selectedCluster, refetchInterval: 30000 })
-  const { data: nodes, loading: nodesLoading, error: nodesError, refetch: refetchNodes } = useQuery("kubernetes", kubernetesQueries.nodes(selectedCluster), { enabled: !!selectedCluster, refetchInterval: 30000 })
-  const { data: summary, loading: summaryLoading } = useQuery("kubernetes", kubernetesQueries.clusterSummary(selectedCluster), { enabled: !!selectedCluster, refetchInterval: 30000 })
-  const { data: namespaceCosts } = useQuery("kubernetes", kubernetesQueries.costByNamespace(selectedCluster), { enabled: !!selectedCluster, refetchInterval: 60000 })
-  const { data: cpuTimeSeries, loading: cpuLoading } = useQuery("kubernetes", kubernetesQueries.podCpuTimeSeries(selectedCluster, selectedNamespace, "1 hour"), { enabled: !!selectedCluster, refetchInterval: 60000 })
-  const { data: memoryTimeSeries, loading: memoryLoading } = useQuery("kubernetes", kubernetesQueries.podMemoryTimeSeries(selectedCluster, selectedNamespace, "1 hour"), { enabled: !!selectedCluster, refetchInterval: 60000 })
-  const { data: nodeCpuTimeSeries, loading: nodeCpuLoading } = useQuery("kubernetes", kubernetesQueries.nodeCpuTimeSeries(selectedCluster, "1 hour"), { enabled: !!selectedCluster, refetchInterval: 60000 })
+interface ClusterStats {
+  pod_count: number
+  namespace_count: number
+  hourly_cost: number
+  cpu_allocated: number
+  memory_allocated: number
+}
 
-  // Derived data with lodash
-  const clusterList = useMemo(() => {
-    const list = clusters?.map((c: Record<string, unknown>) => c.cluster as string) || []
-    if (list.length > 0 && !selectedCluster) setSelectedCluster(list[0])
-    return list
-  }, [clusters, selectedCluster])
-
-  const namespaceList = useMemo(() => namespaces?.map((n: Record<string, unknown>) => n.namespace as string) || [], [namespaces])
-
-  // Transform time series for charts using lodash
-  const transformTimeSeries = (data: Record<string, unknown>[] | null, valueKey: string, groupKey: string, transform?: (v: number) => number) => {
-    if (!data) return []
-    const grouped = groupBy(data, (r) => formatTime(r.time as string))
-    return takeRight(Object.entries(grouped).map(([time, rows]) => ({
-      time,
-      ...Object.fromEntries(rows.map(r => [r[groupKey], transform ? transform(r[valueKey] as number) : r[valueKey]]))
-    })), 20)
-  }
-
-  const cpuChartData = useMemo(() => transformTimeSeries(cpuTimeSeries, 'cpu_usage', 'pod'), [cpuTimeSeries])
-  const memoryChartData = useMemo(() => transformTimeSeries(memoryTimeSeries, 'memory_usage', 'pod', v => v / (1024 * 1024)), [memoryTimeSeries])
-  const nodeCpuChartData = useMemo(() => transformTimeSeries(nodeCpuTimeSeries, 'cpu_seconds', 'node'), [nodeCpuTimeSeries])
-
-  // Unique names for chart lines
-  const podNames = useMemo(() => uniq(cpuTimeSeries?.map((r: Record<string, unknown>) => r.pod as string).filter(Boolean) || []).slice(0, 5), [cpuTimeSeries])
-  const nodeNames = useMemo(() => uniq(nodeCpuTimeSeries?.map((r: Record<string, unknown>) => r.node as string).filter(Boolean) || []).slice(0, 5), [nodeCpuTimeSeries])
-
-  const summaryData = summary?.[0] as Record<string, number> | undefined
-  const filteredPods = (pods || []) as Record<string, unknown>[]
-  const filteredNodes = (nodes || []) as Record<string, unknown>[]
-
-  // Utilization with lodash
-  const clusterUtilization = useMemo(() => {
-    if (!filteredPods.length) return { cpu: 0, memory: 0 }
-    const cpuAlloc = sumBy(filteredPods, p => (p.cpu_alloc as number) || 0)
-    const cpuUsed = sumBy(filteredPods, p => (p.cpu_used as number) || 0)
-    const memAlloc = sumBy(filteredPods, p => (p.mem_alloc as number) || 0)
-    const memUsed = sumBy(filteredPods, p => (p.mem_used as number) || 0)
-    return { cpu: cpuAlloc > 0 ? (cpuUsed / cpuAlloc) * 100 : 0, memory: memAlloc > 0 ? (memUsed / memAlloc) * 100 : 0 }
-  }, [filteredPods])
-
-  // Sorted data with lodash
-  const sortedNamespaceCosts = useMemo(() => orderBy(namespaceCosts || [], ['estimated_cost_hourly'], ['desc']), [namespaceCosts])
-  const sortedNodesByCost = useMemo(() => orderBy(filteredNodes, ['cost_hourly'], ['desc']), [filteredNodes])
-
-  // Health check
-  const clusterHealth = clusterUtilization.cpu > 90 || clusterUtilization.memory > 90 ? 'critical' : clusterUtilization.cpu > 75 || clusterUtilization.memory > 75 ? 'warning' : 'healthy'
-
-  const podColumns = [
-    { key: "name", header: "Pod Name", sortable: true },
-    { key: "namespace", header: "Namespace", sortable: true },
-    { key: "node", header: "Node", sortable: true },
-    { key: "created_by_kind", header: "Owner Kind", sortable: true, render: (value: unknown) => (
-      <Badge variant="outline">{String(value) || "N/A"}</Badge>
-    )},
-    { key: "cpu_alloc", header: "CPU Alloc", sortable: true, render: (value: unknown) => formatCpu(Number(value) * 1000) },
-    { key: "cpu_used", header: "CPU Used", sortable: true, render: (value: unknown) => formatCpu(Number(value) * 1000) },
-    { key: "mem_alloc", header: "Mem Alloc", sortable: true, render: (value: unknown) => formatBytes(Number(value)) },
-    { key: "mem_used", header: "Mem Used", sortable: true, render: (value: unknown) => formatBytes(Number(value)) },
-  ]
-
-  const nodeColumns = [
-    { key: "name", header: "Node Name", sortable: true },
-    { key: "instance_type", header: "Instance Type", sortable: true },
-    { key: "region", header: "Region", sortable: true },
-    { key: "cpu_capacity", header: "CPU Cap", sortable: true, render: (value: unknown) => `${Number(value)} cores` },
-    { key: "mem_capacity", header: "Mem Cap", sortable: true, render: (value: unknown) => formatBytes(Number(value)) },
-    { key: "mem_used", header: "Mem Used", sortable: true, render: (value: unknown) => formatBytes(Number(value)) },
-    { key: "pods", header: "Pods", sortable: true },
-    { key: "cost_hourly", header: "Cost/hr", sortable: true, render: (value: unknown) => formatCurrency(Number(value), 3) },
-  ]
-
-  if (clustersLoading) {
-    return (
-      <div className="space-y-6">
-        <Skeleton className="h-10 w-full" />
-        <div className="grid grid-cols-6 gap-4">
-          {[...Array(6)].map((_, i) => <Skeleton key={i} className="h-24" />)}
+function ClusterCardSkeleton() {
+  return (
+    <Card className="hover:shadow-md transition-shadow">
+      <CardHeader className="pb-2">
+        <Skeleton className="h-6 w-48" />
+        <Skeleton className="h-4 w-32 mt-1" />
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid grid-cols-3 gap-4">
+          {[...Array(6)].map((_, i) => (
+            <div key={i} className="space-y-1">
+              <Skeleton className="h-3 w-12" />
+              <Skeleton className="h-5 w-16" />
+            </div>
+          ))}
         </div>
-        <Skeleton className="h-96" />
-      </div>
-    )
-  }
+      </CardContent>
+    </Card>
+  )
+}
+
+function ClusterCard({ cluster, selectedDate }: { cluster: ClusterBasic; selectedDate: string }) {
+  // Fetch additional stats for this cluster
+  const { data: statsData } = useQuery<ClusterStats>(
+    "kubernetes",
+    kubernetesQueries.clusterStats(cluster.cluster, selectedDate),
+    { refetchInterval: 300000 }
+  )
+
+  const stats = statsData?.[0]
+  const hourly = stats?.hourly_cost || 0
+  const dailyCost = hourly * 24
+  const monthlyCost = dailyCost * 30
+
+  return (
+    <Link href={`/kubernetes/${encodeURIComponent(cluster.cluster)}?date=${selectedDate}`}>
+      <Card className="hover:shadow-md hover:border-primary/50 transition-all cursor-pointer group">
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Server className="h-5 w-5 text-primary" />
+              <CardTitle className="text-lg">{cluster.cluster}</CardTitle>
+            </div>
+            <ArrowRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+          </div>
+          <CardDescription>
+            {cluster.node_count} nodes across {stats?.namespace_count || 0} namespaces
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Resource Stats */}
+          <div className="grid grid-cols-3 gap-4">
+            <div className="space-y-1">
+              <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                <Server className="h-3 w-3" />
+                Nodes
+              </div>
+              <p className="text-lg font-semibold">{cluster.node_count}</p>
+            </div>
+            <div className="space-y-1">
+              <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                <Box className="h-3 w-3" />
+                Pods
+              </div>
+              <p className="text-lg font-semibold">{stats?.pod_count || 0}</p>
+            </div>
+            <div className="space-y-1">
+              <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                <Layers className="h-3 w-3" />
+                Namespaces
+              </div>
+              <p className="text-lg font-semibold">{stats?.namespace_count || 0}</p>
+            </div>
+            <div className="space-y-1">
+              <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                <Cpu className="h-3 w-3" />
+                CPU Cores
+              </div>
+              <p className="text-lg font-semibold">{(stats?.cpu_allocated || 0).toFixed(1)}</p>
+            </div>
+            <div className="space-y-1">
+              <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                <HardDrive className="h-3 w-3" />
+                Memory
+              </div>
+              <p className="text-lg font-semibold">{formatBytes(stats?.memory_allocated || 0)}</p>
+            </div>
+            <div className="space-y-1">
+              <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                <DollarSign className="h-3 w-3" />
+                Cost/hr
+              </div>
+              <p className="text-lg font-semibold">{formatCurrency(hourly, 2)}</p>
+            </div>
+          </div>
+
+          {/* Cost Estimates */}
+          <div className="pt-2 border-t flex items-center justify-between text-sm">
+            <div>
+              <span className="text-muted-foreground">Daily: </span>
+              <span className="font-medium">{formatCurrency(dailyCost, 0)}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Monthly: </span>
+              <span className="font-medium">{formatCurrency(monthlyCost, 0)}</span>
+            </div>
+            <Badge variant="outline" className="text-xs">
+              View Details
+            </Badge>
+          </div>
+        </CardContent>
+      </Card>
+    </Link>
+  )
+}
+
+function KubernetesPageContent() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const dateParam = searchParams.get('date')
+
+  const [timeRange, setTimeRange] = useState<DateRange | undefined>(() => {
+    if (dateParam) {
+      const date = new Date(dateParam)
+      return { from: date, to: date }
+    }
+    return { from: new Date(), to: new Date() }
+  })
+
+  const selectedDate = useMemo(() => {
+    return (timeRange?.from || new Date()).toISOString().split('T')[0]
+  }, [timeRange])
+
+  // Update URL when date changes (only if different from current)
+  useEffect(() => {
+    if (dateParam !== selectedDate) {
+      router.replace(`/kubernetes?date=${selectedDate}`, { scroll: false })
+    }
+  }, [selectedDate, dateParam, router])
+
+  const { data: rawClusters, loading, error } = useQuery<ClusterBasic>(
+    "kubernetes",
+    kubernetesQueries.allClustersSummary(selectedDate),
+    { refetchInterval: 300000 }
+  )
+
+  // Deduplicate clusters by name (take max node count for each unique cluster)
+  const clusters = useMemo(() => {
+    if (!rawClusters) return null
+    const filtered = rawClusters.filter((c) => c.cluster && c.cluster.trim() !== '')
+    const grouped = groupBy(filtered, (c) => c.cluster.trim())
+    return Object.entries(grouped).map(([name, entries]) => ({
+      cluster: name,
+      node_count: maxBy(entries, 'node_count')?.node_count || sumBy(entries, 'node_count'),
+    }))
+  }, [rawClusters])
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
+        <div className="flex items-start gap-2">
           <div>
-            <h1 className="text-2xl font-bold">Kubernetes Clusters</h1>
+            <h1 className="text-3xl font-bold">Kubernetes Clusters</h1>
             <p className="text-muted-foreground">
-              Cluster resources, pod metrics, and costs
+              Select a cluster to view detailed metrics and resources
             </p>
           </div>
-          {selectedCluster && (
-            <Badge
-              variant={clusterHealth === 'healthy' ? 'default' : clusterHealth === 'warning' ? 'secondary' : 'destructive'}
-              className="flex items-center gap-1"
-            >
-              {clusterHealth === 'healthy' ? <CheckCircle className="h-3 w-3" /> : <AlertCircle className="h-3 w-3" />}
-              {clusterHealth === 'healthy' ? 'Healthy' : clusterHealth === 'warning' ? 'Warning' : 'Critical'}
-            </Badge>
-          )}
-        </div>
-        <div className="flex items-center gap-4">
-          <MockBadge />
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Activity className="h-4 w-4" />
-            <span>30s refresh</span>
-          </div>
-          <ClusterSelector
-            clusters={clusterList}
-            value={selectedCluster}
-            onChange={setSelectedCluster}
+          <InfoPopover
+            title="Kubernetes Clusters"
+            description="Lists all Kubernetes clusters with their resource metrics for the selected date. Each card shows node count, pod count, namespaces, CPU/memory allocation, and estimated hourly cost based on node pricing."
+            sql={`-- Cluster list query:\n${kubernetesQueries.allClustersSummary(selectedDate)}\n\n-- Per-cluster stats query (example):\n${kubernetesQueries.clusterStats('CLUSTER_NAME', selectedDate)}`}
           />
-          <NamespaceSelector
-            namespaces={namespaceList}
-            value={selectedNamespace}
-            onChange={setSelectedNamespace}
-          />
-          <TimeRangePicker value={timeRange} onChange={setTimeRange} />
         </div>
+        <TimeRangePicker value={timeRange} onChange={setTimeRange} />
       </div>
 
-      {/* Overview Cards */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card className="relative">
-          <MockBadge className="absolute top-2 right-2" />
-          <CardContent className="pt-6">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Running Pods</p>
-                <p className="text-3xl font-bold">{summaryData?.pod_count || filteredPods.length}</p>
-                <p className="text-xs text-muted-foreground mt-1">across {namespaceList.length} namespaces</p>
-              </div>
-            </div>
+      {/* Cluster Cards */}
+      {loading ? (
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+          {[...Array(6)].map((_, i) => (
+            <ClusterCardSkeleton key={i} />
+          ))}
+        </div>
+      ) : error ? (
+        <Card>
+          <CardContent className="py-12 text-center text-destructive">
+            <p>Error loading clusters: {error}</p>
           </CardContent>
         </Card>
-
-        <Card className="relative">
-          <MockBadge className="absolute top-2 right-2" />
-          <CardContent className="pt-6">
-            <p className="text-sm text-muted-foreground">CPU Utilization</p>
-            <div className="flex items-baseline gap-2">
-              <p className="text-3xl font-bold">{clusterUtilization.cpu.toFixed(0)}%</p>
-              <p className="text-sm text-muted-foreground">used</p>
-            </div>
-            <div className="mt-2 h-2 bg-muted overflow-hidden">
-              <div
-                className={`h-full transition-all ${clusterUtilization.cpu > 80 ? 'bg-red-500' : clusterUtilization.cpu > 60 ? 'bg-yellow-500' : 'bg-primary'}`}
-                style={{ width: `${Math.min(clusterUtilization.cpu, 100)}%` }}
-              />
-            </div>
+      ) : clusters && clusters.length > 0 ? (
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+          {clusters.map((cluster) => (
+            <ClusterCard key={cluster.cluster} cluster={cluster} selectedDate={selectedDate} />
+          ))}
+        </div>
+      ) : (
+        <Card>
+          <CardContent className="py-12 text-center text-muted-foreground">
+            <Server className="h-12 w-12 mx-auto mb-4 opacity-50" />
+            <p>No clusters found for {selectedDate}</p>
           </CardContent>
         </Card>
-
-        <Card className="relative">
-          <MockBadge className="absolute top-2 right-2" />
-          <CardContent className="pt-6">
-            <p className="text-sm text-muted-foreground">Memory Utilization</p>
-            <div className="flex items-baseline gap-2">
-              <p className="text-3xl font-bold">{clusterUtilization.memory.toFixed(0)}%</p>
-              <p className="text-sm text-muted-foreground">used</p>
-            </div>
-            <div className="mt-2 h-2 bg-muted overflow-hidden">
-              <div
-                className={`h-full transition-all ${clusterUtilization.memory > 80 ? 'bg-red-500' : clusterUtilization.memory > 60 ? 'bg-yellow-500' : 'bg-primary'}`}
-                style={{ width: `${Math.min(clusterUtilization.memory, 100)}%` }}
-              />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="relative">
-          <MockBadge className="absolute top-2 right-2" />
-          <CardContent className="pt-6">
-            <p className="text-sm text-muted-foreground">Estimated Cost</p>
-            <p className="text-3xl font-bold">{formatCurrency(summaryData?.cluster_hourly_cost || 0, 2)}<span className="text-sm font-normal">/hr</span></p>
-            <p className="text-xs text-muted-foreground mt-1">
-              ~{formatCurrency((summaryData?.cluster_hourly_cost || 0) * 24 * 30, 0)}/month
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Quick Stats Row */}
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-4 lg:grid-cols-6">
-        <Card className="bg-muted/50 relative">
-          <MockBadge className="absolute top-1 right-1" />
-          <CardContent className="py-3 flex items-center justify-between">
-            <span className="text-sm">Nodes</span>
-            <span className="font-mono font-semibold">{summaryData?.node_count || filteredNodes.length}</span>
-          </CardContent>
-        </Card>
-        <Card className="bg-muted/50 relative">
-          <MockBadge className="absolute top-1 right-1" />
-          <CardContent className="py-3 flex items-center justify-between">
-            <span className="text-sm">CPU Cores</span>
-            <span className="font-mono font-semibold">{summaryData?.total_cpu_alloc?.toFixed(1) || 0}</span>
-          </CardContent>
-        </Card>
-        <Card className="bg-muted/50 relative">
-          <MockBadge className="absolute top-1 right-1" />
-          <CardContent className="py-3 flex items-center justify-between">
-            <span className="text-sm">Memory</span>
-            <span className="font-mono font-semibold">{(summaryData?.total_mem_alloc ? summaryData.total_mem_alloc / (1024 * 1024 * 1024) : 0).toFixed(0)}Gi</span>
-          </CardContent>
-        </Card>
-        <Card className="bg-muted/50 relative">
-          <MockBadge className="absolute top-1 right-1" />
-          <CardContent className="py-3 flex items-center justify-between">
-            <span className="text-sm">Namespaces</span>
-            <span className="font-mono font-semibold">{namespaceList.length}</span>
-          </CardContent>
-        </Card>
-        <Card className="bg-muted/50 relative">
-          <MockBadge className="absolute top-1 right-1" />
-          <CardContent className="py-3 flex items-center justify-between">
-            <span className="text-sm">NS Cost/hr</span>
-            <span className="font-mono font-semibold">{formatCurrency(sumBy(namespaceCosts?.filter(n => selectedNamespace === 'all' || n.namespace === selectedNamespace) || [], r => Number(r.estimated_cost_hourly) || 0), 2)}</span>
-          </CardContent>
-        </Card>
-        <Card className="bg-muted/50 relative">
-          <MockBadge className="absolute top-1 right-1" />
-          <CardContent className="py-3 flex items-center justify-between">
-            <span className="text-sm">Cluster</span>
-            <span className="font-mono font-semibold text-xs">{selectedCluster.split('-').slice(-1)[0] || '-'}</span>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Tabs for Pods vs Nodes */}
-      <Tabs defaultValue="pods">
-        <TabsList>
-          <TabsTrigger value="pods">Pods</TabsTrigger>
-          <TabsTrigger value="nodes">Nodes</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="pods" className="space-y-6 mt-4">
-          {/* Pod Table */}
-          <Card className="relative">
-            <MockBadge className="absolute top-2 right-2" />
-            <CardHeader>
-              <CardTitle>Pod Resources</CardTitle>
-              <CardDescription>
-                Resource allocation and usage for pods in {selectedNamespace === "all" ? "all namespaces" : selectedNamespace}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {podsLoading ? (
-                <TableSkeleton rows={8} />
-              ) : podsError ? (
-                <QueryError message={podsError} onRetry={refetchPods} />
-              ) : filteredPods.length > 0 ? (
-                <DataTable data={filteredPods} columns={podColumns} hoverable striped />
-              ) : (
-                <EmptyState message="No pods found" />
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Pod Time Series Charts */}
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            <Card className="relative">
-              <MockBadge className="absolute top-2 right-2" />
-              <CardHeader>
-                <CardTitle>Pod CPU Usage</CardTitle>
-                <CardDescription>CPU usage over time (last hour)</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {cpuLoading ? (
-                  <ChartSkeleton height={300} />
-                ) : cpuChartData.length > 0 ? (
-                  <LineChart
-                    data={cpuChartData}
-                    xAxisKey="time"
-                    lines={podNames.map((pod, i) => ({
-                      dataKey: pod,
-                      name: pod.substring(0, 20),
-                      color: CHART_COLORS[i % CHART_COLORS.length],
-                    }))}
-                    height={300}
-                    showLegend
-                  />
-                ) : (
-                  <EmptyState />
-                )}
-              </CardContent>
-            </Card>
-
-            <Card className="relative">
-              <MockBadge className="absolute top-2 right-2" />
-              <CardHeader>
-                <CardTitle>Pod Memory Usage</CardTitle>
-                <CardDescription>Memory usage in MB over time (last hour)</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {memoryLoading ? (
-                  <ChartSkeleton height={300} />
-                ) : memoryChartData.length > 0 ? (
-                  <LineChart
-                    data={memoryChartData}
-                    xAxisKey="time"
-                    lines={podNames.map((pod, i) => ({
-                      dataKey: pod,
-                      name: pod.substring(0, 20),
-                      color: CHART_COLORS[i % CHART_COLORS.length],
-                    }))}
-                    height={300}
-                    yAxisFormatter={(value) => `${value}Mi`}
-                    showLegend
-                  />
-                ) : (
-                  <EmptyState />
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Cost Breakdown */}
-          <Card className="relative">
-            <MockBadge className="absolute top-2 right-2" />
-            <CardHeader>
-              <CardTitle>Cost by Namespace</CardTitle>
-              <CardDescription>Estimated hourly cost by namespace (high to low)</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {sortedNamespaceCosts.length > 0 ? (
-                <DataTable
-                  data={sortedNamespaceCosts.map(n => ({
-                    namespace: n.namespace,
-                    total_cpu: n.total_cpu,
-                    total_mem: n.total_mem,
-                    estimated_cost_hourly: n.estimated_cost_hourly || 0,
-                  }))}
-                  columns={[
-                    { key: "namespace", header: "Namespace", sortable: true },
-                    { key: "total_cpu", header: "CPU", sortable: true, render: (value: unknown) => formatCpu(Number(value) * 1000) },
-                    { key: "total_mem", header: "Memory", sortable: true, render: (value: unknown) => formatBytes(Number(value)) },
-                    { key: "estimated_cost_hourly", header: "Cost/hr", sortable: true, render: (value: unknown) => formatCurrency(Number(value), 3) },
-                  ]}
-                  hoverable
-                  striped
-                />
-              ) : (
-                <div className="flex items-center justify-center h-[200px] text-muted-foreground">
-                  No data available
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="nodes" className="space-y-6 mt-4">
-          {/* Node Table */}
-          <Card className="relative">
-            <MockBadge className="absolute top-2 right-2" />
-            <CardHeader>
-              <CardTitle>Node Resources</CardTitle>
-              <CardDescription>
-                Resource capacity and usage for cluster nodes
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {nodesLoading ? (
-                <TableSkeleton rows={6} />
-              ) : nodesError ? (
-                <QueryError message={nodesError} onRetry={refetchNodes} />
-              ) : filteredNodes.length > 0 ? (
-                <DataTable data={filteredNodes} columns={nodeColumns} hoverable striped />
-              ) : (
-                <EmptyState message="No nodes found" />
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Node CPU Time Series */}
-          <Card className="relative">
-            <MockBadge className="absolute top-2 right-2" />
-            <CardHeader>
-              <CardTitle>Node CPU Usage</CardTitle>
-              <CardDescription>CPU seconds per node (last hour)</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {nodeCpuLoading ? (
-                <ChartSkeleton height={300} />
-              ) : nodeCpuChartData.length > 0 ? (
-                <LineChart
-                  data={nodeCpuChartData}
-                  xAxisKey="time"
-                  lines={nodeNames.map((node, i) => ({
-                    dataKey: node,
-                    name: node.substring(0, 15),
-                    color: CHART_COLORS[i % CHART_COLORS.length],
-                  }))}
-                  height={300}
-                  showLegend
-                />
-              ) : (
-                <EmptyState />
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Node Cost Table */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Node Cost Breakdown</CardTitle>
-              <CardDescription>Hourly cost per node (high to low)</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {nodesLoading ? (
-                <TableSkeleton rows={5} />
-              ) : sortedNodesByCost.length > 0 ? (
-                <DataTable
-                  data={sortedNodesByCost}
-                  columns={[
-                    { key: "name", header: "Node Name", sortable: true },
-                    { key: "instance_type", header: "Instance Type", sortable: true },
-                    { key: "pods", header: "Pods", sortable: true },
-                    { key: "cost_hourly", header: "Cost/hr", sortable: true, render: (value: unknown) => formatCurrency(Number(value), 3) },
-                  ]}
-                  hoverable
-                  striped
-                />
-              ) : (
-                <EmptyState />
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+      )}
     </div>
+  )
+}
+
+export default function KubernetesPage() {
+  return (
+    <Suspense fallback={
+      <div className="space-y-6">
+        <Skeleton className="h-10 w-64" />
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+          {[...Array(6)].map((_, i) => (
+            <ClusterCardSkeleton key={i} />
+          ))}
+        </div>
+      </div>
+    }>
+      <KubernetesPageContent />
+    </Suspense>
   )
 }
