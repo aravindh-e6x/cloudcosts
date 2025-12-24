@@ -37,6 +37,7 @@ import {
   QueryError,
   EmptyState,
   DateBanner,
+  DataHealthIndicator,
 } from "@/components/shared"
 import { useDate } from "@/components/providers"
 import { useQuery, formatBytes, formatCpu, formatCurrency, formatTime } from "@/hooks/useQuery"
@@ -79,6 +80,10 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
   const { data: memAllocTimeSeries } = useQuery("kubernetes", kubernetesQueries.memoryAllocationTimeSeries(selectedCluster, startTimestamp, endTimestamp), { refetchInterval: 60000, enabled: openModal === 'memory' })
   const { data: podCountTimeSeries } = useQuery("kubernetes", kubernetesQueries.podCountTimeSeries(selectedCluster, startTimestamp, endTimestamp), { refetchInterval: 60000, enabled: openModal === 'pod' })
   const { data: efficiencyTimeSeries } = useQuery("kubernetes", kubernetesQueries.efficiencyTimeSeries(selectedCluster, startTimestamp, endTimestamp), { refetchInterval: 60000, enabled: openModal === 'efficiency' })
+
+  // Data health query - check last data timestamp
+  const { data: dataHealth } = useQuery<{ last_data: string }>("kubernetes", kubernetesQueries.dataHealth(selectedCluster), { refetchInterval: 60000 })
+  const lastDataTimestamp = dataHealth?.[0]?.last_data || null
 
   const namespaceList = useMemo(() => namespaces?.map((n: Record<string, unknown>) => n.namespace as string) || [], [namespaces])
 
@@ -220,10 +225,13 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
           <h1 className="text-2xl font-bold">{selectedCluster}</h1>
         </div>
         <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Activity className="h-4 w-4" />
-            <span>30s refresh</span>
-          </div>
+          <DataHealthIndicator
+            lastDataTimestamp={lastDataTimestamp}
+            dataSource="OpenCost exporter"
+            expectedIntervalMinutes={1}
+            warningThresholdMinutes={5}
+            criticalThresholdMinutes={15}
+          />
           <NamespaceSelector
             namespaces={namespaceList}
             value={selectedNamespace}

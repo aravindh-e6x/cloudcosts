@@ -446,6 +446,19 @@ export const kubernetesQueries = {
       (SELECT SUM(avg_cpu) FROM cpu_alloc_avg) as cpu_allocated,
       (SELECT SUM(avg_mem) FROM mem_alloc_avg) as memory_allocated
   `,
+
+  // Data health check - get latest data timestamp
+  dataHealth: (cluster: string) => `
+    SELECT MAX(greptime_timestamp) as last_data
+    FROM container_cpu_usage_seconds_total
+    WHERE cluster = '${cluster}'
+  `,
+
+  // Global data health check - get latest data timestamp across all clusters
+  globalDataHealth: `
+    SELECT MAX(greptime_timestamp) as last_data
+    FROM container_cpu_usage_seconds_total
+  `,
 }
 
 export const overviewQueries = {

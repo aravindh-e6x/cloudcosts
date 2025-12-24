@@ -37,6 +37,7 @@ interface ClusterStats {
   running_queries: number
   last_updated: string | null
   health_status: "healthy" | "warning" | "critical" | "unknown"
+  [key: string]: unknown
 }
 
 interface CustomerStats {

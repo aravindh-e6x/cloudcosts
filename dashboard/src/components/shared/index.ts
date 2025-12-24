@@ -1,5 +1,6 @@
 export { TimeRangePicker, type DateRange } from "./time-range-picker"
 export { DateBanner } from "./date-banner"
+export { DataHealthIndicator, MultiSourceDataHealth } from "./data-health-indicator"
 export { ClusterSelector } from "./cluster-selector"
 export { NamespaceSelector } from "./namespace-selector"
 export { ChangeIndicator, ChangeBadge } from "./change-indicator"

@@ -31,7 +31,8 @@ import {
   Layers,
   Box,
 } from "lucide-react"
-import { DateBanner } from "@/components/shared"
+import { DateBanner, DataHealthIndicator } from "@/components/shared"
+import { useDate } from "@/components/providers"
 import { E6_SCHEMA_PREFIX } from "@/lib/utils"
 
 interface TimeSeriesPoint {
@@ -65,6 +66,7 @@ export default function ClusterDetailPage() {
   const params = useParams()
   const database = params.customer as string
   const clusterName = decodeURIComponent(params.cluster as string)
+  const { startTimestamp, endTimestamp } = useDate()
 
   const [executorData, setExecutorData] = useState<TimeSeriesPoint[]>([])
   const [queueData, setQueueData] = useState<TimeSeriesPoint[]>([])
@@ -72,6 +74,7 @@ export default function ClusterDetailPage() {
   const [schemaData, setSchemaData] = useState<TimeSeriesPoint[]>([])
   const [containerData, setContainerData] = useState<TimeSeriesPoint[]>([])
   const [componentSummary, setComponentSummary] = useState<ComponentSummary[]>([])
+  const [lastDataTimestamp, setLastDataTimestamp] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -112,9 +115,28 @@ export default function ClusterDetailPage() {
       setLoading(true)
       setError(null)
 
-      const timeRange = "NOW() - INTERVAL '6 hours'"
+      // Use date range from context
+      const timeFilter = `ts >= '${startTimestamp}'::timestamp AND ts < '${endTimestamp}'::timestamp`
 
       try {
+        // Fetch last data timestamp for health indicator
+        const healthResponse = await fetch("/api/query", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            database,
+            sql: `
+              SELECT MAX(ts) as last_data
+              FROM e6_container_metrics
+              WHERE cluster_name = '${clusterName}'
+            `,
+          }),
+        })
+        const healthResult = await healthResponse.json()
+        if (healthResult.data && healthResult.data[0]?.last_data) {
+          setLastDataTimestamp(healthResult.data[0].last_data)
+        }
+
         // Fetch executor metrics
         const executorResponse = await fetch("/api/query", {
           method: "POST",
@@ -125,7 +147,7 @@ export default function ClusterDetailPage() {
               SELECT ts, metric_name, metric_value
               FROM e6_executor_metrics
               WHERE cluster_name = '${clusterName}'
-                AND ts >= ${timeRange}
+                AND ${timeFilter}
               ORDER BY ts
             `,
           }),
@@ -143,7 +165,7 @@ export default function ClusterDetailPage() {
               SELECT ts, metric_name, metric_value
               FROM e6_queue_metrics
               WHERE cluster_name = '${clusterName}'
-                AND ts >= ${timeRange}
+                AND ${timeFilter}
               ORDER BY ts
             `,
           }),
@@ -161,7 +183,7 @@ export default function ClusterDetailPage() {
               SELECT ts, metric_name, metric_value
               FROM e6_storage_metrics
               WHERE cluster_name = '${clusterName}'
-                AND ts >= ${timeRange}
+                AND ${timeFilter}
               ORDER BY ts
             `,
           }),
@@ -179,7 +201,7 @@ export default function ClusterDetailPage() {
               SELECT ts, metric_name, metric_value
               FROM e6_schema_metrics
               WHERE cluster_name = '${clusterName}'
-                AND ts >= ${timeRange}
+                AND ${timeFilter}
               ORDER BY ts
             `,
           }),
@@ -197,7 +219,7 @@ export default function ClusterDetailPage() {
               SELECT ts, metric_name, metric_value
               FROM e6_container_metrics
               WHERE cluster_name = '${clusterName}'
-                AND ts >= ${timeRange}
+                AND ${timeFilter}
               ORDER BY ts
             `,
           }),
@@ -205,13 +227,19 @@ export default function ClusterDetailPage() {
         const containerResult = await containerResponse.json()
         if (containerResult.data) setContainerData(containerResult.data)
 
-        // Fetch component summary (pod counts, specs, and nodes)
+        // Fetch component summary (pod counts, specs, and nodes) - use latest data within selected date range
         const summaryResponse = await fetch("/api/query", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             database,
             sql: `
+              WITH latest_ts AS (
+                SELECT MAX(ts) as max_ts
+                FROM e6_container_metrics
+                WHERE cluster_name = '${clusterName}'
+                  AND ${timeFilter}
+              )
               SELECT
                 component,
                 pod,
@@ -220,7 +248,8 @@ export default function ClusterDetailPage() {
                 MAX(metric_value) as metric_value
               FROM e6_container_metrics
               WHERE cluster_name = '${clusterName}'
-                AND ts >= NOW() - INTERVAL '10 minutes'
+                AND ts >= (SELECT max_ts FROM latest_ts) - INTERVAL '10 minutes'
+                AND ts <= (SELECT max_ts FROM latest_ts)
                 AND component != ''
                 AND metric_name IN (
                   'e6data_container_spec_cpu_quota',
@@ -303,10 +332,10 @@ export default function ClusterDetailPage() {
       }
     }
 
-    if (database && clusterName) {
+    if (database && clusterName && startTimestamp && endTimestamp) {
       fetchMetrics()
     }
-  }, [database, clusterName])
+  }, [database, clusterName, startTimestamp, endTimestamp])
 
   // Transform data for dual-axis chart (CPU vs Cost)
   const transformCpuCostData = (data: TimeSeriesPoint[], componentFilter: string): ChartDataPoint[] => {
@@ -567,24 +596,33 @@ export default function ClusterDetailPage() {
       <DateBanner />
 
       {/* Header */}
-      <div className="flex items-center gap-4">
-        <Link href={`/e6/${database}`}>
-          <Button variant="ghost" size="sm">
-            <ChevronLeft className="h-4 w-4 mr-1" />
-            Back to {customerName}
-          </Button>
-        </Link>
-        <div className="flex items-center gap-3">
-          <div className="p-2 bg-primary/10 rounded-lg">
-            <Server className="h-6 w-6 text-primary" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold">{clusterName}</h1>
-            <p className="text-sm text-muted-foreground">
-              CPU & Memory vs Cost (last 6 hours)
-            </p>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <Link href={`/e6/${database}`}>
+            <Button variant="ghost" size="sm">
+              <ChevronLeft className="h-4 w-4 mr-1" />
+              Back to {customerName}
+            </Button>
+          </Link>
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-primary/10 rounded-lg">
+              <Server className="h-6 w-6 text-primary" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold">{clusterName}</h1>
+              <p className="text-sm text-muted-foreground">
+                CPU & Memory vs Cost (last 6 hours)
+              </p>
+            </div>
           </div>
         </div>
+        <DataHealthIndicator
+          lastDataTimestamp={lastDataTimestamp}
+          dataSource="e6metrics-exporter"
+          expectedIntervalMinutes={1}
+          warningThresholdMinutes={5}
+          criticalThresholdMinutes={15}
+        />
       </div>
 
       {/* Component Summary Table */}

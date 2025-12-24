@@ -22,6 +22,7 @@ interface CustomerSummary {
   clusterCount: number
   containerCount: number
   lastUpdated: string | null
+  [key: string]: unknown
 }
 
 interface ClusterSummary {

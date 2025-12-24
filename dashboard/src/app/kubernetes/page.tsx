@@ -11,7 +11,7 @@ import {
   CardDescription,
   Skeleton,
 } from "laminar-ui"
-import { InfoPopover, DateBanner } from "@/components/shared"
+import { InfoPopover, DateBanner, DataHealthIndicator } from "@/components/shared"
 import { useDate } from "@/components/providers"
 import { useQuery, formatBytes, formatCurrency } from "@/hooks/useQuery"
 import { kubernetesQueries } from "@/lib/queries"
@@ -138,6 +138,10 @@ function KubernetesPageContent() {
     { refetchInterval: 300000 }
   )
 
+  // Data health query - check last data timestamp
+  const { data: dataHealth } = useQuery<{ last_data: string }>("kubernetes", kubernetesQueries.globalDataHealth, { refetchInterval: 60000 })
+  const lastDataTimestamp = dataHealth?.[0]?.last_data || null
+
   // Deduplicate clusters by name (take max node count for each unique cluster)
   const clusters = useMemo(() => {
     if (!rawClusters) return null
@@ -154,17 +158,26 @@ function KubernetesPageContent() {
       <DateBanner />
 
       {/* Header */}
-      <div className="flex items-start gap-2">
-        <div>
-          <h1 className="text-3xl font-bold">Kubernetes Clusters</h1>
-          <p className="text-muted-foreground">
-            Select a cluster to view detailed metrics
-          </p>
+      <div className="flex items-center justify-between">
+        <div className="flex items-start gap-2">
+          <div>
+            <h1 className="text-3xl font-bold">Kubernetes Clusters</h1>
+            <p className="text-muted-foreground">
+              Select a cluster to view detailed metrics
+            </p>
+          </div>
+          <InfoPopover
+            title="Kubernetes Clusters"
+            description="Lists all Kubernetes clusters with their resource metrics for the selected date. Each card shows node count, pod count, namespaces, CPU/memory allocation, and total cost based on node pricing."
+            sql={`-- Cluster list query:\n${kubernetesQueries.allClustersSummary(startTimestamp, endTimestamp)}\n\n-- Per-cluster stats query (example):\n${kubernetesQueries.clusterStats('CLUSTER_NAME', startTimestamp, endTimestamp)}`}
+          />
         </div>
-        <InfoPopover
-          title="Kubernetes Clusters"
-          description="Lists all Kubernetes clusters with their resource metrics for the selected date. Each card shows node count, pod count, namespaces, CPU/memory allocation, and total cost based on node pricing."
-          sql={`-- Cluster list query:\n${kubernetesQueries.allClustersSummary(startTimestamp, endTimestamp)}\n\n-- Per-cluster stats query (example):\n${kubernetesQueries.clusterStats('CLUSTER_NAME', startTimestamp, endTimestamp)}`}
+        <DataHealthIndicator
+          lastDataTimestamp={lastDataTimestamp}
+          dataSource="OpenCost exporter"
+          expectedIntervalMinutes={1}
+          warningThresholdMinutes={5}
+          criticalThresholdMinutes={15}
         />
       </div>
 
