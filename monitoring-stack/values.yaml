@@ -349,6 +349,11 @@ dashboard:
     username: "${GREPTIMEDB_USERNAME}"
     password: "${GREPTIMEDB_PASSWORD}"
 
+  auth:
+    secret: "${DASHBOARD_AUTH_SECRET}"
+    username: "${DASHBOARD_AUTH_USERNAME}"
+    password: "${DASHBOARD_AUTH_PASSWORD}"
+
   ingress:
     enabled: true
     host: dashboard.cloudcosts.in

@@ -39,6 +39,12 @@ spec:
               value: {{ .Values.dashboard.greptimedb.username | quote }}
             - name: GREPTIMEDB_PASSWORD
               value: {{ .Values.dashboard.greptimedb.password | quote }}
+            - name: AUTH_SECRET
+              value: {{ .Values.dashboard.auth.secret | quote }}
+            - name: AUTH_USERNAME
+              value: {{ .Values.dashboard.auth.username | quote }}
+            - name: AUTH_PASSWORD
+              value: {{ .Values.dashboard.auth.password | quote }}
           livenessProbe:
             httpGet:
               path: /
