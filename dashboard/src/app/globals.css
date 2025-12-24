@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "laminar-ui/styles";
 
 @plugin "tailwindcss-animate";
 

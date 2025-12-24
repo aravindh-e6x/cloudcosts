@@ -184,9 +184,15 @@ data:
       forward_to = [prometheus.remote_write.greptimedb_kubernetes.receiver]
 
       // Keep only the metrics we need (drop everything else)
+      // Categories:
+      //   - Container metrics: CPU/memory usage and allocation
+      //   - Pod metrics: info, labels, status, owner, PVC allocation
+      //   - Node metrics: info, labels, capacity, allocatable, status, cost
+      //   - OpenCost metrics: all opencost_* and node cost breakdown
+      //   - Disk/Network metrics: filesystem and network stats
       rule {
         source_labels = ["__name__"]
-        regex = "container_cpu_usage_seconds_total|container_memory_working_set_bytes|container_cpu_allocation|container_memory_allocation_bytes|kube_pod_container_resource_requests|kube_pod_container_resource_limits|kube_pod_info|node_cpu_seconds_total|node_memory_MemTotal_bytes|node_memory_MemAvailable_bytes|kube_node_status_capacity|kube_node_status_allocatable|kube_node_labels|kube_node_info|kube_namespace_labels|kube_resourcequota|opencost_.*|node_total_hourly_cost"
+        regex = "container_cpu_usage_seconds_total|container_memory_working_set_bytes|container_cpu_allocation|container_memory_allocation_bytes|container_gpu_allocation|container_fs_usage_bytes|container_network_receive_bytes_total|container_network_transmit_bytes_total|kube_pod_container_resource_requests|kube_pod_container_resource_limits|kube_pod_info|kube_pod_labels|kube_pod_status_phase|kube_pod_owner|kube_pod_created|kube_pod_start_time|kube_pod_container_status_running|kube_pod_container_status_waiting|kube_pod_container_status_terminated|pod_pvc_allocation|node_cpu_seconds_total|node_memory_MemTotal_bytes|node_memory_MemAvailable_bytes|node_filesystem_size_bytes|node_filesystem_avail_bytes|node_network_receive_bytes_total|node_network_transmit_bytes_total|kube_node_status_capacity|kube_node_status_allocatable|kube_node_status_condition|kube_node_labels|kube_node_info|kube_namespace_labels|kube_resourcequota|kube_deployment_status_replicas|kube_deployment_status_replicas_available|kube_deployment_spec_replicas|kube_statefulset_status_replicas|kube_statefulset_replicas|opencost_.*|node_total_hourly_cost|node_cpu_hourly_cost|node_ram_hourly_cost|node_gpu_hourly_cost|pv_hourly_cost"
         action = "keep"
       }
     }

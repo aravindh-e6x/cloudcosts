@@ -1,3 +1,4 @@
+{{- if .Values.vantageExporter.enabled }}
 ---
 apiVersion: v1
 kind: Secret
@@ -80,3 +81,4 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+{{- end }}

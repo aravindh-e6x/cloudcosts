@@ -192,6 +192,8 @@ grafana:
 
 # CloudWatch Exporter (Alloy-based, multi-account)
 cloudwatchExporter:
+  enabled: true
+
   serviceAccount:
     roleArn: "arn:aws:iam::${AWS_PRIMARY_ACCOUNT_ID}:role/alloy-cloudwatch-role"
 
@@ -240,6 +242,8 @@ cloudwatchExporter:
 
 # Vantage Exporter Configuration
 vantageExporter:
+  enabled: true
+
   image:
     repository: "${AWS_PRIMARY_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/cloudcosts/vantage-exporter"
     tag: "latest"

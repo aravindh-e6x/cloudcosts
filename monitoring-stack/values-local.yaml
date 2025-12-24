@@ -1,0 +1,162 @@
+# Local k3d deployment values - no AWS dependencies
+
+cluster:
+  name: k3d-cloudcosts
+
+# Disable ingress for local (use port-forward instead)
+grafanaIngress:
+  enabled: false
+
+greptimeIngress:
+  enabled: false
+
+# cert-manager Configuration
+certManager:
+  email: test@example.com
+
+cert-manager:
+  installCRDs: true
+
+# Nginx Ingress Controller
+ingress-nginx:
+  controller:
+    hostPort:
+      enabled: false
+    service:
+      type: ClusterIP
+
+# GreptimeDB Standalone Configuration - local storage only
+greptimedb-standalone:
+  image:
+    registry: docker.io
+    repository: greptime/greptimedb
+    tag: "v0.9.1"
+    pullPolicy: IfNotPresent
+
+  persistence:
+    enabled: true
+    storageClass: ""
+    size: 10Gi
+
+  # Disable S3 for local
+  objectStorage:
+    s3:
+      bucket: ""
+      region: ""
+      root: ""
+
+  serviceAccount:
+    create: true
+    annotations: {}
+
+  auth:
+    enabled: true
+    users:
+      - username: "e6data"
+        password: "cloudcosts"
+        permission: "readwrite"
+
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+
+  service:
+    type: ClusterIP
+
+# Grafana Configuration
+grafana:
+  replicas: 1
+
+  deploymentStrategy:
+    type: Recreate
+
+  adminUser: admin
+  adminPassword: admin
+
+  persistence:
+    enabled: true
+    size: 1Gi
+
+  serviceAccount:
+    create: true
+    annotations: {}
+
+  datasources:
+    datasources.yaml:
+      apiVersion: 1
+      datasources:
+        - name: GreptimeDB
+          uid: greptimedb
+          type: prometheus
+          url: http://monitoring-stack-greptimedb-standalone:4000/v1/prometheus
+          access: proxy
+          isDefault: true
+          basicAuth: true
+          basicAuthUser: e6data
+          secureJsonData:
+            basicAuthPassword: cloudcosts
+            httpHeaderValue1: kubernetes
+          jsonData:
+            timeInterval: "15s"
+            httpHeaderName1: x-greptime-db-name
+        - name: GreptimeDB-Vantage
+          uid: greptimedb-vantage
+          type: prometheus
+          url: http://monitoring-stack-greptimedb-standalone:4000/v1/prometheus
+          access: proxy
+          basicAuth: true
+          basicAuthUser: e6data
+          secureJsonData:
+            basicAuthPassword: cloudcosts
+            httpHeaderValue1: vantage
+          jsonData:
+            timeInterval: "1h"
+            httpHeaderName1: x-greptime-db-name
+
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      folder: /tmp/dashboards
+      folderAnnotation: grafana_folder
+      provider:
+        foldersFromFilesStructure: true
+        allowUiUpdates: true
+    datasources:
+      enabled: true
+      label: grafana_datasource
+
+  service:
+    type: ClusterIP
+    port: 80
+
+  ingress:
+    enabled: false
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# Disable CloudWatch exporter (requires AWS)
+cloudwatchExporter:
+  enabled: false
+
+# Disable Vantage exporter for local
+vantageExporter:
+  enabled: false
+
+# Disable POC exporter for local
+pocCostExporter:
+  enabled: false
+
+# Disable MCP server for local (no image available yet)
+mcpServer:
+  enabled: false

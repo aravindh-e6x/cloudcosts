@@ -3,13 +3,14 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
-import { LayoutDashboard, DollarSign, Server, Users, CreditCard } from "lucide-react"
+import { LayoutDashboard, CreditCard, Server, Cloud, Boxes } from "lucide-react"
 
 const navigation = [
   { name: "Overview", href: "/", icon: LayoutDashboard },
-  { name: "Vantage", href: "/vantage", icon: CreditCard },
   { name: "Kubernetes", href: "/kubernetes", icon: Server },
-  { name: "POC", href: "/poc", icon: Users },
+  { name: "Vantage", href: "/vantage", icon: CreditCard },
+  { name: "CloudWatch", href: "/cloudwatch", icon: Cloud },
+  { name: "E6 Clusters", href: "/e6", icon: Boxes },
 ]
 
 export function Sidebar() {
