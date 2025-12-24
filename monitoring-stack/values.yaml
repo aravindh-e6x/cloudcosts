@@ -329,3 +329,38 @@ mcpServer:
     limits:
       cpu: 200m
       memory: 256Mi
+
+# Dashboard Configuration
+dashboard:
+  enabled: true
+
+  replicas: 1
+
+  image:
+    repository: "${AWS_PRIMARY_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/cloudcosts/dashboard"
+    tag: "latest"
+    pullPolicy: Always
+
+  imagePullSecrets:
+    - name: ecr-pull-secret
+
+  greptimedb:
+    url: "http://monitoring-stack-greptimedb-standalone.monitoring.svc:4000"
+    username: "${GREPTIMEDB_USERNAME}"
+    password: "${GREPTIMEDB_PASSWORD}"
+
+  ingress:
+    enabled: true
+    host: dashboard.cloudcosts.in
+    tls:
+      enabled: true
+      secretName: dashboard-tls
+    annotations: {}
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi

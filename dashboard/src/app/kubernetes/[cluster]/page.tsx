@@ -471,7 +471,7 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
       </Dialog>
 
       {/* Cost Summary Row */}
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
+      <div className="grid grid-cols-3 gap-4">
         <Card className="bg-muted/50">
           <CardContent className="py-4">
             <p className="text-sm text-muted-foreground">Total Cost ({selectedDate})</p>
@@ -492,38 +492,8 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
         </Card>
       </div>
 
-      {/* Cost Distribution Charts */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {/* Cost by Namespace Donut */}
-        <Card>
-          <CardHeader className="pb-2">
-            <div className="flex items-center gap-2">
-              <CardTitle className="text-base">Cost by Namespace</CardTitle>
-              <InfoPopover
-                title="Cost by Namespace"
-                description="Donut chart showing the top 8 namespaces by estimated total cost for the selected date. Cost is calculated based on CPU allocation ($0.03/core-hour) and memory allocation ($0.004/GB-hour)."
-                sql={kubernetesQueries.costByNamespace(selectedCluster, startTimestamp, endTimestamp)}
-              />
-            </div>
-            <CardDescription>Top 8 namespaces by total cost</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {costDonutData.length > 0 ? (
-              <PieChart
-                data={costDonutData}
-                height={220}
-                donut
-                outerRadius={80}
-                showLegend
-                tooltipFormatter={(value) => formatCurrency(value, 3)}
-                className="border-0"
-              />
-            ) : (
-              <EmptyState />
-            )}
-          </CardContent>
-        </Card>
-
+      {/* Charts Grid - 2x2 */}
+      <div className="grid grid-cols-2 gap-6">
         {/* Top Namespaces Bar Chart */}
         <Card>
           <CardHeader className="pb-2">
@@ -584,10 +554,7 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
             )}
           </CardContent>
         </Card>
-      </div>
 
-      {/* Resource Usage Over Time */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* CPU by Namespace Stacked Area */}
         <Card>
           <CardHeader className="pb-2">

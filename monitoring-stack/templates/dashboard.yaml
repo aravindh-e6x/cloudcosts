@@ -1,0 +1,122 @@
+{{- if .Values.dashboard.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "monitoring-stack.fullname" . }}-dashboard
+  labels:
+    {{- include "monitoring-stack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: dashboard
+spec:
+  replicas: {{ .Values.dashboard.replicas | default 1 }}
+  selector:
+    matchLabels:
+      {{- include "monitoring-stack.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: dashboard
+  template:
+    metadata:
+      labels:
+        {{- include "monitoring-stack.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: dashboard
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+      containers:
+        - name: dashboard
+          image: "{{ .Values.dashboard.image.repository }}:{{ .Values.dashboard.image.tag }}"
+          imagePullPolicy: {{ .Values.dashboard.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+          env:
+            - name: GREPTIMEDB_URL
+              value: {{ .Values.dashboard.greptimedb.url | quote }}
+            - name: GREPTIMEDB_USERNAME
+              value: {{ .Values.dashboard.greptimedb.username | quote }}
+            - name: GREPTIMEDB_PASSWORD
+              value: {{ .Values.dashboard.greptimedb.password | quote }}
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            {{- toYaml .Values.dashboard.resources | nindent 12 }}
+      {{- with .Values.dashboard.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.dashboard.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.dashboard.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "monitoring-stack.fullname" . }}-dashboard
+  labels:
+    {{- include "monitoring-stack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: dashboard
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "monitoring-stack.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: dashboard
+---
+{{- if .Values.dashboard.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "monitoring-stack.fullname" . }}-dashboard
+  labels:
+    {{- include "monitoring-stack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: dashboard
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    {{- with .Values.dashboard.ingress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  ingressClassName: nginx
+  {{- if .Values.dashboard.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ .Values.dashboard.ingress.host }}
+      secretName: {{ .Values.dashboard.ingress.tls.secretName }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.dashboard.ingress.host | required "dashboard.ingress.host is required" }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "monitoring-stack.fullname" . }}-dashboard
+                port:
+                  number: 80
+{{- end }}
+{{- end }}
