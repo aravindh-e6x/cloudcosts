@@ -7,11 +7,9 @@ import {
   CardHeader,
   CardTitle,
   CardDescription,
-  StatCard,
   DataTable,
   LineChart,
-  BarChart,
-  PieChart,
+  Badge,
   Tabs,
   TabsList,
   TabsTrigger,
@@ -22,18 +20,21 @@ import {
 import { TimeRangePicker, type DateRange } from "@/components/shared"
 import { useQuery, formatCurrency, formatDate } from "@/hooks/useQuery"
 import { vantageQueries } from "@/lib/queries"
+import { TrendingUp, TrendingDown, Activity, ArrowUpRight, ArrowDownRight } from "lucide-react"
 
 interface CostByAccount {
   account_id: string
   account_name: string
   provider: string
   cost: number
+  [key: string]: unknown
 }
 
 interface CostByService {
   service: string
   provider: string
   cost: number
+  [key: string]: string | number
 }
 
 interface DailyCost {
@@ -97,6 +98,30 @@ export default function VantagePage() {
   const totalCost = summary?.total_cost || costByAccount?.reduce((sum, acc) => sum + acc.cost, 0) || 0
   const avgDailyCost = totalCost / 30
 
+  // Calculate week-over-week trend
+  const costTrend = useMemo(() => {
+    if (!dailyCostTrend || dailyCostTrend.length < 14) return { change: 0, direction: 'flat' as const, weeklySpend: 0, prevWeeklySpend: 0 }
+    const recentWeek = dailyCostTrend.slice(-7).reduce((sum, d) => sum + d.cost, 0)
+    const previousWeek = dailyCostTrend.slice(-14, -7).reduce((sum, d) => sum + d.cost, 0)
+    const change = previousWeek > 0 ? ((recentWeek - previousWeek) / previousWeek) * 100 : 0
+    return {
+      change: Math.abs(change).toFixed(1),
+      direction: change > 2 ? 'up' as const : change < -2 ? 'down' as const : 'flat' as const,
+      weeklySpend: recentWeek,
+      prevWeeklySpend: previousWeek
+    }
+  }, [dailyCostTrend])
+
+  // Find highest and lowest cost days
+  const costExtremes = useMemo(() => {
+    if (!dailyCostTrend || dailyCostTrend.length === 0) return { highest: null, lowest: null }
+    const sorted = [...dailyCostTrend].sort((a, b) => b.cost - a.cost)
+    return {
+      highest: sorted[0],
+      lowest: sorted[sorted.length - 1]
+    }
+  }, [dailyCostTrend])
+
   // Filter accounts if selection is made
   const filteredAccounts = useMemo(() => {
     if (!costByAccount) return []
@@ -113,26 +138,26 @@ export default function VantagePage() {
     [costByAccount]
   )
 
-  // Cost by provider for pie chart
+  // Cost by provider for table
   const costByProvider = useMemo(() => {
     if (!costByAccount) return []
     const providerTotals = new Map<string, number>()
     costByAccount.forEach(acc => {
       providerTotals.set(acc.provider, (providerTotals.get(acc.provider) || 0) + acc.cost)
     })
-    const colors: Record<string, string> = {
-      aws: "#FF9900",
-      azure: "#0078D4",
-      gcp: "#4285F4",
-      snowflake: "#29B5E8",
-      databricks: "#FF3621",
-    }
-    return Array.from(providerTotals.entries()).map(([name, value]) => ({
-      name: name.toUpperCase(),
-      value,
-      color: colors[name] || "#666666",
-    }))
+    return Array.from(providerTotals.entries())
+      .map(([name, value]) => ({
+        provider: name.toUpperCase(),
+        cost: value,
+      }))
+      .sort((a, b) => b.cost - a.cost)
   }, [costByAccount])
+
+  // Sorted services by cost
+  const sortedServices = useMemo(() => {
+    if (!costByService) return []
+    return [...costByService].sort((a, b) => b.cost - a.cost)
+  }, [costByService])
 
   // Daily cost chart data
   const dailyCostChartData = useMemo(() => {
@@ -146,7 +171,7 @@ export default function VantagePage() {
   // Service trend data (grouped by date and service)
   const serviceTrendData = useMemo(() => {
     if (!dailyCostByProvider) return []
-    const grouped = new Map<string, Record<string, number>>()
+    const grouped = new Map<string, Record<string, string | number>>()
     dailyCostByProvider.forEach(item => {
       const date = formatDate(item.date)
       if (!grouped.has(date)) {
@@ -214,6 +239,10 @@ export default function VantagePage() {
           </p>
         </div>
         <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Activity className="h-4 w-4" />
+            <span>5m refresh</span>
+          </div>
           <Combobox
             options={accountOptions}
             value={selectedAccounts}
@@ -226,53 +255,121 @@ export default function VantagePage() {
         </div>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
-        <StatCard
-          label="Total Spend (30d)"
-          value={totalCost}
-          prefix="$"
-        />
-        <StatCard
-          label="Avg Daily Cost"
-          value={avgDailyCost}
-          prefix="$"
-        />
-        <StatCard
-          label="Accounts"
-          value={summary?.account_count || costByAccount?.length || 0}
-        />
-        <StatCard
-          label="Top Service"
-          value={topService?.cost || 0}
-          prefix="$"
-          suffix={topService ? ` (${topService.service})` : ""}
-        />
-        <StatCard
-          label="Providers"
-          value={summary?.provider_count || costByProvider.length}
-        />
+      {/* Primary KPI Cards */}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <Card className="relative overflow-hidden">
+          <CardContent className="pt-6">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground">Total Spend</p>
+                <p className="text-3xl font-bold">{formatCurrency(totalCost)}</p>
+                <p className="text-xs text-muted-foreground mt-1">Last 30 days</p>
+              </div>
+              <div className={`flex items-center gap-1 text-sm ${costTrend.direction === 'up' ? 'text-red-500' : costTrend.direction === 'down' ? 'text-green-600' : 'text-muted-foreground'}`}>
+                {costTrend.direction === 'up' ? <TrendingUp className="h-4 w-4" /> : costTrend.direction === 'down' ? <TrendingDown className="h-4 w-4" /> : null}
+                <span>{costTrend.change}%</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-6">
+            <p className="text-sm text-muted-foreground">Weekly Spend</p>
+            <p className="text-3xl font-bold">{formatCurrency(costTrend.weeklySpend)}</p>
+            <div className="flex items-center gap-1 mt-1 text-xs">
+              {costTrend.direction === 'up' ? (
+                <span className="text-red-500 flex items-center"><ArrowUpRight className="h-3 w-3" /> {formatCurrency(costTrend.weeklySpend - costTrend.prevWeeklySpend)} vs last week</span>
+              ) : costTrend.direction === 'down' ? (
+                <span className="text-green-600 flex items-center"><ArrowDownRight className="h-3 w-3" /> {formatCurrency(costTrend.prevWeeklySpend - costTrend.weeklySpend)} vs last week</span>
+              ) : (
+                <span className="text-muted-foreground">Same as last week</span>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-6">
+            <p className="text-sm text-muted-foreground">Avg Daily Cost</p>
+            <p className="text-3xl font-bold">{formatCurrency(avgDailyCost)}</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {costExtremes.highest ? `Peak: ${formatCurrency(costExtremes.highest.cost)}` : 'No data'}
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-6">
+            <p className="text-sm text-muted-foreground">Top Service</p>
+            <p className="text-3xl font-bold">{formatCurrency(topService?.cost || 0)}</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {topService?.service || 'N/A'}
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Secondary Stats */}
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-4 lg:grid-cols-6">
+        <Card className="bg-muted/50">
+          <CardContent className="py-3 flex items-center justify-between">
+            <span className="text-sm">Accounts</span>
+            <span className="font-mono font-semibold">{summary?.account_count || costByAccount?.length || 0}</span>
+          </CardContent>
+        </Card>
+        <Card className="bg-muted/50">
+          <CardContent className="py-3 flex items-center justify-between">
+            <span className="text-sm">Providers</span>
+            <span className="font-mono font-semibold">{summary?.provider_count || costByProvider.length}</span>
+          </CardContent>
+        </Card>
+        <Card className="bg-muted/50">
+          <CardContent className="py-3 flex items-center justify-between">
+            <span className="text-sm">Services</span>
+            <span className="font-mono font-semibold">{costByService?.length || 0}</span>
+          </CardContent>
+        </Card>
+        <Card className="bg-muted/50">
+          <CardContent className="py-3 flex items-center justify-between">
+            <span className="text-sm">Lowest Day</span>
+            <span className="font-mono font-semibold">{costExtremes.lowest ? formatCurrency(costExtremes.lowest.cost) : '-'}</span>
+          </CardContent>
+        </Card>
+        <Card className="bg-muted/50">
+          <CardContent className="py-3 flex items-center justify-between">
+            <span className="text-sm">Highest Day</span>
+            <span className="font-mono font-semibold">{costExtremes.highest ? formatCurrency(costExtremes.highest.cost) : '-'}</span>
+          </CardContent>
+        </Card>
+        <Card className="bg-muted/50">
+          <CardContent className="py-3 flex items-center justify-between">
+            <span className="text-sm">Projected</span>
+            <span className="font-mono font-semibold">{formatCurrency(avgDailyCost * 30)}</span>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Charts Row 1 */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        {/* Cost by Provider */}
+        {/* Cost by Provider Table */}
         <Card>
           <CardHeader>
             <CardTitle>Cost by Provider</CardTitle>
-            <CardDescription>Last 30 days spend by cloud provider</CardDescription>
+            <CardDescription>30-day spend by cloud provider (high to low)</CardDescription>
           </CardHeader>
           <CardContent>
             {costByProvider.length > 0 ? (
-              <PieChart
+              <DataTable
                 data={costByProvider}
-                height={300}
-                showLegend
-                donut
-                tooltipFormatter={(value) => formatCurrency(Number(value))}
+                columns={[
+                  { key: "provider", header: "Provider", sortable: true },
+                  { key: "cost", header: "Cost (30d)", sortable: true, render: (value: unknown) => formatCurrency(Number(value)) },
+                ]}
+                hoverable
               />
             ) : (
-              <div className="flex items-center justify-center h-[300px] text-muted-foreground">
+              <div className="flex items-center justify-center h-[200px] text-muted-foreground">
                 No data available
               </div>
             )}
@@ -319,40 +416,15 @@ export default function VantagePage() {
           <Card>
             <CardHeader>
               <CardTitle>Cost by Account</CardTitle>
-              <CardDescription>Monthly spend breakdown by account</CardDescription>
+              <CardDescription>Monthly spend breakdown by account (high to low)</CardDescription>
             </CardHeader>
             <CardContent>
               <DataTable
-                data={filteredAccounts}
+                data={filteredAccounts.sort((a, b) => b.cost - a.cost)}
                 columns={accountColumns}
                 hoverable
                 striped
               />
-            </CardContent>
-          </Card>
-
-          {/* Account Comparison Chart */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Account Cost Comparison</CardTitle>
-              <CardDescription>Visual comparison of account spending</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {filteredAccounts.length > 0 ? (
-                <BarChart
-                  data={filteredAccounts.slice(0, 10).map(acc => ({
-                    name: acc.account_name || acc.account_id,
-                    cost: acc.cost,
-                  }))}
-                  xAxisKey="name"
-                  bars={[{ dataKey: "cost", name: "Cost", color: "var(--chart-1)" }]}
-                  height={300}
-                />
-              ) : (
-                <div className="flex items-center justify-center h-[300px] text-muted-foreground">
-                  No data available
-                </div>
-              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -362,41 +434,18 @@ export default function VantagePage() {
           <Card>
             <CardHeader>
               <CardTitle>Cost by Service</CardTitle>
-              <CardDescription>Monthly spend breakdown by service</CardDescription>
+              <CardDescription>Monthly spend breakdown by service (high to low)</CardDescription>
             </CardHeader>
             <CardContent>
               {servicesLoading ? (
                 <Skeleton className="h-64" />
               ) : (
                 <DataTable
-                  data={costByService || []}
+                  data={sortedServices}
                   columns={serviceColumns}
                   hoverable
                   striped
                 />
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Service Cost Chart */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Top Services by Cost</CardTitle>
-              <CardDescription>Highest spending services</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {costByService && costByService.length > 0 ? (
-                <BarChart
-                  data={costByService.slice(0, 10)}
-                  xAxisKey="service"
-                  bars={[{ dataKey: "cost", name: "Cost", color: "var(--chart-2)" }]}
-                  height={300}
-                  layout="vertical"
-                />
-              ) : (
-                <div className="flex items-center justify-center h-[300px] text-muted-foreground">
-                  No data available
-                </div>
               )}
             </CardContent>
           </Card>
@@ -425,34 +474,6 @@ export default function VantagePage() {
                 />
               ) : (
                 <div className="flex items-center justify-center h-[350px] text-muted-foreground">
-                  No data available
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Stacked Bar Chart */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Daily Cost Breakdown</CardTitle>
-              <CardDescription>Cost composition per day by provider</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {serviceTrendData.length > 0 ? (
-                <BarChart
-                  data={serviceTrendData.slice(-14)}
-                  xAxisKey="date"
-                  bars={providers.map(provider => ({
-                    dataKey: provider,
-                    name: provider.toUpperCase(),
-                    color: providerColors[provider] || "#666666",
-                    stacked: true,
-                  }))}
-                  height={300}
-                  stacked
-                />
-              ) : (
-                <div className="flex items-center justify-center h-[300px] text-muted-foreground">
                   No data available
                 </div>
               )}

@@ -1,17 +1,14 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
   CardDescription,
-  StatCard,
   DataTable,
   LineChart,
-  BarChart,
-  PieChart,
   Badge,
   Tabs,
   TabsList,
@@ -19,6 +16,7 @@ import {
   TabsContent,
 } from "laminar-ui"
 import { TimeRangePicker, ClusterSelector, type DateRange } from "@/components/shared"
+import { Activity, AlertTriangle, CheckCircle, Cpu, MemoryStick, Box, Zap } from "lucide-react"
 
 // Mock E6 clusters
 const mockE6Clusters = ["e6-prod-us-east", "e6-prod-us-west", "e6-staging", "e6-analytics"]
@@ -29,7 +27,7 @@ const mockComponents = [
   { component: "Storage", pods: 4, cpu_alloc: "8 cores", mem_alloc: "64Gi", cpu_used: "6.0 cores", mem_used: "48Gi", cost_hourly: 12.50 },
   { component: "Schema", pods: 2, cpu_alloc: "4 cores", mem_alloc: "8Gi", cpu_used: "2.8 cores", mem_used: "5.2Gi", cost_hourly: 4.20 },
   { component: "Queue", pods: 2, cpu_alloc: "2 cores", mem_alloc: "4Gi", cpu_used: "1.2 cores", mem_used: "2.8Gi", cost_hourly: 2.80 },
-  { component: "Gateway", pods: 2, cpu_alloc: "2 cores", mem_alloc: "4Gi", cpu_used: "0.8 cores", mem_used: "1.5Gi", cost_hourly: 2.10 },
+  { component: "Executor", pods: 2, cpu_alloc: "2 cores", mem_alloc: "4Gi", cpu_used: "0.8 cores", mem_used: "1.5Gi", cost_hourly: 2.10 },
 ]
 
 // Mock pod details per component
@@ -56,23 +54,23 @@ const mockQueuePods = [
   { name: "e6-queue-1", component: "Queue", size: "xlarge", cpu_alloc: "1 core", mem_alloc: "2Gi", cpu_used: "0.6 cores", mem_used: "1.4Gi", cpu_pct: 60, mem_pct: 70, cost_hourly: 1.40 },
 ]
 
-const mockGatewayPods = [
-  { name: "e6-gateway-0", component: "Gateway", size: "xlarge", cpu_alloc: "1 core", mem_alloc: "2Gi", cpu_used: "0.4 cores", mem_used: "0.75Gi", cpu_pct: 40, mem_pct: 37, cost_hourly: 1.05 },
-  { name: "e6-gateway-1", component: "Gateway", size: "xlarge", cpu_alloc: "1 core", mem_alloc: "2Gi", cpu_used: "0.4 cores", mem_used: "0.75Gi", cpu_pct: 40, mem_pct: 37, cost_hourly: 1.05 },
+const mockExecutorPods = [
+  { name: "e6-executor-0", component: "Executor", size: "xlarge", cpu_alloc: "1 core", mem_alloc: "2Gi", cpu_used: "0.4 cores", mem_used: "0.75Gi", cpu_pct: 40, mem_pct: 37, cost_hourly: 1.05 },
+  { name: "e6-executor-1", component: "Executor", size: "xlarge", cpu_alloc: "1 core", mem_alloc: "2Gi", cpu_used: "0.4 cores", mem_used: "0.75Gi", cpu_pct: 40, mem_pct: 37, cost_hourly: 1.05 },
 ]
 
-const allPods = [...mockPlannerPods, ...mockStoragePods, ...mockSchemaPods, ...mockQueuePods, ...mockGatewayPods]
+const allPods = [...mockPlannerPods, ...mockStoragePods, ...mockSchemaPods, ...mockQueuePods, ...mockExecutorPods]
 
 // Time series data
 const mockResourceTimeSeries = [
-  { time: "10:00", planner_cpu: 78, storage_cpu: 72, schema_cpu: 68, queue_cpu: 58, gateway_cpu: 38 },
-  { time: "10:15", planner_cpu: 82, storage_cpu: 75, schema_cpu: 70, queue_cpu: 62, gateway_cpu: 42 },
-  { time: "10:30", planner_cpu: 85, storage_cpu: 78, schema_cpu: 72, queue_cpu: 58, gateway_cpu: 40 },
-  { time: "10:45", planner_cpu: 80, storage_cpu: 74, schema_cpu: 68, queue_cpu: 55, gateway_cpu: 38 },
-  { time: "11:00", planner_cpu: 76, storage_cpu: 70, schema_cpu: 65, queue_cpu: 60, gateway_cpu: 42 },
-  { time: "11:15", planner_cpu: 88, storage_cpu: 82, schema_cpu: 75, queue_cpu: 65, gateway_cpu: 45 },
-  { time: "11:30", planner_cpu: 92, storage_cpu: 85, schema_cpu: 78, queue_cpu: 62, gateway_cpu: 40 },
-  { time: "11:45", planner_cpu: 78, storage_cpu: 72, schema_cpu: 70, queue_cpu: 58, gateway_cpu: 38 },
+  { time: "10:00", planner_cpu: 78, storage_cpu: 72, schema_cpu: 68, queue_cpu: 58, executor_cpu: 38 },
+  { time: "10:15", planner_cpu: 82, storage_cpu: 75, schema_cpu: 70, queue_cpu: 62, executor_cpu: 42 },
+  { time: "10:30", planner_cpu: 85, storage_cpu: 78, schema_cpu: 72, queue_cpu: 58, executor_cpu: 40 },
+  { time: "10:45", planner_cpu: 80, storage_cpu: 74, schema_cpu: 68, queue_cpu: 55, executor_cpu: 38 },
+  { time: "11:00", planner_cpu: 76, storage_cpu: 70, schema_cpu: 65, queue_cpu: 60, executor_cpu: 42 },
+  { time: "11:15", planner_cpu: 88, storage_cpu: 82, schema_cpu: 75, queue_cpu: 65, executor_cpu: 45 },
+  { time: "11:30", planner_cpu: 92, storage_cpu: 85, schema_cpu: 78, queue_cpu: 62, executor_cpu: 40 },
+  { time: "11:45", planner_cpu: 78, storage_cpu: 72, schema_cpu: 70, queue_cpu: 58, executor_cpu: 38 },
 ]
 
 const mockCostTrend = [
@@ -133,6 +131,22 @@ export default function E6ClustersPage() {
   const totalCostDaily = totalCostHourly * 24
   const totalCostMonthly = totalCostDaily * 30
 
+  // Calculate overall utilization
+  const avgCpuUtil = useMemo(() => {
+    return allPods.reduce((sum, p) => sum + p.cpu_pct, 0) / allPods.length
+  }, [])
+
+  const avgMemUtil = useMemo(() => {
+    return allPods.reduce((sum, p) => sum + p.mem_pct, 0) / allPods.length
+  }, [])
+
+  // Cluster health based on utilization
+  const clusterHealth = useMemo(() => {
+    if (avgCpuUtil > 90 || avgMemUtil > 90) return 'critical'
+    if (avgCpuUtil > 75 || avgMemUtil > 75) return 'warning'
+    return 'healthy'
+  }, [avgCpuUtil, avgMemUtil])
+
   const filteredPods = selectedComponent
     ? allPods.filter(p => p.component === selectedComponent)
     : allPods
@@ -141,13 +155,30 @@ export default function E6ClustersPage() {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">E6 Clusters</h1>
-          <p className="text-muted-foreground">
-            E6 component resources and cost breakdown
-          </p>
+        <div className="flex items-center gap-4">
+          <div>
+            <h1 className="text-2xl font-bold">E6 Clusters</h1>
+            <p className="text-muted-foreground">
+              E6 component resources and cost breakdown
+            </p>
+          </div>
+          <Badge variant="secondary" className="flex items-center gap-1">
+            <AlertTriangle className="h-3 w-3" />
+            Mock Data
+          </Badge>
+          <Badge
+            variant={clusterHealth === 'healthy' ? 'default' : clusterHealth === 'warning' ? 'secondary' : 'destructive'}
+            className="flex items-center gap-1"
+          >
+            {clusterHealth === 'healthy' ? <CheckCircle className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />}
+            {clusterHealth === 'healthy' ? 'Healthy' : clusterHealth === 'warning' ? 'Warning' : 'Critical'}
+          </Badge>
         </div>
         <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Activity className="h-4 w-4" />
+            <span>Live</span>
+          </div>
           <ClusterSelector
             clusters={mockE6Clusters}
             value={selectedCluster}
@@ -158,58 +189,93 @@ export default function E6ClustersPage() {
         </div>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-        <StatCard
-          label="Total Pods"
-          value={totalPods}
-          previousValue={totalPods - 1}
-        />
-        <StatCard
-          label="Components"
-          value={mockComponents.length}
-          previousValue={mockComponents.length}
-        />
-        <StatCard
-          label="Cost/hour"
-          value={totalCostHourly}
-          prefix="$"
-          previousValue={totalCostHourly - 2}
-        />
-        <StatCard
-          label="Cost/day"
-          value={totalCostDaily}
-          prefix="$"
-          previousValue={totalCostDaily - 48}
-        />
-        <StatCard
-          label="Cost/month (est)"
-          value={totalCostMonthly}
-          prefix="$"
-          previousValue={totalCostMonthly - 1500}
-        />
-        <StatCard
-          label="Avg CPU Util"
-          value={72}
-          suffix="%"
-          previousValue={68}
-        />
+      {/* Primary KPI Cards */}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <Card className="relative overflow-hidden">
+          <CardContent className="pt-6">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground">Total Cost</p>
+                <p className="text-3xl font-bold">${totalCostHourly.toFixed(2)}<span className="text-lg font-normal">/hr</span></p>
+                <p className="text-xs text-muted-foreground mt-1">~${totalCostMonthly.toFixed(0)}/month</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-6">
+            <p className="text-sm text-muted-foreground">CPU Utilization</p>
+            <div className="flex items-baseline gap-2">
+              <p className="text-3xl font-bold">{avgCpuUtil.toFixed(0)}%</p>
+            </div>
+            <div className="mt-2 h-2 bg-muted overflow-hidden">
+              <div
+                className={`h-full transition-all ${avgCpuUtil > 80 ? 'bg-red-500' : avgCpuUtil > 60 ? 'bg-yellow-500' : 'bg-primary'}`}
+                style={{ width: `${Math.min(avgCpuUtil, 100)}%` }}
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-6">
+            <p className="text-sm text-muted-foreground">Memory Utilization</p>
+            <div className="flex items-baseline gap-2">
+              <p className="text-3xl font-bold">{avgMemUtil.toFixed(0)}%</p>
+            </div>
+            <div className="mt-2 h-2 bg-muted overflow-hidden">
+              <div
+                className={`h-full transition-all ${avgMemUtil > 80 ? 'bg-red-500' : avgMemUtil > 60 ? 'bg-yellow-500' : 'bg-primary'}`}
+                style={{ width: `${Math.min(avgMemUtil, 100)}%` }}
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-6">
+            <p className="text-sm text-muted-foreground">Total Pods</p>
+            <p className="text-3xl font-bold">{totalPods}</p>
+            <p className="text-xs text-muted-foreground mt-1">{mockComponents.length} components</p>
+          </CardContent>
+        </Card>
       </div>
 
-      {/* Cost Charts */}
+      {/* Component Quick Stats */}
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
+        {mockComponents.map((comp, i) => (
+          <Card
+            key={comp.component}
+            className={`bg-muted/50 cursor-pointer transition-all hover:border-primary ${selectedComponent === comp.component ? 'border-primary' : ''}`}
+            onClick={() => setSelectedComponent(selectedComponent === comp.component ? null : comp.component)}
+          >
+            <CardContent className="py-4">
+              <div className="flex items-center justify-between mb-2">
+                <Badge variant="outline" style={{ borderColor: costByComponent[i].color, color: costByComponent[i].color }}>
+                  {comp.component}
+                </Badge>
+                <span className="text-xs text-muted-foreground">{comp.pods} pods</span>
+              </div>
+              <p className="font-mono font-semibold">${comp.cost_hourly.toFixed(2)}/hr</p>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {/* Cost Table and Trend */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader>
             <CardTitle>Cost by Component</CardTitle>
-            <CardDescription>Hourly cost distribution (OpenCost)</CardDescription>
+            <CardDescription>Hourly cost distribution (high to low)</CardDescription>
           </CardHeader>
           <CardContent>
-            <PieChart
-              data={costByComponent}
-              height={300}
-              showLegend
-              donut
-              tooltipFormatter={(value) => `$${value.toFixed(2)}/hr`}
+            <DataTable
+              data={[...mockComponents].sort((a, b) => b.cost_hourly - a.cost_hourly)}
+              columns={componentColumns}
+              hoverable
+              striped
             />
           </CardContent>
         </Card>
@@ -232,23 +298,6 @@ export default function E6ClustersPage() {
         </Card>
       </div>
 
-      {/* Component Summary Table */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Component Summary</CardTitle>
-          <CardDescription>Resource allocation and cost per E6 component</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <DataTable
-            data={mockComponents}
-            columns={componentColumns}
-            hoverable
-            striped
-            onRowClick={(row) => setSelectedComponent(selectedComponent === row.component ? null : row.component)}
-          />
-        </CardContent>
-      </Card>
-
       {/* Component Details Tabs */}
       <Tabs defaultValue="all-pods">
         <TabsList>
@@ -267,8 +316,8 @@ export default function E6ClustersPage() {
           <TabsTrigger value="queue" onClick={() => setSelectedComponent("Queue")}>
             Queue ({mockQueuePods.length})
           </TabsTrigger>
-          <TabsTrigger value="gateway" onClick={() => setSelectedComponent("Gateway")}>
-            Gateway ({mockGatewayPods.length})
+          <TabsTrigger value="executor" onClick={() => setSelectedComponent("Executor")}>
+            Executor ({mockExecutorPods.length})
           </TabsTrigger>
         </TabsList>
 
@@ -357,15 +406,15 @@ export default function E6ClustersPage() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="gateway" className="mt-4">
+        <TabsContent value="executor" className="mt-4">
           <Card>
             <CardHeader>
-              <CardTitle>Gateway Pods</CardTitle>
-              <CardDescription>Gateway service instances</CardDescription>
+              <CardTitle>Executor Pods</CardTitle>
+              <CardDescription>Executor service instances</CardDescription>
             </CardHeader>
             <CardContent>
               <DataTable
-                data={mockGatewayPods}
+                data={mockExecutorPods}
                 columns={podColumns}
                 hoverable
                 striped
@@ -390,27 +439,11 @@ export default function E6ClustersPage() {
               { dataKey: "storage_cpu", name: "Storage", color: "#4ECDC4" },
               { dataKey: "schema_cpu", name: "Schema", color: "#45B7D1" },
               { dataKey: "queue_cpu", name: "Queue", color: "#96CEB4" },
-              { dataKey: "gateway_cpu", name: "Gateway", color: "#DDA0DD" },
+              { dataKey: "executor_cpu", name: "Executor", color: "#DDA0DD" },
             ]}
             height={350}
             yAxisFormatter={(value) => `${value}%`}
             showLegend
-          />
-        </CardContent>
-      </Card>
-
-      {/* Cost Comparison */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Component Cost Comparison</CardTitle>
-          <CardDescription>Hourly cost by component</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <BarChart
-            data={mockComponents}
-            xAxisKey="component"
-            bars={[{ dataKey: "cost_hourly", name: "Cost/hr", color: "var(--chart-1)" }]}
-            height={300}
           />
         </CardContent>
       </Card>

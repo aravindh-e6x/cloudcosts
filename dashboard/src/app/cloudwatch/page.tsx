@@ -1,16 +1,14 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
   CardDescription,
-  StatCard,
   DataTable,
   LineChart,
-  BarChart,
   Tabs,
   TabsList,
   TabsTrigger,
@@ -18,6 +16,7 @@ import {
   Badge,
 } from "laminar-ui"
 import { TimeRangePicker, type DateRange } from "@/components/shared"
+import { Activity, AlertTriangle, Server, Database, HardDrive, Radio } from "lucide-react"
 
 // Mock EC2 data
 const mockEC2Instances = [
@@ -130,55 +129,148 @@ export default function CloudWatchPage() {
   const totalMSKCost = mockMSKClusters.reduce((sum, c) => sum + c.cost_daily, 0)
   const totalDailyCost = totalEC2Cost + totalRDSCost + totalS3Cost + totalMSKCost
 
+  // Calculate running instances
+  const runningEC2 = mockEC2Instances.filter(i => i.state === "running").length
+  const avgEC2Cpu = mockEC2Instances.filter(i => i.state === "running").reduce((sum, i) => sum + i.cpu_avg, 0) / runningEC2 || 0
+
+  // Cost breakdown for table (sorted high to low)
+  const costBreakdown = useMemo(() => [
+    { service: "EC2", cost: totalEC2Cost, instances: mockEC2Instances.length },
+    { service: "RDS", cost: totalRDSCost, instances: mockRDSInstances.length },
+    { service: "S3", cost: totalS3Cost, instances: mockS3Buckets.length },
+    { service: "MSK", cost: totalMSKCost, instances: mockMSKClusters.length },
+  ].sort((a, b) => b.cost - a.cost), [totalEC2Cost, totalRDSCost, totalS3Cost, totalMSKCost])
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">AWS CloudWatch</h1>
-          <p className="text-muted-foreground">
-            Resource usage and cost metrics from CloudWatch
-          </p>
+        <div className="flex items-center gap-4">
+          <div>
+            <h1 className="text-2xl font-bold">AWS CloudWatch</h1>
+            <p className="text-muted-foreground">
+              Resource usage and cost metrics from CloudWatch
+            </p>
+          </div>
+          <Badge variant="secondary" className="flex items-center gap-1">
+            <AlertTriangle className="h-3 w-3" />
+            Mock Data
+          </Badge>
         </div>
         <div className="flex items-center gap-4">
-          <Badge variant="outline">Polling: Every 1 hour</Badge>
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Activity className="h-4 w-4" />
+            <span>1h polling</span>
+          </div>
           <TimeRangePicker value={timeRange} onChange={setTimeRange} />
         </div>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-5">
-        <StatCard
-          label="Total Daily Cost"
-          value={totalDailyCost}
-          prefix="$"
-          previousValue={totalDailyCost - 15}
-        />
-        <StatCard
-          label="EC2 Cost/day"
-          value={totalEC2Cost}
-          prefix="$"
-          previousValue={totalEC2Cost - 5}
-        />
-        <StatCard
-          label="RDS Cost/day"
-          value={totalRDSCost}
-          prefix="$"
-          previousValue={totalRDSCost + 2}
-        />
-        <StatCard
-          label="S3 Cost/day"
-          value={totalS3Cost}
-          prefix="$"
-          previousValue={totalS3Cost - 3}
-        />
-        <StatCard
-          label="MSK Cost/day"
-          value={totalMSKCost}
-          prefix="$"
-          previousValue={totalMSKCost}
-        />
+      {/* Primary KPI Cards */}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <Card className="relative overflow-hidden">
+          <CardContent className="pt-6">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground">Total Daily Cost</p>
+                <p className="text-3xl font-bold">${totalDailyCost.toFixed(2)}</p>
+                <p className="text-xs text-muted-foreground mt-1">~${(totalDailyCost * 30).toFixed(0)}/month</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-6">
+            <p className="text-sm text-muted-foreground">EC2 Instances</p>
+            <p className="text-3xl font-bold">{runningEC2}<span className="text-lg font-normal text-muted-foreground">/{mockEC2Instances.length}</span></p>
+            <p className="text-xs text-muted-foreground mt-1">Avg CPU: {avgEC2Cpu.toFixed(1)}%</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-6">
+            <p className="text-sm text-muted-foreground">RDS Instances</p>
+            <p className="text-3xl font-bold">{mockRDSInstances.length}</p>
+            <p className="text-xs text-muted-foreground mt-1">{mockRDSInstances.reduce((sum, i) => sum + i.connections, 0)} connections</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-6">
+            <p className="text-sm text-muted-foreground">S3 Storage</p>
+            <p className="text-3xl font-bold">{(mockS3Buckets.reduce((sum, b) => sum + b.size_gb, 0) / 1000).toFixed(1)}<span className="text-lg font-normal"> TB</span></p>
+            <p className="text-xs text-muted-foreground mt-1">{mockS3Buckets.length} buckets</p>
+          </CardContent>
+        </Card>
       </div>
+
+      {/* Service Cost Cards with Icons */}
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+        <Card className="bg-muted/50">
+          <CardContent className="py-4 flex items-center gap-3">
+            <div className="p-2 bg-[#FF9900]/10 text-[#FF9900]">
+              <Server className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">EC2</p>
+              <p className="font-mono font-semibold">${totalEC2Cost.toFixed(2)}/day</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="bg-muted/50">
+          <CardContent className="py-4 flex items-center gap-3">
+            <div className="p-2 bg-[#3B48CC]/10 text-[#3B48CC]">
+              <Database className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">RDS</p>
+              <p className="font-mono font-semibold">${totalRDSCost.toFixed(2)}/day</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="bg-muted/50">
+          <CardContent className="py-4 flex items-center gap-3">
+            <div className="p-2 bg-[#1B660F]/10 text-[#1B660F]">
+              <HardDrive className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">S3</p>
+              <p className="font-mono font-semibold">${totalS3Cost.toFixed(2)}/day</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="bg-muted/50">
+          <CardContent className="py-4 flex items-center gap-3">
+            <div className="p-2 bg-[#C925D1]/10 text-[#C925D1]">
+              <Radio className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">MSK</p>
+              <p className="font-mono font-semibold">${totalMSKCost.toFixed(2)}/day</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Cost Breakdown Table */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Service Cost Breakdown</CardTitle>
+          <CardDescription>Daily cost by AWS service (high to low)</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <DataTable
+            data={costBreakdown}
+            columns={[
+              { key: "service", header: "Service", sortable: true },
+              { key: "instances", header: "Resources", sortable: true },
+              { key: "cost", header: "Cost/day", sortable: true, render: (value: unknown) => `$${Number(value).toFixed(2)}` },
+            ]}
+            hoverable
+          />
+        </CardContent>
+      </Card>
 
       {/* Service Tabs */}
       <Tabs defaultValue="ec2">
@@ -240,20 +332,6 @@ export default function CloudWatchPage() {
             </Card>
           </div>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>EC2 Cost by Instance</CardTitle>
-              <CardDescription>Daily cost per instance</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <BarChart
-                data={mockEC2Instances.filter(i => i.cost_daily > 0).map(i => ({ name: i.name, cost: i.cost_daily }))}
-                xAxisKey="name"
-                bars={[{ dataKey: "cost", name: "Cost/day", color: "var(--chart-1)" }]}
-                height={250}
-              />
-            </CardContent>
-          </Card>
         </TabsContent>
 
         {/* RDS Tab */}
@@ -315,51 +393,17 @@ export default function CloudWatchPage() {
           <Card>
             <CardHeader>
               <CardTitle>S3 Buckets</CardTitle>
-              <CardDescription>Storage and request metrics</CardDescription>
+              <CardDescription>Storage and request metrics (sorted by cost, high to low)</CardDescription>
             </CardHeader>
             <CardContent>
               <DataTable
-                data={mockS3Buckets}
+                data={[...mockS3Buckets].sort((a, b) => b.cost_daily - a.cost_daily)}
                 columns={s3Columns}
                 hoverable
                 striped
               />
             </CardContent>
           </Card>
-
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardTitle>S3 Storage by Bucket</CardTitle>
-                <CardDescription>Storage size in GB</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <BarChart
-                  data={mockS3Buckets}
-                  xAxisKey="name"
-                  bars={[{ dataKey: "size_gb", name: "Size (GB)", color: "var(--chart-1)" }]}
-                  height={250}
-                  layout="vertical"
-                />
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>S3 Cost by Bucket</CardTitle>
-                <CardDescription>Daily cost per bucket</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <BarChart
-                  data={mockS3Buckets}
-                  xAxisKey="name"
-                  bars={[{ dataKey: "cost_daily", name: "Cost/day", color: "var(--chart-2)" }]}
-                  height={250}
-                  layout="vertical"
-                />
-              </CardContent>
-            </Card>
-          </div>
         </TabsContent>
 
         {/* MSK Tab */}
@@ -367,49 +411,17 @@ export default function CloudWatchPage() {
           <Card>
             <CardHeader>
               <CardTitle>MSK Clusters</CardTitle>
-              <CardDescription>Kafka cluster metrics</CardDescription>
+              <CardDescription>Kafka cluster metrics (sorted by cost, high to low)</CardDescription>
             </CardHeader>
             <CardContent>
               <DataTable
-                data={mockMSKClusters}
+                data={[...mockMSKClusters].sort((a, b) => b.cost_daily - a.cost_daily)}
                 columns={mskColumns}
                 hoverable
                 striped
               />
             </CardContent>
           </Card>
-
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardTitle>MSK Throughput</CardTitle>
-                <CardDescription>Message throughput by cluster</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <BarChart
-                  data={mockMSKClusters}
-                  xAxisKey="name"
-                  bars={[{ dataKey: "throughput_mbps", name: "Throughput (MB/s)", color: "var(--chart-1)" }]}
-                  height={250}
-                />
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>MSK Cost</CardTitle>
-                <CardDescription>Daily cost by cluster</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <BarChart
-                  data={mockMSKClusters}
-                  xAxisKey="name"
-                  bars={[{ dataKey: "cost_daily", name: "Cost/day", color: "var(--chart-2)" }]}
-                  height={250}
-                />
-              </CardContent>
-            </Card>
-          </div>
         </TabsContent>
       </Tabs>
     </div>

@@ -1,3 +1,7 @@
 export { TimeRangePicker, type DateRange } from "./time-range-picker"
 export { ClusterSelector } from "./cluster-selector"
 export { NamespaceSelector } from "./namespace-selector"
+export { ChangeIndicator, ChangeBadge } from "./change-indicator"
+export { BudgetCard } from "./budget-card"
+export { ComparisonCard } from "./comparison-card"
+export { ExpandableSection } from "./expandable-section"

@@ -303,13 +303,6 @@ export const vantageQueries = {
 }
 
 export const overviewQueries = {
-  // Total cloud spend from Vantage
-  totalCloudSpend: `
-    SELECT SUM(greptime_value) as total_cost
-    FROM vantage_daily_cost_by_provider
-    WHERE greptime_timestamp > NOW() - INTERVAL '30 days'
-  `,
-
   // Active K8s clusters
   activeClusters: `
     SELECT COUNT(DISTINCT cluster) as cluster_count
@@ -331,18 +324,6 @@ export const overviewQueries = {
     WHERE greptime_timestamp > NOW() - INTERVAL '1 hour'
   `,
 
-  // Cost by account for overview table
-  costByAccount: `
-    SELECT
-      account_id,
-      provider,
-      SUM(greptime_value) as cost
-    FROM vantage_daily_cost_by_account
-    WHERE greptime_timestamp > NOW() - INTERVAL '30 days'
-    GROUP BY account_id, provider
-    ORDER BY cost DESC
-  `,
-
   // Daily cost trend for chart
   dailyCostTrend: `
     SELECT
@@ -354,16 +335,220 @@ export const overviewQueries = {
     ORDER BY date
   `,
 
-  // Top services
-  topServices: `
+  // ============================================
+  // DAILY SNAPSHOT - Today vs Yesterday by Provider
+  // ============================================
+  dailySnapshot: `
+    SELECT
+      provider as metric,
+      SUM(CASE WHEN greptime_timestamp >= DATE_TRUNC('day', NOW()) THEN greptime_value ELSE 0 END) as today,
+      SUM(CASE WHEN greptime_timestamp >= DATE_TRUNC('day', NOW()) - INTERVAL '1 day'
+               AND greptime_timestamp < DATE_TRUNC('day', NOW()) THEN greptime_value ELSE 0 END) as yesterday
+    FROM vantage_daily_cost_by_provider
+    WHERE greptime_timestamp >= DATE_TRUNC('day', NOW()) - INTERVAL '1 day'
+    GROUP BY provider
+    ORDER BY today DESC
+  `,
+
+  // Total daily snapshot
+  dailySnapshotTotal: `
+    SELECT
+      'Total' as metric,
+      SUM(CASE WHEN greptime_timestamp >= DATE_TRUNC('day', NOW()) THEN greptime_value ELSE 0 END) as today,
+      SUM(CASE WHEN greptime_timestamp >= DATE_TRUNC('day', NOW()) - INTERVAL '1 day'
+               AND greptime_timestamp < DATE_TRUNC('day', NOW()) THEN greptime_value ELSE 0 END) as yesterday
+    FROM vantage_daily_cost_by_provider
+    WHERE greptime_timestamp >= DATE_TRUNC('day', NOW()) - INTERVAL '1 day'
+  `,
+
+  // ============================================
+  // TRENDS TABLE - Week over Week, Month over Month
+  // ============================================
+  trendsbyProvider: `
+    SELECT
+      provider as metric,
+      SUM(CASE WHEN greptime_timestamp >= DATE_TRUNC('week', NOW()) THEN greptime_value ELSE 0 END) as this_week,
+      SUM(CASE WHEN greptime_timestamp >= DATE_TRUNC('week', NOW()) - INTERVAL '7 days'
+               AND greptime_timestamp < DATE_TRUNC('week', NOW()) THEN greptime_value ELSE 0 END) as last_week,
+      SUM(CASE WHEN greptime_timestamp >= DATE_TRUNC('month', NOW()) THEN greptime_value ELSE 0 END) as mtd,
+      SUM(CASE WHEN greptime_timestamp >= DATE_TRUNC('month', NOW()) - INTERVAL '1 month'
+               AND greptime_timestamp < DATE_TRUNC('month', NOW()) THEN greptime_value ELSE 0 END) as prev_mtd
+    FROM vantage_daily_cost_by_provider
+    WHERE greptime_timestamp >= DATE_TRUNC('month', NOW()) - INTERVAL '1 month'
+    GROUP BY provider
+    ORDER BY this_week DESC
+  `,
+
+  // Total trends
+  trendsTotal: `
+    SELECT
+      'Total' as metric,
+      SUM(CASE WHEN greptime_timestamp >= DATE_TRUNC('week', NOW()) THEN greptime_value ELSE 0 END) as this_week,
+      SUM(CASE WHEN greptime_timestamp >= DATE_TRUNC('week', NOW()) - INTERVAL '7 days'
+               AND greptime_timestamp < DATE_TRUNC('week', NOW()) THEN greptime_value ELSE 0 END) as last_week,
+      SUM(CASE WHEN greptime_timestamp >= DATE_TRUNC('month', NOW()) THEN greptime_value ELSE 0 END) as mtd,
+      SUM(CASE WHEN greptime_timestamp >= DATE_TRUNC('month', NOW()) - INTERVAL '1 month'
+               AND greptime_timestamp < DATE_TRUNC('month', NOW()) THEN greptime_value ELSE 0 END) as prev_mtd
+    FROM vantage_daily_cost_by_provider
+    WHERE greptime_timestamp >= DATE_TRUNC('month', NOW()) - INTERVAL '1 month'
+  `,
+
+  // ============================================
+  // COST BY PROVIDER - Full breakdown with all periods
+  // ============================================
+  costByProviderFull: `
+    WITH total_cost AS (
+      SELECT SUM(greptime_value) as total
+      FROM vantage_daily_cost_by_provider
+      WHERE greptime_timestamp >= DATE_TRUNC('day', NOW())
+    )
+    SELECT
+      provider,
+      SUM(CASE WHEN greptime_timestamp >= DATE_TRUNC('day', NOW()) THEN greptime_value ELSE 0 END) as cost,
+      SUM(CASE WHEN greptime_timestamp >= DATE_TRUNC('day', NOW()) THEN greptime_value ELSE 0 END) as today,
+      SUM(CASE WHEN greptime_timestamp >= DATE_TRUNC('day', NOW()) - INTERVAL '1 day'
+               AND greptime_timestamp < DATE_TRUNC('day', NOW()) THEN greptime_value ELSE 0 END) as yesterday,
+      SUM(CASE WHEN greptime_timestamp >= NOW() - INTERVAL '7 days' THEN greptime_value ELSE 0 END) as last_7d,
+      SUM(CASE WHEN greptime_timestamp >= NOW() - INTERVAL '14 days'
+               AND greptime_timestamp < NOW() - INTERVAL '7 days' THEN greptime_value ELSE 0 END) as prev_7d,
+      SUM(CASE WHEN greptime_timestamp >= DATE_TRUNC('month', NOW()) THEN greptime_value ELSE 0 END) as mtd,
+      SUM(CASE WHEN greptime_timestamp >= DATE_TRUNC('month', NOW()) - INTERVAL '1 month'
+               AND greptime_timestamp < DATE_TRUNC('month', NOW()) THEN greptime_value ELSE 0 END) as prev_mtd
+    FROM vantage_daily_cost_by_provider
+    WHERE greptime_timestamp >= DATE_TRUNC('month', NOW()) - INTERVAL '1 month'
+    GROUP BY provider
+    ORDER BY cost DESC
+  `,
+
+  // ============================================
+  // AWS ACCOUNT BREAKDOWN - with compute/non-compute split
+  // ============================================
+  awsAccountBreakdown: `
+    SELECT
+      account_id,
+      account_name,
+      SUM(CASE WHEN greptime_timestamp >= DATE_TRUNC('day', NOW()) THEN greptime_value ELSE 0 END) as cost,
+      SUM(CASE WHEN greptime_timestamp >= DATE_TRUNC('day', NOW()) THEN greptime_value ELSE 0 END) as today,
+      SUM(CASE WHEN greptime_timestamp >= DATE_TRUNC('day', NOW()) - INTERVAL '1 day'
+               AND greptime_timestamp < DATE_TRUNC('day', NOW()) THEN greptime_value ELSE 0 END) as yesterday,
+      SUM(CASE WHEN greptime_timestamp >= NOW() - INTERVAL '7 days' THEN greptime_value ELSE 0 END) as last_7d,
+      SUM(CASE WHEN greptime_timestamp >= NOW() - INTERVAL '14 days'
+               AND greptime_timestamp < NOW() - INTERVAL '7 days' THEN greptime_value ELSE 0 END) as prev_7d,
+      SUM(CASE WHEN greptime_timestamp >= DATE_TRUNC('month', NOW()) THEN greptime_value ELSE 0 END) as mtd,
+      SUM(CASE WHEN greptime_timestamp >= DATE_TRUNC('month', NOW()) - INTERVAL '1 month'
+               AND greptime_timestamp < DATE_TRUNC('month', NOW()) THEN greptime_value ELSE 0 END) as prev_mtd
+    FROM vantage_daily_cost_by_account
+    WHERE provider = 'aws'
+      AND greptime_timestamp >= DATE_TRUNC('month', NOW()) - INTERVAL '1 month'
+    GROUP BY account_id, account_name
+    ORDER BY cost DESC
+  `,
+
+  // Services by account
+  servicesByAccount: (accountId: string) => `
     SELECT
       service,
-      SUM(greptime_value) as cost
+      SUM(CASE WHEN greptime_timestamp >= DATE_TRUNC('day', NOW()) THEN greptime_value ELSE 0 END) as cost,
+      SUM(CASE WHEN greptime_timestamp >= DATE_TRUNC('day', NOW()) THEN greptime_value ELSE 0 END) as today,
+      SUM(CASE WHEN greptime_timestamp >= DATE_TRUNC('day', NOW()) - INTERVAL '1 day'
+               AND greptime_timestamp < DATE_TRUNC('day', NOW()) THEN greptime_value ELSE 0 END) as yesterday,
+      SUM(CASE WHEN greptime_timestamp >= NOW() - INTERVAL '7 days' THEN greptime_value ELSE 0 END) as last_7d,
+      SUM(CASE WHEN greptime_timestamp >= NOW() - INTERVAL '14 days'
+               AND greptime_timestamp < NOW() - INTERVAL '7 days' THEN greptime_value ELSE 0 END) as prev_7d,
+      SUM(CASE WHEN greptime_timestamp >= DATE_TRUNC('month', NOW()) THEN greptime_value ELSE 0 END) as mtd,
+      SUM(CASE WHEN greptime_timestamp >= DATE_TRUNC('month', NOW()) - INTERVAL '1 month'
+               AND greptime_timestamp < DATE_TRUNC('month', NOW()) THEN greptime_value ELSE 0 END) as prev_mtd
     FROM vantage_daily_cost_by_service
-    WHERE greptime_timestamp > NOW() - INTERVAL '30 days'
-      AND provider = 'aws'
+    WHERE account_id = '${accountId}'
+      AND greptime_timestamp >= DATE_TRUNC('month', NOW()) - INTERVAL '1 month'
     GROUP BY service
     ORDER BY cost DESC
-    LIMIT 5
+    LIMIT 10
+  `,
+
+  // ============================================
+  // POC CUSTOMER COSTS
+  // ============================================
+  pocCustomerCosts: `
+    SELECT
+      customer,
+      owner,
+      provider,
+      SUM(CASE WHEN greptime_timestamp >= DATE_TRUNC('day', NOW()) THEN greptime_value ELSE 0 END) as cost,
+      SUM(CASE WHEN greptime_timestamp >= DATE_TRUNC('day', NOW()) THEN greptime_value ELSE 0 END) as today,
+      SUM(CASE WHEN greptime_timestamp >= DATE_TRUNC('day', NOW()) - INTERVAL '1 day'
+               AND greptime_timestamp < DATE_TRUNC('day', NOW()) THEN greptime_value ELSE 0 END) as yesterday,
+      SUM(CASE WHEN greptime_timestamp >= NOW() - INTERVAL '7 days' THEN greptime_value ELSE 0 END) as last_7d,
+      SUM(CASE WHEN greptime_timestamp >= NOW() - INTERVAL '14 days'
+               AND greptime_timestamp < NOW() - INTERVAL '7 days' THEN greptime_value ELSE 0 END) as prev_7d,
+      SUM(CASE WHEN greptime_timestamp >= DATE_TRUNC('month', NOW()) THEN greptime_value ELSE 0 END) as mtd,
+      SUM(CASE WHEN greptime_timestamp >= DATE_TRUNC('month', NOW()) - INTERVAL '1 month'
+               AND greptime_timestamp < DATE_TRUNC('month', NOW()) THEN greptime_value ELSE 0 END) as prev_mtd
+    FROM vantage_poc_customer_costs
+    WHERE greptime_timestamp >= DATE_TRUNC('month', NOW()) - INTERVAL '1 month'
+    GROUP BY customer, owner, provider
+    ORDER BY cost DESC
+  `,
+
+  // ============================================
+  // BUDGET TRACKING
+  // ============================================
+  budgetSummary: `
+    SELECT
+      SUM(CASE WHEN greptime_timestamp >= DATE_TRUNC('day', NOW()) THEN greptime_value ELSE 0 END) as today_spend,
+      SUM(CASE WHEN greptime_timestamp >= NOW() - INTERVAL '7 days' THEN greptime_value ELSE 0 END) as last_7d_spend,
+      SUM(CASE WHEN greptime_timestamp >= DATE_TRUNC('month', NOW()) THEN greptime_value ELSE 0 END) as mtd_spend,
+      EXTRACT(DAY FROM NOW()) as day_of_month,
+      EXTRACT(DAY FROM DATE_TRUNC('month', NOW()) + INTERVAL '1 month' - INTERVAL '1 day') as days_in_month
+    FROM vantage_daily_cost_by_provider
+    WHERE greptime_timestamp >= DATE_TRUNC('month', NOW())
+  `,
+
+  // ============================================
+  // EXECUTIVE SUMMARY COMPARISONS
+  // ============================================
+  executiveSummary: `
+    SELECT
+      -- Today vs Yesterday
+      SUM(CASE WHEN greptime_timestamp >= DATE_TRUNC('day', NOW()) THEN greptime_value ELSE 0 END) as today,
+      SUM(CASE WHEN greptime_timestamp >= DATE_TRUNC('day', NOW()) - INTERVAL '1 day'
+               AND greptime_timestamp < DATE_TRUNC('day', NOW()) THEN greptime_value ELSE 0 END) as yesterday,
+      -- This Week vs Last Week
+      SUM(CASE WHEN greptime_timestamp >= DATE_TRUNC('week', NOW()) THEN greptime_value ELSE 0 END) as this_week,
+      SUM(CASE WHEN greptime_timestamp >= DATE_TRUNC('week', NOW()) - INTERVAL '7 days'
+               AND greptime_timestamp < DATE_TRUNC('week', NOW()) THEN greptime_value ELSE 0 END) as last_week,
+      -- This Week vs Same Week Last Month (approximation using 4 weeks ago)
+      SUM(CASE WHEN greptime_timestamp >= NOW() - INTERVAL '28 days'
+               AND greptime_timestamp < NOW() - INTERVAL '21 days' THEN greptime_value ELSE 0 END) as same_week_last_month,
+      -- MTD vs Same Period Last Month
+      SUM(CASE WHEN greptime_timestamp >= DATE_TRUNC('month', NOW()) THEN greptime_value ELSE 0 END) as mtd,
+      SUM(CASE WHEN greptime_timestamp >= DATE_TRUNC('month', NOW()) - INTERVAL '1 month'
+               AND greptime_timestamp < DATE_TRUNC('month', NOW()) - INTERVAL '1 month' +
+                   (NOW() - DATE_TRUNC('month', NOW())) THEN greptime_value ELSE 0 END) as same_period_last_month
+    FROM vantage_daily_cost_by_provider
+    WHERE greptime_timestamp >= DATE_TRUNC('month', NOW()) - INTERVAL '2 months'
+  `,
+
+  // ============================================
+  // TOP SERVICES - Full breakdown
+  // ============================================
+  topServicesFull: `
+    SELECT
+      service,
+      SUM(CASE WHEN greptime_timestamp >= DATE_TRUNC('day', NOW()) THEN greptime_value ELSE 0 END) as cost,
+      SUM(CASE WHEN greptime_timestamp >= DATE_TRUNC('day', NOW()) THEN greptime_value ELSE 0 END) as today,
+      SUM(CASE WHEN greptime_timestamp >= DATE_TRUNC('day', NOW()) - INTERVAL '1 day'
+               AND greptime_timestamp < DATE_TRUNC('day', NOW()) THEN greptime_value ELSE 0 END) as yesterday,
+      SUM(CASE WHEN greptime_timestamp >= NOW() - INTERVAL '7 days' THEN greptime_value ELSE 0 END) as last_7d,
+      SUM(CASE WHEN greptime_timestamp >= NOW() - INTERVAL '14 days'
+               AND greptime_timestamp < NOW() - INTERVAL '7 days' THEN greptime_value ELSE 0 END) as prev_7d,
+      SUM(CASE WHEN greptime_timestamp >= DATE_TRUNC('month', NOW()) THEN greptime_value ELSE 0 END) as mtd,
+      SUM(CASE WHEN greptime_timestamp >= DATE_TRUNC('month', NOW()) - INTERVAL '1 month'
+               AND greptime_timestamp < DATE_TRUNC('month', NOW()) THEN greptime_value ELSE 0 END) as prev_mtd
+    FROM vantage_daily_cost_by_service
+    WHERE greptime_timestamp >= DATE_TRUNC('month', NOW()) - INTERVAL '1 month'
+    GROUP BY service
+    ORDER BY cost DESC
+    LIMIT 10
   `,
 }
