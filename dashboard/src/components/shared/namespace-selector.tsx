@@ -23,6 +23,9 @@ export function NamespaceSelector({
   placeholder = "Select namespace",
   disabled = false,
 }: NamespaceSelectorProps) {
+  // Deduplicate namespaces to avoid React key warnings
+  const uniqueNamespaces = [...new Set(namespaces)]
+
   return (
     <Select value={value} onValueChange={onChange} disabled={disabled}>
       <SelectTrigger className="w-[200px]">
@@ -30,7 +33,7 @@ export function NamespaceSelector({
       </SelectTrigger>
       <SelectContent>
         <SelectItem value="all">All Namespaces</SelectItem>
-        {namespaces.map((namespace) => (
+        {uniqueNamespaces.map((namespace) => (
           <SelectItem key={namespace} value={namespace}>
             {namespace}
           </SelectItem>

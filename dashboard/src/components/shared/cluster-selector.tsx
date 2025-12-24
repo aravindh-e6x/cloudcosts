@@ -21,13 +21,16 @@ export function ClusterSelector({
   onChange,
   placeholder = "Select cluster",
 }: ClusterSelectorProps) {
+  // Deduplicate clusters to avoid React key warnings
+  const uniqueClusters = [...new Set(clusters)]
+
   return (
     <Select value={value} onValueChange={onChange}>
       <SelectTrigger className="w-[200px]">
         <SelectValue placeholder={placeholder} />
       </SelectTrigger>
       <SelectContent>
-        {clusters.map((cluster) => (
+        {uniqueClusters.map((cluster) => (
           <SelectItem key={cluster} value={cluster}>
             {cluster}
           </SelectItem>

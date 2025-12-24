@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
-import { LayoutDashboard, CreditCard, Server, Cloud, Boxes, ExternalLink } from "lucide-react"
+import { LayoutDashboard, Server, Cloud, Boxes, ExternalLink, CloudCog, Database, Grid } from "lucide-react"
 
 const navigation = [
   {
@@ -13,17 +13,24 @@ const navigation = [
     ]
   },
   {
-    section: "Infrastructure",
+    section: "Clusters",
     items: [
-      { name: "Kubernetes", href: "/kubernetes", icon: Server, badge: "Live" },
+      { name: "Kubernetes", href: "/kubernetes", icon: Server },
       { name: "E6 Clusters", href: "/e6", icon: Boxes },
     ]
   },
   {
-    section: "Costs",
+    section: "Cloud Providers",
     items: [
-      { name: "Vantage", href: "/vantage", icon: CreditCard, badge: "Live" },
+      { name: "AWS", href: "/aws", icon: Cloud },
       { name: "CloudWatch", href: "/cloudwatch", icon: Cloud },
+    ]
+  },
+  {
+    section: "Settings",
+    items: [
+      { name: "Grafana", href: "https://grafana.cloudcosts.in", icon: Grid },
+      { name: "Greptime DB", href: "https://greptimedb.cloudcosts.in/dashboard", icon: Database },
     ]
   },
 ]
@@ -37,8 +44,8 @@ export function Sidebar() {
         {/* Logo */}
         <div className="flex h-16 items-center border-b border-sidebar-border px-6">
           <div className="flex items-center gap-2">
-            <div className="h-8 w-8 bg-primary flex items-center justify-center">
-              <span className="text-sm font-bold text-primary-foreground">CC</span>
+            <div className="h-8 w-8 bg-primary rounded-lg flex items-center justify-center">
+              <CloudCog className="h-5 w-5 text-primary-foreground" />
             </div>
             <span className="text-lg font-bold text-sidebar-foreground">CloudCosts</span>
           </div>
@@ -84,15 +91,6 @@ export function Sidebar() {
 
         {/* Footer */}
         <div className="border-t border-sidebar-border p-4 space-y-3">
-          <a
-            href="https://greptimedb.cloudcosts.in"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <ExternalLink className="h-3 w-3" />
-            GreptimeDB Console
-          </a>
           <div className="flex items-center justify-between">
             <p className="text-xs text-muted-foreground">e6data CloudCosts</p>
             <span className="text-[10px] text-muted-foreground">v1.0</span>

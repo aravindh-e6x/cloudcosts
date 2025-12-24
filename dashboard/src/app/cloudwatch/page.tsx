@@ -15,7 +15,7 @@ import {
   TabsContent,
   Badge,
 } from "laminar-ui"
-import { TimeRangePicker, type DateRange } from "@/components/shared"
+import { TimeRangePicker, MockBadge, type DateRange } from "@/components/shared"
 import { Activity, AlertTriangle, Server, Database, HardDrive, Radio } from "lucide-react"
 
 // Mock EC2 data
@@ -152,12 +152,9 @@ export default function CloudWatchPage() {
               Resource usage and cost metrics from CloudWatch
             </p>
           </div>
-          <Badge variant="secondary" className="flex items-center gap-1">
-            <AlertTriangle className="h-3 w-3" />
-            Mock Data
-          </Badge>
         </div>
         <div className="flex items-center gap-4">
+          <MockBadge />
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Activity className="h-4 w-4" />
             <span>1h polling</span>
@@ -169,6 +166,7 @@ export default function CloudWatchPage() {
       {/* Primary KPI Cards */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card className="relative overflow-hidden">
+          <MockBadge className="absolute top-2 right-2" />
           <CardContent className="pt-6">
             <div className="flex items-start justify-between">
               <div>
@@ -180,7 +178,8 @@ export default function CloudWatchPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="relative">
+          <MockBadge className="absolute top-2 right-2" />
           <CardContent className="pt-6">
             <p className="text-sm text-muted-foreground">EC2 Instances</p>
             <p className="text-3xl font-bold">{runningEC2}<span className="text-lg font-normal text-muted-foreground">/{mockEC2Instances.length}</span></p>
@@ -188,7 +187,8 @@ export default function CloudWatchPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="relative">
+          <MockBadge className="absolute top-2 right-2" />
           <CardContent className="pt-6">
             <p className="text-sm text-muted-foreground">RDS Instances</p>
             <p className="text-3xl font-bold">{mockRDSInstances.length}</p>
@@ -196,7 +196,8 @@ export default function CloudWatchPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="relative">
+          <MockBadge className="absolute top-2 right-2" />
           <CardContent className="pt-6">
             <p className="text-sm text-muted-foreground">S3 Storage</p>
             <p className="text-3xl font-bold">{(mockS3Buckets.reduce((sum, b) => sum + b.size_gb, 0) / 1000).toFixed(1)}<span className="text-lg font-normal"> TB</span></p>
@@ -207,7 +208,8 @@ export default function CloudWatchPage() {
 
       {/* Service Cost Cards with Icons */}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-        <Card className="bg-muted/50">
+        <Card className="bg-muted/50 relative">
+          <MockBadge className="absolute top-1 right-1" />
           <CardContent className="py-4 flex items-center gap-3">
             <div className="p-2 bg-[#FF9900]/10 text-[#FF9900]">
               <Server className="h-5 w-5" />
@@ -218,7 +220,8 @@ export default function CloudWatchPage() {
             </div>
           </CardContent>
         </Card>
-        <Card className="bg-muted/50">
+        <Card className="bg-muted/50 relative">
+          <MockBadge className="absolute top-1 right-1" />
           <CardContent className="py-4 flex items-center gap-3">
             <div className="p-2 bg-[#3B48CC]/10 text-[#3B48CC]">
               <Database className="h-5 w-5" />
@@ -229,7 +232,8 @@ export default function CloudWatchPage() {
             </div>
           </CardContent>
         </Card>
-        <Card className="bg-muted/50">
+        <Card className="bg-muted/50 relative">
+          <MockBadge className="absolute top-1 right-1" />
           <CardContent className="py-4 flex items-center gap-3">
             <div className="p-2 bg-[#1B660F]/10 text-[#1B660F]">
               <HardDrive className="h-5 w-5" />
@@ -240,7 +244,8 @@ export default function CloudWatchPage() {
             </div>
           </CardContent>
         </Card>
-        <Card className="bg-muted/50">
+        <Card className="bg-muted/50 relative">
+          <MockBadge className="absolute top-1 right-1" />
           <CardContent className="py-4 flex items-center gap-3">
             <div className="p-2 bg-[#C925D1]/10 text-[#C925D1]">
               <Radio className="h-5 w-5" />
@@ -254,7 +259,8 @@ export default function CloudWatchPage() {
       </div>
 
       {/* Cost Breakdown Table */}
-      <Card>
+      <Card className="relative">
+        <MockBadge className="absolute top-2 right-2" />
         <CardHeader>
           <CardTitle>Service Cost Breakdown</CardTitle>
           <CardDescription>Daily cost by AWS service (high to low)</CardDescription>
@@ -283,7 +289,8 @@ export default function CloudWatchPage() {
 
         {/* EC2 Tab */}
         <TabsContent value="ec2" className="space-y-6 mt-4">
-          <Card>
+          <Card className="relative">
+            <MockBadge className="absolute top-2 right-2" />
             <CardHeader>
               <CardTitle>EC2 Instances</CardTitle>
               <CardDescription>Instance usage and cost metrics</CardDescription>
@@ -299,7 +306,8 @@ export default function CloudWatchPage() {
           </Card>
 
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            <Card>
+            <Card className="relative">
+              <MockBadge className="absolute top-2 right-2" />
               <CardHeader>
                 <CardTitle>EC2 CPU Usage</CardTitle>
                 <CardDescription>Average CPU utilization over time</CardDescription>
@@ -315,7 +323,8 @@ export default function CloudWatchPage() {
               </CardContent>
             </Card>
 
-            <Card>
+            <Card className="relative">
+              <MockBadge className="absolute top-2 right-2" />
               <CardHeader>
                 <CardTitle>EC2 Network Traffic</CardTitle>
                 <CardDescription>Network throughput over time</CardDescription>
@@ -336,7 +345,8 @@ export default function CloudWatchPage() {
 
         {/* RDS Tab */}
         <TabsContent value="rds" className="space-y-6 mt-4">
-          <Card>
+          <Card className="relative">
+            <MockBadge className="absolute top-2 right-2" />
             <CardHeader>
               <CardTitle>RDS Instances</CardTitle>
               <CardDescription>Database instance usage and cost metrics</CardDescription>
@@ -352,7 +362,8 @@ export default function CloudWatchPage() {
           </Card>
 
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            <Card>
+            <Card className="relative">
+              <MockBadge className="absolute top-2 right-2" />
               <CardHeader>
                 <CardTitle>RDS CPU & Connections</CardTitle>
                 <CardDescription>Database utilization over time</CardDescription>
@@ -371,7 +382,8 @@ export default function CloudWatchPage() {
               </CardContent>
             </Card>
 
-            <Card>
+            <Card className="relative">
+              <MockBadge className="absolute top-2 right-2" />
               <CardHeader>
                 <CardTitle>RDS IOPS</CardTitle>
                 <CardDescription>I/O operations over time</CardDescription>
@@ -390,7 +402,8 @@ export default function CloudWatchPage() {
 
         {/* S3 Tab */}
         <TabsContent value="s3" className="space-y-6 mt-4">
-          <Card>
+          <Card className="relative">
+            <MockBadge className="absolute top-2 right-2" />
             <CardHeader>
               <CardTitle>S3 Buckets</CardTitle>
               <CardDescription>Storage and request metrics (sorted by cost, high to low)</CardDescription>
@@ -408,7 +421,8 @@ export default function CloudWatchPage() {
 
         {/* MSK Tab */}
         <TabsContent value="msk" className="space-y-6 mt-4">
-          <Card>
+          <Card className="relative">
+            <MockBadge className="absolute top-2 right-2" />
             <CardHeader>
               <CardTitle>MSK Clusters</CardTitle>
               <CardDescription>Kafka cluster metrics (sorted by cost, high to low)</CardDescription>

@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
+import { clientLogger } from "@/lib/logger"
 
 interface QueryResult<T> {
   data: T[] | null
@@ -26,9 +27,13 @@ export function useQuery<T = Record<string, unknown>>(
       return
     }
 
+    const startTime = Date.now()
+
     try {
       setLoading(true)
       setError(null)
+
+      clientLogger.info("Fetching data", { database, sql })
 
       const response = await fetch("/api/query", {
         method: "POST",
@@ -46,9 +51,24 @@ export function useQuery<T = Record<string, unknown>>(
         throw new Error(result.error)
       }
 
+      const duration = Date.now() - startTime
+      clientLogger.info("Data received", {
+        database,
+        rowCount: result.data?.length || 0,
+        durationMs: duration
+      })
+
       setData(result.data)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Query failed")
+      const duration = Date.now() - startTime
+      const errorMsg = err instanceof Error ? err.message : "Query failed"
+      clientLogger.error("Query failed", {
+        database,
+        sql,
+        error: errorMsg,
+        durationMs: duration
+      })
+      setError(errorMsg)
       setData(null)
     } finally {
       setLoading(false)

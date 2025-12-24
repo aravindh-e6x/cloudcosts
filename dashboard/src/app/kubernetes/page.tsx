@@ -16,7 +16,7 @@ import {
   TabsContent,
   Skeleton,
 } from "laminar-ui"
-import { TimeRangePicker, ClusterSelector, NamespaceSelector, type DateRange } from "@/components/shared"
+import { TimeRangePicker, ClusterSelector, NamespaceSelector, MockBadge, type DateRange } from "@/components/shared"
 import { useQuery, formatBytes, formatCpu, formatCurrency, formatTime } from "@/hooks/useQuery"
 import { kubernetesQueries } from "@/lib/queries"
 import { Activity, AlertCircle, CheckCircle } from "lucide-react"
@@ -209,15 +209,15 @@ export default function KubernetesPage() {
     return Array.from(grouped.values()).slice(-20)
   }, [nodeCpuTimeSeries])
 
-  // Get unique pod/node names for chart lines
+  // Get unique pod/node names for chart lines (filter out nulls)
   const podNames = useMemo(() => {
     if (!cpuTimeSeries) return []
-    return [...new Set(cpuTimeSeries.map(item => item.pod))].slice(0, 5)
+    return [...new Set(cpuTimeSeries.map(item => item.pod).filter(Boolean))].slice(0, 5)
   }, [cpuTimeSeries])
 
   const nodeNames = useMemo(() => {
     if (!nodeCpuTimeSeries) return []
-    return [...new Set(nodeCpuTimeSeries.map(item => item.node))].slice(0, 5)
+    return [...new Set(nodeCpuTimeSeries.map(item => item.node).filter(Boolean))].slice(0, 5)
   }, [nodeCpuTimeSeries])
 
   const chartColors = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)", "var(--chart-5)"]
@@ -316,6 +316,7 @@ export default function KubernetesPage() {
           )}
         </div>
         <div className="flex items-center gap-4">
+          <MockBadge />
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Activity className="h-4 w-4" />
             <span>30s refresh</span>
@@ -336,7 +337,8 @@ export default function KubernetesPage() {
 
       {/* Overview Cards */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
+        <Card className="relative">
+          <MockBadge className="absolute top-2 right-2" />
           <CardContent className="pt-6">
             <div className="flex items-start justify-between">
               <div>
@@ -348,7 +350,8 @@ export default function KubernetesPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="relative">
+          <MockBadge className="absolute top-2 right-2" />
           <CardContent className="pt-6">
             <p className="text-sm text-muted-foreground">CPU Utilization</p>
             <div className="flex items-baseline gap-2">
@@ -364,7 +367,8 @@ export default function KubernetesPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="relative">
+          <MockBadge className="absolute top-2 right-2" />
           <CardContent className="pt-6">
             <p className="text-sm text-muted-foreground">Memory Utilization</p>
             <div className="flex items-baseline gap-2">
@@ -380,7 +384,8 @@ export default function KubernetesPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="relative">
+          <MockBadge className="absolute top-2 right-2" />
           <CardContent className="pt-6">
             <p className="text-sm text-muted-foreground">Estimated Cost</p>
             <p className="text-3xl font-bold">{formatCurrency(summaryData?.cluster_hourly_cost || 0, 2)}<span className="text-sm font-normal">/hr</span></p>
@@ -393,37 +398,43 @@ export default function KubernetesPage() {
 
       {/* Quick Stats Row */}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4 lg:grid-cols-6">
-        <Card className="bg-muted/50">
+        <Card className="bg-muted/50 relative">
+          <MockBadge className="absolute top-1 right-1" />
           <CardContent className="py-3 flex items-center justify-between">
             <span className="text-sm">Nodes</span>
             <span className="font-mono font-semibold">{summaryData?.node_count || filteredNodes.length}</span>
           </CardContent>
         </Card>
-        <Card className="bg-muted/50">
+        <Card className="bg-muted/50 relative">
+          <MockBadge className="absolute top-1 right-1" />
           <CardContent className="py-3 flex items-center justify-between">
             <span className="text-sm">CPU Cores</span>
             <span className="font-mono font-semibold">{summaryData?.total_cpu_alloc?.toFixed(1) || 0}</span>
           </CardContent>
         </Card>
-        <Card className="bg-muted/50">
+        <Card className="bg-muted/50 relative">
+          <MockBadge className="absolute top-1 right-1" />
           <CardContent className="py-3 flex items-center justify-between">
             <span className="text-sm">Memory</span>
             <span className="font-mono font-semibold">{(summaryData?.total_mem_alloc ? summaryData.total_mem_alloc / (1024 * 1024 * 1024) : 0).toFixed(0)}Gi</span>
           </CardContent>
         </Card>
-        <Card className="bg-muted/50">
+        <Card className="bg-muted/50 relative">
+          <MockBadge className="absolute top-1 right-1" />
           <CardContent className="py-3 flex items-center justify-between">
             <span className="text-sm">Namespaces</span>
             <span className="font-mono font-semibold">{namespaceList.length}</span>
           </CardContent>
         </Card>
-        <Card className="bg-muted/50">
+        <Card className="bg-muted/50 relative">
+          <MockBadge className="absolute top-1 right-1" />
           <CardContent className="py-3 flex items-center justify-between">
             <span className="text-sm">NS Cost/hr</span>
             <span className="font-mono font-semibold">{formatCurrency(namespaceCosts?.filter(n => selectedNamespace === 'all' || n.namespace === selectedNamespace).reduce((sum, n) => sum + (n.estimated_cost_hourly || 0), 0) || 0, 2)}</span>
           </CardContent>
         </Card>
-        <Card className="bg-muted/50">
+        <Card className="bg-muted/50 relative">
+          <MockBadge className="absolute top-1 right-1" />
           <CardContent className="py-3 flex items-center justify-between">
             <span className="text-sm">Cluster</span>
             <span className="font-mono font-semibold text-xs">{selectedCluster.split('-').slice(-1)[0] || '-'}</span>
@@ -440,7 +451,8 @@ export default function KubernetesPage() {
 
         <TabsContent value="pods" className="space-y-6 mt-4">
           {/* Pod Table */}
-          <Card>
+          <Card className="relative">
+            <MockBadge className="absolute top-2 right-2" />
             <CardHeader>
               <CardTitle>Pod Resources</CardTitle>
               <CardDescription>
@@ -463,7 +475,8 @@ export default function KubernetesPage() {
 
           {/* Pod Time Series Charts */}
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            <Card>
+            <Card className="relative">
+              <MockBadge className="absolute top-2 right-2" />
               <CardHeader>
                 <CardTitle>Pod CPU Usage</CardTitle>
                 <CardDescription>CPU usage over time (last hour)</CardDescription>
@@ -489,7 +502,8 @@ export default function KubernetesPage() {
               </CardContent>
             </Card>
 
-            <Card>
+            <Card className="relative">
+              <MockBadge className="absolute top-2 right-2" />
               <CardHeader>
                 <CardTitle>Pod Memory Usage</CardTitle>
                 <CardDescription>Memory usage in MB over time (last hour)</CardDescription>
@@ -518,7 +532,8 @@ export default function KubernetesPage() {
           </div>
 
           {/* Cost Breakdown */}
-          <Card>
+          <Card className="relative">
+            <MockBadge className="absolute top-2 right-2" />
             <CardHeader>
               <CardTitle>Cost by Namespace</CardTitle>
               <CardDescription>Estimated hourly cost by namespace (high to low)</CardDescription>
@@ -552,7 +567,8 @@ export default function KubernetesPage() {
 
         <TabsContent value="nodes" className="space-y-6 mt-4">
           {/* Node Table */}
-          <Card>
+          <Card className="relative">
+            <MockBadge className="absolute top-2 right-2" />
             <CardHeader>
               <CardTitle>Node Resources</CardTitle>
               <CardDescription>
@@ -574,7 +590,8 @@ export default function KubernetesPage() {
           </Card>
 
           {/* Node CPU Time Series */}
-          <Card>
+          <Card className="relative">
+            <MockBadge className="absolute top-2 right-2" />
             <CardHeader>
               <CardTitle>Node CPU Usage</CardTitle>
               <CardDescription>CPU seconds per node (last hour)</CardDescription>

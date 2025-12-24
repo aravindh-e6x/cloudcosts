@@ -1,6 +1,10 @@
-const GREPTIMEDB_URL = process.env.GREPTIMEDB_URL || "https://greptimedb.cloudcosts.in"
-const GREPTIMEDB_USERNAME = process.env.GREPTIMEDB_USERNAME || "e6data"
-const GREPTIMEDB_PASSWORD = process.env.GREPTIMEDB_PASSWORD || "cloudcosts"
+const GREPTIMEDB_URL = process.env.GREPTIMEDB_URL
+const GREPTIMEDB_USERNAME = process.env.GREPTIMEDB_USERNAME
+const GREPTIMEDB_PASSWORD = process.env.GREPTIMEDB_PASSWORD
+
+if (!GREPTIMEDB_URL || !GREPTIMEDB_USERNAME || !GREPTIMEDB_PASSWORD) {
+  throw new Error("Missing required environment variables: GREPTIMEDB_URL, GREPTIMEDB_USERNAME, GREPTIMEDB_PASSWORD")
+}
 
 export interface QueryResult {
   columns: string[]

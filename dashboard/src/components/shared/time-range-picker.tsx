@@ -1,31 +1,13 @@
 "use client"
 
-import { DateRangePicker, type DateRange, type DateRangePreset } from "laminar-ui"
+import { Calendar, Button, Popover, PopoverTrigger, PopoverContent } from "laminar-ui"
+import { Calendar as CalendarIcon, ChevronLeft, ChevronRight } from "lucide-react"
+import { format } from "date-fns"
 
-const defaultPresets: DateRangePreset[] = [
-  { label: "Last 1 hour", value: "1h", getRange: () => {
-    const now = new Date()
-    return { from: new Date(now.getTime() - 60 * 60 * 1000), to: now }
-  }},
-  { label: "Last 6 hours", value: "6h", getRange: () => {
-    const now = new Date()
-    return { from: new Date(now.getTime() - 6 * 60 * 60 * 1000), to: now }
-  }},
-  { label: "Last 24 hours", value: "24h", getRange: () => {
-    const now = new Date()
-    return { from: new Date(now.getTime() - 24 * 60 * 60 * 1000), to: now }
-  }},
-  { label: "Last 7 days", value: "7d", getRange: () => {
-    const now = new Date()
-    return { from: new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000), to: now }
-  }},
-  { label: "Last 30 days", value: "30d", getRange: () => {
-    const now = new Date()
-    return { from: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000), to: now }
-  }},
-]
-
-export type { DateRange }
+export interface DateRange {
+  from: Date | undefined
+  to?: Date | undefined
+}
 
 interface TimeRangePickerProps {
   value?: DateRange
@@ -33,13 +15,47 @@ interface TimeRangePickerProps {
 }
 
 export function TimeRangePicker({ value, onChange }: TimeRangePickerProps) {
+  const handleSelect = (date: Date | undefined) => {
+    onChange?.(date ? { from: date, to: date } : undefined)
+  }
+
+  const handlePrev = () => {
+    if (!value?.from) return
+    const prevDate = new Date(value.from)
+    prevDate.setDate(prevDate.getDate() - 1)
+    onChange?.({ from: prevDate, to: prevDate })
+  }
+
+  const handleNext = () => {
+    if (!value?.from) return
+    const nextDate = new Date(value.from)
+    nextDate.setDate(nextDate.getDate() + 1)
+    onChange?.({ from: nextDate, to: nextDate })
+  }
+
   return (
-    <DateRangePicker
-      value={value}
-      onChange={onChange}
-      presets={defaultPresets}
-      showPresets
-      placeholder="Select time range"
-    />
+    <div className="flex items-center gap-1">
+      <Button variant="outline" size="icon" onClick={handlePrev} className="h-9 w-9">
+        <ChevronLeft className="h-4 w-4" />
+      </Button>
+      <Popover>
+        <PopoverTrigger asChild>
+          <Button variant="outline" className="justify-start text-left font-normal">
+            <CalendarIcon className="mr-2 h-4 w-4" />
+            {value?.from ? format(value.from, "MMM d, yyyy") : "Select date"}
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-auto p-0" align="start">
+          <Calendar
+            mode="single"
+            selected={value?.from}
+            onSelect={handleSelect}
+          />
+        </PopoverContent>
+      </Popover>
+      <Button variant="outline" size="icon" onClick={handleNext} className="h-9 w-9">
+        <ChevronRight className="h-4 w-4" />
+      </Button>
+    </div>
   )
 }
