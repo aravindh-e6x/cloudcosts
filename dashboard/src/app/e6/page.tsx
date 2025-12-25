@@ -14,6 +14,7 @@ import {
 } from "laminar-ui"
 import { Building2, Server, ChevronRight, Database, HardDrive } from "lucide-react"
 import { DateBanner } from "@/components/shared"
+import { useDate } from "@/components/providers"
 import { isAllowedSchema, E6_SCHEMA_PREFIX } from "@/lib/utils"
 
 interface CustomerSummary {
@@ -37,12 +38,16 @@ export default function E6OverviewPage() {
   const [customers, setCustomers] = useState<CustomerSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const { startTimestamp, endTimestamp } = useDate()
 
   // Fetch all e6_* databases and their summary stats
   useEffect(() => {
     async function fetchCustomers() {
       setLoading(true)
       setError(null)
+
+      // Use date range from context
+      const timeFilter = `ts >= '${startTimestamp}'::timestamp AND ts < '${endTimestamp}'::timestamp`
 
       try {
         // First, get all databases
@@ -72,7 +77,7 @@ export default function E6OverviewPage() {
 
         for (const db of e6Databases) {
           try {
-            // Get cluster count and last updated
+            // Get cluster count and last updated for selected date range
             const statsResponse = await fetch("/api/query", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -83,18 +88,23 @@ export default function E6OverviewPage() {
                     COUNT(DISTINCT cluster_name) as cluster_count,
                     MAX(ts) as last_updated
                   FROM e6_engine_metrics
+                  WHERE ${timeFilter}
                 `,
               }),
             })
             const statsData = await statsResponse.json()
 
-            // Get container count
+            // Get container count for selected date range
             const containerResponse = await fetch("/api/query", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 database: db,
-                sql: `SELECT COUNT(DISTINCT pod) as container_count FROM e6_container_metrics`,
+                sql: `
+                  SELECT COUNT(DISTINCT pod) as container_count
+                  FROM e6_container_metrics
+                  WHERE ${timeFilter}
+                `,
               }),
             })
             const containerData = await containerResponse.json()
@@ -139,8 +149,10 @@ export default function E6OverviewPage() {
       }
     }
 
-    fetchCustomers()
-  }, [])
+    if (startTimestamp && endTimestamp) {
+      fetchCustomers()
+    }
+  }, [startTimestamp, endTimestamp])
 
   // Calculate totals
   const totals = useMemo(() => {

@@ -48,6 +48,14 @@ interface ChartDataPoint {
   cost?: number
 }
 
+interface QueryChartDataPoint {
+  time: string
+  executing: number
+  executionQueued: number
+  planningQueued: number
+  totalInPlanner: number
+}
+
 interface ComponentSummary {
   component: string
   podCount: number
@@ -438,6 +446,43 @@ export default function ClusterDetailPage() {
     return Object.values(byTime).sort((a, b) => a.time.localeCompare(b.time))
   }
 
+  // Transform query metrics data for the query chart
+  const transformQueryMetricsData = (data: TimeSeriesPoint[]): QueryChartDataPoint[] => {
+    if (!data || data.length === 0) return []
+
+    const byTime: Record<string, QueryChartDataPoint> = {}
+
+    data.forEach(point => {
+      const timeKey = point.ts
+      if (!byTime[timeKey]) {
+        byTime[timeKey] = {
+          time: formatTime(point.ts),
+          executing: 0,
+          executionQueued: 0,
+          planningQueued: 0,
+          totalInPlanner: 0,
+        }
+      }
+
+      switch (point.metric_name) {
+        case 'io_e6x_E6Queue_NumExecutingQueries':
+          byTime[timeKey].executing = point.metric_value
+          break
+        case 'io_e6x_E6Queue_NumExecutionQueuedQueries':
+          byTime[timeKey].executionQueued = point.metric_value
+          break
+        case 'io_e6x_E6Queue_NumPlanningQueuedQueries':
+          byTime[timeKey].planningQueued = point.metric_value
+          break
+        case 'io_e6x_E6Queue_TotalNumQueriesInPlanner':
+          byTime[timeKey].totalInPlanner = point.metric_value
+          break
+      }
+    })
+
+    return Object.values(byTime).sort((a, b) => a.time.localeCompare(b.time))
+  }
+
   // Prepare chart data for each component
   const executorCpuData = useMemo(() => transformContainerData('executor', 'cpu'), [containerData])
   const executorMemoryData = useMemo(() => transformContainerData('executor', 'memory'), [containerData])
@@ -453,6 +498,9 @@ export default function ClusterDetailPage() {
 
   const schemaCpuData = useMemo(() => transformCpuCostData(schemaData, ''), [schemaData])
   const schemaMemoryData = useMemo(() => transformMemoryCostData(schemaData, ''), [schemaData])
+
+  // Query metrics chart data
+  const queryMetricsData = useMemo(() => transformQueryMetricsData(queueData), [queueData])
 
   // Dual Axis Chart Component
   const DualAxisChart = ({
@@ -548,6 +596,89 @@ export default function ClusterDetailPage() {
     )
   }
 
+  // Query Metrics Chart Component
+  const QueryMetricsChart = ({ data }: { data: QueryChartDataPoint[] }) => {
+    if (data.length === 0) {
+      return (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-lg">Query Metrics</CardTitle>
+            <CardDescription>
+              Query execution and queue status over time
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="h-[300px] flex items-center justify-center text-muted-foreground text-sm">
+            No query metrics available
+          </CardContent>
+        </Card>
+      )
+    }
+
+    return (
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-lg">Query Metrics</CardTitle>
+          <CardDescription>
+            Query execution and queue status over time
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ResponsiveContainer width="100%" height={300}>
+            <RechartsLineChart data={data}>
+              <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+              <XAxis
+                dataKey="time"
+                tick={{ fontSize: 10 }}
+                interval="preserveStartEnd"
+              />
+              <YAxis
+                tick={{ fontSize: 10 }}
+                allowDecimals={false}
+              />
+              <RechartsTooltip
+                contentStyle={{ fontSize: 11 }}
+                formatter={(value) => (Number(value) || 0).toFixed(0)}
+              />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
+              <Line
+                type="monotone"
+                dataKey="executing"
+                name="Executing Queries"
+                stroke="#10b981"
+                strokeWidth={2}
+                dot={false}
+              />
+              <Line
+                type="monotone"
+                dataKey="executionQueued"
+                name="Execution Queue"
+                stroke="#f59e0b"
+                strokeWidth={2}
+                dot={false}
+              />
+              <Line
+                type="monotone"
+                dataKey="planningQueued"
+                name="Planning Queue"
+                stroke="#3b82f6"
+                strokeWidth={2}
+                dot={false}
+              />
+              <Line
+                type="monotone"
+                dataKey="totalInPlanner"
+                name="Total in Planner"
+                stroke="#8b5cf6"
+                strokeWidth={2}
+                dot={false}
+              />
+            </RechartsLineChart>
+          </ResponsiveContainer>
+        </CardContent>
+      </Card>
+    )
+  }
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -555,7 +686,6 @@ export default function ClusterDetailPage() {
           <Link href={`/e6/${database}`}>
             <Button variant="ghost" size="sm">
               <ChevronLeft className="h-4 w-4 mr-1" />
-              Back
             </Button>
           </Link>
           <div>
@@ -579,7 +709,7 @@ export default function ClusterDetailPage() {
           <Link href={`/e6/${database}`}>
             <Button variant="ghost" size="sm">
               <ChevronLeft className="h-4 w-4 mr-1" />
-              Back
+              
             </Button>
           </Link>
           <div>
@@ -601,7 +731,6 @@ export default function ClusterDetailPage() {
           <Link href={`/e6/${database}`}>
             <Button variant="ghost" size="sm">
               <ChevronLeft className="h-4 w-4 mr-1" />
-              Back to {customerName}
             </Button>
           </Link>
           <div className="flex items-center gap-3">
@@ -643,12 +772,7 @@ export default function ClusterDetailPage() {
                   header: "Component",
                   render: (value: unknown) => {
                     const comp = String(value)
-                    const icon = comp === 'executor' ? <Cpu className="h-4 w-4" /> :
-                                 comp === 'storage' ? <HardDrive className="h-4 w-4" /> :
-                                 comp === 'schema' ? <Database className="h-4 w-4" /> :
-                                 comp === 'planner' ? <Layers className="h-4 w-4" /> :
-                                 comp === 'queue' ? <Layers className="h-4 w-4" /> :
-                                 <Box className="h-4 w-4" />
+                    const icon = <Box className="h-4 w-4" />
                     return (
                       <div className="flex items-center gap-2">
                         <span className="text-muted-foreground">{icon}</span>
@@ -736,6 +860,9 @@ export default function ClusterDetailPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* Query Metrics Chart - full width */}
+      <QueryMetricsChart data={queryMetricsData} />
 
       {/* Charts Grid - 2 columns: CPU charts on left, Memory charts on right */}
       <div className="grid grid-cols-2 gap-4">

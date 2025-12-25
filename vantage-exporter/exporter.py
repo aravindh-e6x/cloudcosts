@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """
-Vantage Exporter - Pushes Vantage cloud cost data directly to Mimir.
+Vantage Exporter - Pushes Vantage cloud cost data directly to GreptimeDB.
 
-Queries Vantage API and pushes metrics to Mimir via Prometheus remote write protocol.
+Queries Vantage API and pushes metrics to GreptimeDB via Prometheus remote write protocol.
 Collects:
 - Daily costs by provider
 - Daily costs by account
 - Daily costs by service (per account)
+- Daily costs by tag (for tag compliance analysis)
+- Tags inventory (all tag keys across providers)
+- Resources inventory (with tags and costs)
 - Cost report data (for POC customers)
 """
 
@@ -14,6 +17,7 @@ import os
 import time
 import logging
 import struct
+import json
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any
 
@@ -35,7 +39,7 @@ GREPTIMEDB_URL = os.environ.get('GREPTIMEDB_URL', 'http://monitoring-stack-grept
 GREPTIMEDB_USERNAME = os.environ.get('GREPTIMEDB_USERNAME', 'e6data')
 GREPTIMEDB_PASSWORD = os.environ.get('GREPTIMEDB_PASSWORD', 'cloudcosts')
 GREPTIMEDB_DATABASE = os.environ.get('GREPTIMEDB_DATABASE', 'vantage')
-PUSH_INTERVAL = int(os.environ.get('PUSH_INTERVAL', '3600'))  # 1 hour default
+PUSH_INTERVAL = int(os.environ.get('PUSH_INTERVAL', '86400'))  # 24 hours default
 HISTORICAL_DAYS = int(os.environ.get('HISTORICAL_DAYS', '90'))  # 90 days of daily data
 
 # Collection flags
@@ -43,9 +47,19 @@ COLLECT_BY_PROVIDER = os.environ.get('COLLECT_BY_PROVIDER', 'true').lower() == '
 COLLECT_BY_ACCOUNT = os.environ.get('COLLECT_BY_ACCOUNT', 'true').lower() == 'true'
 COLLECT_BY_SERVICE = os.environ.get('COLLECT_BY_SERVICE', 'true').lower() == 'true'
 COLLECT_BY_RESOURCE = os.environ.get('COLLECT_BY_RESOURCE', 'false').lower() == 'true'
+COLLECT_BY_TAG = os.environ.get('COLLECT_BY_TAG', 'true').lower() == 'true'
+COLLECT_TAGS_INVENTORY = os.environ.get('COLLECT_TAGS_INVENTORY', 'true').lower() == 'true'
+COLLECT_RESOURCES = os.environ.get('COLLECT_RESOURCES', 'true').lower() == 'true'
 
 # Cost report tokens for POC customers (comma-separated)
 COST_REPORT_TOKENS = os.environ.get('COST_REPORT_TOKENS', '')
+
+# Tags to track for cost-by-tag analysis (comma-separated)
+# These are the tag keys you want to group costs by
+TRACKED_TAGS = os.environ.get('TRACKED_TAGS', 'Environment,Team,App,Project,CostCenter')
+
+# Resource report token for fetching resources (required for resource collection)
+RESOURCE_REPORT_TOKEN = os.environ.get('RESOURCE_REPORT_TOKEN', 'prvdr_rsrc_rprt_4c610cc837ef1e3e')
 
 # VQL filter for all providers
 ALL_PROVIDERS_VQL = "((costs.provider = 'aws') OR (costs.provider = 'azure') OR (costs.provider = 'gcp') OR (costs.provider = 'databricks') OR (costs.provider = 'snowflake'))"
@@ -188,6 +202,57 @@ class VantageClient:
                 break
 
         return all_costs
+
+    def get_tags(self) -> List[Dict]:
+        """Get all tags across the workspace."""
+        all_tags = []
+        page = 1
+
+        while True:
+            data = self._make_request('/v2/tags', params={'page': page})
+
+            if data and 'tags' in data:
+                tags = data['tags']
+                all_tags.extend(tags)
+                logger.debug(f"  Got {len(tags)} tags (total: {len(all_tags)})")
+
+                links = data.get('links', {})
+                if not links.get('next'):
+                    break
+                page += 1
+            else:
+                break
+
+        return all_tags
+
+    def get_resources(self, resource_report_token: str, include_costs: bool = True) -> List[Dict]:
+        """Get resources from a resource report."""
+        all_resources = []
+        page = 1
+
+        while True:
+            params = {
+                'resource_report_token': resource_report_token,
+                'page': page,
+            }
+            if include_costs:
+                params['include_costs'] = 'true'
+
+            data = self._make_request('/v2/resources', params=params)
+
+            if data and 'resources' in data:
+                resources = data['resources']
+                all_resources.extend(resources)
+                logger.debug(f"  Got {len(resources)} resources (total: {len(all_resources)})")
+
+                links = data.get('links', {})
+                if not links.get('next'):
+                    break
+                page += 1
+            else:
+                break
+
+        return all_resources
 
 
 class GreptimeDBClient:
@@ -336,6 +401,9 @@ class VantageExporter:
         - costs_by_provider: Daily costs grouped by provider
         - costs_by_account: Daily costs grouped by provider and account
         - costs_by_service: Daily costs grouped by provider, account, and service
+        - costs_by_tag: Daily costs grouped by tag key/value
+        - tags_inventory: All tag keys across providers
+        - resources: Resource inventory with tags and costs
         - cost_reports: Data from specific cost reports (if configured)
         - metadata: Collection metadata (date range, duration, etc.)
         """
@@ -356,6 +424,9 @@ class VantageExporter:
             'costs_by_provider': [],
             'costs_by_account': [],
             'costs_by_service': [],
+            'costs_by_tag': [],
+            'tags_inventory': [],
+            'resources': [],
             'cost_reports': [],
             'metadata': {
                 'start_date': start_str,
@@ -379,6 +450,21 @@ class VantageExporter:
             logger.info("Collecting costs by service...")
             result['costs_by_service'] = self._fetch_costs_by_service(start_str, end_str)
 
+        # Collect costs by tag
+        if COLLECT_BY_TAG:
+            logger.info("Collecting costs by tag...")
+            result['costs_by_tag'] = self._fetch_costs_by_tag(start_str, end_str)
+
+        # Collect tags inventory
+        if COLLECT_TAGS_INVENTORY:
+            logger.info("Collecting tags inventory...")
+            result['tags_inventory'] = self._fetch_tags_inventory()
+
+        # Collect resources
+        if COLLECT_RESOURCES:
+            logger.info("Collecting resources...")
+            result['resources'] = self._fetch_resources()
+
         # Collect cost report data (POC customers)
         if COST_REPORT_TOKENS:
             logger.info("Collecting cost report data...")
@@ -390,6 +476,9 @@ class VantageExporter:
             len(result['costs_by_provider']) +
             len(result['costs_by_account']) +
             len(result['costs_by_service']) +
+            len(result['costs_by_tag']) +
+            len(result['tags_inventory']) +
+            len(result['resources']) +
             len(result['cost_reports'])
         )
 
@@ -451,6 +540,54 @@ class VantageExporter:
         logger.info(f"  Fetched {len(all_costs)} cost report records")
         return all_costs
 
+    def _fetch_costs_by_tag(self, start_date: str, end_date: str) -> List[Dict]:
+        """Fetch daily costs grouped by tag for each tracked tag key."""
+        tracked_tags = [t.strip() for t in TRACKED_TAGS.split(',') if t.strip()]
+        all_costs = []
+
+        for tag_key in tracked_tags:
+            logger.info(f"  Fetching costs by tag: {tag_key}")
+            # Query costs grouped by provider, service, and this tag
+            costs = self.vantage.query_costs(
+                vql_filter=ALL_PROVIDERS_VQL,
+                start_date=start_date,
+                end_date=end_date,
+                groupings=['provider', 'service', f'tag:{tag_key}']
+            )
+
+            # Add tag_key to each record for identification
+            for cost in costs:
+                cost['tag_key'] = tag_key
+                # The tag value comes back in 'tag' field when grouping by tag
+                # Empty string means untagged
+                tag_value = cost.get('tag', '')
+                cost['tag_value'] = tag_value if tag_value else ''
+
+            all_costs.extend(costs)
+            logger.info(f"    Got {len(costs)} records for tag {tag_key}")
+
+        logger.info(f"  Fetched {len(all_costs)} total cost-by-tag records")
+        return all_costs
+
+    def _fetch_tags_inventory(self) -> List[Dict]:
+        """Fetch all tag keys from Vantage."""
+        tags = self.vantage.get_tags()
+        logger.info(f"  Fetched {len(tags)} tag keys")
+        return tags
+
+    def _fetch_resources(self) -> List[Dict]:
+        """Fetch resources from Vantage with costs."""
+        if not RESOURCE_REPORT_TOKEN:
+            logger.warning("RESOURCE_REPORT_TOKEN not configured, skipping resource collection")
+            return []
+
+        resources = self.vantage.get_resources(
+            resource_report_token=RESOURCE_REPORT_TOKEN,
+            include_costs=True
+        )
+        logger.info(f"  Fetched {len(resources)} resources")
+        return resources
+
     def collect_and_push(self):
         """Collect all metrics from Vantage and push to GreptimeDB."""
         # Collect raw data
@@ -461,6 +598,9 @@ class VantageExporter:
         all_metrics.extend(self._convert_provider_costs_to_metrics(data['costs_by_provider']))
         all_metrics.extend(self._convert_account_costs_to_metrics(data['costs_by_account']))
         all_metrics.extend(self._convert_service_costs_to_metrics(data['costs_by_service']))
+        all_metrics.extend(self._convert_tag_costs_to_metrics(data['costs_by_tag']))
+        all_metrics.extend(self._convert_tags_inventory_to_metrics(data['tags_inventory']))
+        all_metrics.extend(self._convert_resources_to_metrics(data['resources']))
         all_metrics.extend(self._convert_cost_reports_to_metrics(data['cost_reports']))
 
         # Push all metrics to GreptimeDB
@@ -577,6 +717,110 @@ class VantageExporter:
             })
         return metrics
 
+    def _convert_tag_costs_to_metrics(self, costs: List[Dict]) -> List[Dict]:
+        """Convert tag-grouped costs to Prometheus metrics format."""
+        metrics = []
+        for cost in costs:
+            provider = cost.get('provider', 'unknown')
+            service = cost.get('service', 'unknown')
+            tag_key = cost.get('tag_key', 'unknown')
+            tag_value = cost.get('tag_value', '')  # Empty string = untagged
+            date = cost.get('accrued_at', cost.get('date', cost.get('accrued_date', '')))
+            amount = float(cost.get('amount', 0))
+
+            if not date:
+                continue
+
+            # Use special label for untagged resources
+            tag_value_label = tag_value if tag_value else '__untagged__'
+
+            metrics.append({
+                'name': 'vantage_cost_by_tag',
+                'labels': {
+                    'provider': provider,
+                    'service': self._sanitize_label(service),
+                    'tag_key': self._sanitize_label(tag_key),
+                    'tag_value': self._sanitize_label(tag_value_label),
+                },
+                'value': amount,
+                'timestamp_ms': self._date_to_timestamp_ms(date)
+            })
+        return metrics
+
+    def _convert_tags_inventory_to_metrics(self, tags: List[Dict]) -> List[Dict]:
+        """Convert tags inventory to Prometheus metrics format.
+
+        Creates a metric with value 1 for each tag key, with labels for providers.
+        """
+        metrics = []
+        # Use current timestamp for tags inventory (snapshot)
+        timestamp_ms = int(datetime.now().timestamp() * 1000)
+
+        for tag in tags:
+            tag_key = tag.get('tag_key', 'unknown')
+            providers = tag.get('providers', [])
+            hidden = tag.get('hidden', False)
+
+            # Store providers as comma-separated string
+            providers_str = ','.join(sorted(providers)) if providers else 'unknown'
+
+            metrics.append({
+                'name': 'vantage_tags',
+                'labels': {
+                    'tag_key': self._sanitize_label(tag_key),
+                    'providers': self._sanitize_label(providers_str),
+                    'hidden': str(hidden).lower(),
+                },
+                'value': 1.0,  # Presence indicator
+                'timestamp_ms': timestamp_ms
+            })
+        return metrics
+
+    def _convert_resources_to_metrics(self, resources: List[Dict]) -> List[Dict]:
+        """Convert resources inventory to Prometheus metrics format.
+
+        Creates a metric per resource with cost as value and metadata as labels.
+        """
+        metrics = []
+        # Use current timestamp for resources inventory (snapshot)
+        timestamp_ms = int(datetime.now().timestamp() * 1000)
+
+        for resource in resources:
+            token = resource.get('token', 'unknown')
+            uuid = resource.get('uuid', 'unknown')
+            resource_type = resource.get('type', 'unknown')
+            label = resource.get('label', 'unknown')
+            provider = resource.get('provider', 'unknown')
+            account_id = resource.get('account_id', 'unknown')
+            region = resource.get('region', 'unknown')
+            cost = float(resource.get('cost', 0) or 0)
+
+            # Extract tags as JSON string for storage
+            # Note: Resources from Vantage API don't include tags directly,
+            # but we include the field for future compatibility
+            tags_dict = resource.get('tags', {})
+            if isinstance(tags_dict, list):
+                # If tags come as list of {key, value}, convert to dict
+                tags_dict = {t.get('key', ''): t.get('value', '') for t in tags_dict if t.get('key')}
+            tags_json = json.dumps(tags_dict) if tags_dict else '{}'
+
+            metrics.append({
+                'name': 'vantage_resources',
+                'labels': {
+                    'token': self._sanitize_label(token),
+                    'uuid': self._sanitize_label(uuid)[:128],  # UUID/ARN can be long
+                    'type': self._sanitize_label(resource_type),
+                    'label': self._sanitize_label(label),
+                    'provider': provider,
+                    'account_id': str(account_id),
+                    'region': self._sanitize_label(region),
+                    'tags': tags_json[:512],  # Limit tags JSON length
+                },
+                'value': cost,
+                'timestamp_ms': timestamp_ms
+            })
+        return metrics
+
 
 def main():
     """Main entry point."""
@@ -594,6 +838,13 @@ def main():
     logger.info(f"Collect by provider: {COLLECT_BY_PROVIDER}")
     logger.info(f"Collect by account: {COLLECT_BY_ACCOUNT}")
     logger.info(f"Collect by service: {COLLECT_BY_SERVICE}")
+    logger.info(f"Collect by tag: {COLLECT_BY_TAG}")
+    logger.info(f"Collect tags inventory: {COLLECT_TAGS_INVENTORY}")
+    logger.info(f"Collect resources: {COLLECT_RESOURCES}")
+    if COLLECT_BY_TAG:
+        logger.info(f"Tracked tags: {TRACKED_TAGS}")
+    if COLLECT_RESOURCES:
+        logger.info(f"Resource report token: {RESOURCE_REPORT_TOKEN}")
     if COST_REPORT_TOKENS:
         logger.info(f"Cost report tokens: {COST_REPORT_TOKENS}")
 

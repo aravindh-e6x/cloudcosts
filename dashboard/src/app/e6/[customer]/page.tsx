@@ -15,6 +15,7 @@ import {
   Button,
 } from "laminar-ui"
 import { DateBanner } from "@/components/shared"
+import { useDate } from "@/components/providers"
 import {
   Building2,
   Server,
@@ -22,8 +23,6 @@ import {
   ChevronLeft,
   Cpu,
   HardDrive,
-  AlertCircle,
-  CheckCircle2,
   Layers,
 } from "lucide-react"
 import { E6_SCHEMA_PREFIX } from "@/lib/utils"
@@ -36,7 +35,6 @@ interface ClusterStats {
   queue_depth: number
   running_queries: number
   last_updated: string | null
-  health_status: "healthy" | "warning" | "critical" | "unknown"
   [key: string]: unknown
 }
 
@@ -53,6 +51,7 @@ export default function CustomerDetailPage() {
   const [clusters, setClusters] = useState<ClusterStats[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const { startTimestamp, endTimestamp } = useDate()
 
   // Create display name from database name
   const displayName = useMemo(() => {
@@ -69,8 +68,11 @@ export default function CustomerDetailPage() {
       setLoading(true)
       setError(null)
 
+      // Use date range from context
+      const timeFilter = `ts >= '${startTimestamp}'::timestamp AND ts < '${endTimestamp}'::timestamp`
+
       try {
-        // Get cluster list and latest timestamp from e6_engine_metrics
+        // Get cluster list and latest timestamp from e6_engine_metrics for selected date
         const engineResponse = await fetch("/api/query", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -81,6 +83,7 @@ export default function CustomerDetailPage() {
                 cluster_name,
                 MAX(ts) as last_updated
               FROM e6_engine_metrics
+              WHERE ${timeFilter}
               GROUP BY cluster_name
               ORDER BY cluster_name
             `,
@@ -88,56 +91,81 @@ export default function CustomerDetailPage() {
         })
         const engineData = await engineResponse.json()
 
-        // Get executor counts per cluster (using pod as executor identifier)
+        // Get executor counts per cluster (using pod as executor identifier) - use latest data in date range
         const executorResponse = await fetch("/api/query", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             database,
             sql: `
+              WITH latest_ts AS (
+                SELECT cluster_name, MAX(ts) as max_ts
+                FROM e6_executor_metrics
+                WHERE ${timeFilter}
+                GROUP BY cluster_name
+              )
               SELECT
-                cluster_name,
-                COUNT(DISTINCT pod) as executor_count
-              FROM e6_executor_metrics
-              WHERE ts >= NOW() - INTERVAL '10 minutes'
-              GROUP BY cluster_name
+                e.cluster_name,
+                COUNT(DISTINCT e.pod) as executor_count
+              FROM e6_executor_metrics e
+              JOIN latest_ts l ON e.cluster_name = l.cluster_name
+                AND e.ts >= l.max_ts - INTERVAL '10 minutes'
+                AND e.ts <= l.max_ts
+              GROUP BY e.cluster_name
             `,
           }),
         })
         const executorData = await executorResponse.json()
 
-        // Get container counts per cluster
+        // Get container counts per cluster - use latest data in date range
         const containerResponse = await fetch("/api/query", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             database,
             sql: `
+              WITH latest_ts AS (
+                SELECT cluster_name, MAX(ts) as max_ts
+                FROM e6_container_metrics
+                WHERE ${timeFilter}
+                GROUP BY cluster_name
+              )
               SELECT
-                cluster_name,
-                COUNT(DISTINCT pod) as container_count
-              FROM e6_container_metrics
-              WHERE ts >= NOW() - INTERVAL '10 minutes'
-              GROUP BY cluster_name
+                c.cluster_name,
+                COUNT(DISTINCT c.pod) as container_count
+              FROM e6_container_metrics c
+              JOIN latest_ts l ON c.cluster_name = l.cluster_name
+                AND c.ts >= l.max_ts - INTERVAL '10 minutes'
+                AND c.ts <= l.max_ts
+              GROUP BY c.cluster_name
             `,
           }),
         })
         const containerData = await containerResponse.json()
 
-        // Get queue depth per cluster (using NumExecutionQueuedQueries metric)
+        // Get queue depth per cluster (using NumExecutionQueuedQueries metric) - use latest data in date range
         const queueResponse = await fetch("/api/query", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             database,
             sql: `
+              WITH latest_ts AS (
+                SELECT cluster_name, MAX(ts) as max_ts
+                FROM e6_queue_metrics
+                WHERE metric_name = 'io_e6x_E6Queue_NumExecutionQueuedQueries'
+                  AND ${timeFilter}
+                GROUP BY cluster_name
+              )
               SELECT
-                cluster_name,
-                MAX(metric_value) as queue_depth
-              FROM e6_queue_metrics
-              WHERE metric_name = 'io_e6x_E6Queue_NumExecutionQueuedQueries'
-                AND ts >= NOW() - INTERVAL '10 minutes'
-              GROUP BY cluster_name
+                q.cluster_name,
+                MAX(q.metric_value) as queue_depth
+              FROM e6_queue_metrics q
+              JOIN latest_ts l ON q.cluster_name = l.cluster_name
+                AND q.ts >= l.max_ts - INTERVAL '10 minutes'
+                AND q.ts <= l.max_ts
+              WHERE q.metric_name = 'io_e6x_E6Queue_NumExecutionQueuedQueries'
+              GROUP BY q.cluster_name
             `,
           }),
         })
@@ -171,23 +199,6 @@ export default function CustomerDetailPage() {
         const clusterStats: ClusterStats[] = []
         if (engineData.data) {
           for (const row of engineData.data) {
-            const lastUpdated = row.last_updated
-
-            // Determine health status based on data freshness
-            let healthStatus: "healthy" | "warning" | "critical" | "unknown" = "unknown"
-            if (lastUpdated) {
-              const dataAge = Date.now() - new Date(lastUpdated).getTime()
-              const dataAgeMinutes = dataAge / 60000
-
-              if (dataAgeMinutes < 10) {
-                healthStatus = "healthy"
-              } else if (dataAgeMinutes < 30) {
-                healthStatus = "warning"
-              } else {
-                healthStatus = "critical"
-              }
-            }
-
             clusterStats.push({
               cluster_name: row.cluster_name,
               engine_uptime: 0, // Not available in current schema
@@ -195,8 +206,7 @@ export default function CustomerDetailPage() {
               container_count: containerMap[row.cluster_name] || 0,
               queue_depth: queueMap[row.cluster_name] || 0,
               running_queries: 0, // Not available in current schema
-              last_updated: lastUpdated,
-              health_status: healthStatus,
+              last_updated: row.last_updated,
             })
           }
         }
@@ -210,10 +220,10 @@ export default function CustomerDetailPage() {
       }
     }
 
-    if (database) {
+    if (database && startTimestamp && endTimestamp) {
       fetchClusters()
     }
-  }, [database])
+  }, [database, startTimestamp, endTimestamp])
 
   // Calculate customer stats
   const customerStats: CustomerStats = useMemo(() => {
@@ -251,39 +261,6 @@ export default function CustomerDetailPage() {
     return date.toLocaleDateString()
   }
 
-  // Get health badge
-  const getHealthBadge = (status: string) => {
-    switch (status) {
-      case "healthy":
-        return (
-          <Badge className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20">
-            <CheckCircle2 className="h-3 w-3 mr-1" />
-            Healthy
-          </Badge>
-        )
-      case "warning":
-        return (
-          <Badge className="bg-yellow-500/10 text-yellow-600 border-yellow-500/20">
-            <AlertCircle className="h-3 w-3 mr-1" />
-            Warning
-          </Badge>
-        )
-      case "critical":
-        return (
-          <Badge className="bg-red-500/10 text-red-600 border-red-500/20">
-            <AlertCircle className="h-3 w-3 mr-1" />
-            Critical
-          </Badge>
-        )
-      default:
-        return (
-          <Badge variant="secondary">
-            Unknown
-          </Badge>
-        )
-    }
-  }
-
   // Cluster table columns
   const clusterColumns = [
     {
@@ -300,11 +277,6 @@ export default function CustomerDetailPage() {
           <ChevronRight className="h-3 w-3 text-muted-foreground" />
         </Link>
       ),
-    },
-    {
-      key: "health_status",
-      header: "Status",
-      render: (value: unknown) => getHealthBadge(String(value)),
     },
     {
       key: "engine_uptime",
@@ -363,7 +335,6 @@ export default function CustomerDetailPage() {
           <Link href="/e6">
             <Button variant="ghost" size="sm">
               <ChevronLeft className="h-4 w-4 mr-1" />
-              Back
             </Button>
           </Link>
           <div>
@@ -397,7 +368,7 @@ export default function CustomerDetailPage() {
           <Link href="/e6">
             <Button variant="ghost" size="sm">
               <ChevronLeft className="h-4 w-4 mr-1" />
-              Back
+              
             </Button>
           </Link>
           <div>
@@ -418,7 +389,7 @@ export default function CustomerDetailPage() {
         <Link href="/e6">
           <Button variant="ghost" size="sm">
             <ChevronLeft className="h-4 w-4 mr-1" />
-            Back
+            
           </Button>
         </Link>
         <div>

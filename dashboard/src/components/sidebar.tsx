@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
-import { LayoutDashboard, Server, Cloud, Boxes, ExternalLink, CloudCog, Database, Grid, LucideIcon, BookOpen, Network, FileText } from "lucide-react"
+import { LayoutDashboard, Server, Cloud, Boxes, ExternalLink, CloudCog, Database, Grid, LucideIcon, BookOpen, Network, FileText, Tags } from "lucide-react"
 import { TimeRangePicker } from "@/components/shared"
 import { useDate } from "@/components/providers"
 
@@ -25,6 +25,7 @@ const navigation: NavSection[] = [
     section: "Overview",
     items: [
       { name: "Dashboard", href: "/", icon: LayoutDashboard },
+      { name: "Tags", href: "/tags", icon: Tags },
     ]
   },
   {
