@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useMemo } from "react"
+import { useMemo } from "react"
 import { useParams } from "next/navigation"
 import Link from "next/link"
 import {
@@ -25,14 +25,11 @@ import {
 import {
   Server,
   ChevronLeft,
-  Cpu,
-  Database,
-  HardDrive,
-  Layers,
   Box,
 } from "lucide-react"
 import { DateBanner, DataHealthIndicator } from "@/components"
 import { useDate } from "@/components/providers"
+import { useQuery } from "@/hooks/useQuery"
 import { E6_SCHEMA_PREFIX } from "@/lib/utils"
 
 interface TimeSeriesPoint {
@@ -56,6 +53,14 @@ interface QueryChartDataPoint {
   totalInPlanner: number
 }
 
+interface ComponentSummaryRow {
+  component: string
+  pod: string
+  node: string
+  metric_name: string
+  metric_value: number
+}
+
 interface ComponentSummary {
   component: string
   podCount: number
@@ -67,24 +72,16 @@ interface ComponentSummary {
   [key: string]: unknown
 }
 
-// E6 Component types
-type ComponentType = "executor" | "planner" | "queue" | "storage" | "schema"
+interface DataHealthRow {
+  last_data: string
+}
 
 export default function ClusterDetailPage() {
   const params = useParams()
   const database = params.customer as string
   const clusterName = decodeURIComponent(params.cluster as string)
   const { startTimestamp, endTimestamp } = useDate()
-
-  const [executorData, setExecutorData] = useState<TimeSeriesPoint[]>([])
-  const [queueData, setQueueData] = useState<TimeSeriesPoint[]>([])
-  const [storageData, setStorageData] = useState<TimeSeriesPoint[]>([])
-  const [schemaData, setSchemaData] = useState<TimeSeriesPoint[]>([])
-  const [containerData, setContainerData] = useState<TimeSeriesPoint[]>([])
-  const [componentSummary, setComponentSummary] = useState<ComponentSummary[]>([])
-  const [lastDataTimestamp, setLastDataTimestamp] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const dateRange = { startTs: startTimestamp, endTs: endTimestamp }
 
   // Create display names
   const customerName = useMemo(() => {
@@ -110,249 +107,130 @@ export default function ClusterDetailPage() {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
   }
 
-  // Calculate cost from resource usage (simplified: $0.05/CPU-hour, $0.01/GB-hour)
-  const calculateCost = (cpuSeconds: number, memoryBytes: number) => {
-    const cpuHours = cpuSeconds / 3600
-    const gbHours = memoryBytes / (1024 * 1024 * 1024) / 3600
-    return (cpuHours * 0.05) + (gbHours * 0.01)
-  }
+  // Fetch data health
+  const { data: healthData } = useQuery<DataHealthRow>(
+    "e6",
+    "getClusterDataHealth",
+    [clusterName],
+    { database, refetchInterval: 60000 }
+  )
+  const lastDataTimestamp = healthData?.[0]?.last_data || null
 
-  // Fetch all metrics
-  useEffect(() => {
-    async function fetchMetrics() {
-      setLoading(true)
-      setError(null)
+  // Fetch executor metrics
+  const { data: executorData } = useQuery<TimeSeriesPoint>(
+    "e6",
+    "getExecutorMetrics",
+    [clusterName, dateRange],
+    { database, refetchInterval: 60000 }
+  )
 
-      // Use date range from context
-      const timeFilter = `ts >= '${startTimestamp}'::timestamp AND ts < '${endTimestamp}'::timestamp`
+  // Fetch queue metrics
+  const { data: queueData } = useQuery<TimeSeriesPoint>(
+    "e6",
+    "getQueueMetrics",
+    [clusterName, dateRange],
+    { database, refetchInterval: 60000 }
+  )
 
-      try {
-        // Fetch last data timestamp for health indicator
-        const healthResponse = await fetch("/api/query", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            database,
-            sql: `
-              SELECT MAX(ts) as last_data
-              FROM e6_container_metrics
-              WHERE cluster_name = '${clusterName}'
-            `,
-          }),
-        })
-        const healthResult = await healthResponse.json()
-        if (healthResult.data && healthResult.data[0]?.last_data) {
-          setLastDataTimestamp(healthResult.data[0].last_data)
+  // Fetch storage metrics
+  const { data: storageData } = useQuery<TimeSeriesPoint>(
+    "e6",
+    "getStorageMetrics",
+    [clusterName, dateRange],
+    { database, refetchInterval: 60000 }
+  )
+
+  // Fetch schema metrics
+  const { data: schemaData } = useQuery<TimeSeriesPoint>(
+    "e6",
+    "getSchemaMetrics",
+    [clusterName, dateRange],
+    { database, refetchInterval: 60000 }
+  )
+
+  // Fetch container metrics
+  const { data: containerData, loading, error } = useQuery<TimeSeriesPoint>(
+    "e6",
+    "getContainerMetrics",
+    [clusterName, dateRange],
+    { database, refetchInterval: 60000 }
+  )
+
+  // Fetch component summary
+  const { data: summaryData } = useQuery<ComponentSummaryRow>(
+    "e6",
+    "getComponentSummary",
+    [clusterName, dateRange],
+    { database, refetchInterval: 60000 }
+  )
+
+  // Process component summary data
+  const componentSummary = useMemo<ComponentSummary[]>(() => {
+    if (!summaryData) return []
+
+    const componentMap: Record<string, {
+      pods: Set<string>
+      nodes: Set<string>
+      cpuQuota: number
+      cpuPeriod: number
+      memoryRequest: number
+      memoryUsage: number
+      restarts: number
+    }> = {}
+
+    for (const row of summaryData) {
+      const comp = row.component
+      if (!componentMap[comp]) {
+        componentMap[comp] = {
+          pods: new Set(),
+          nodes: new Set(),
+          cpuQuota: 0,
+          cpuPeriod: 100000,
+          memoryRequest: 0,
+          memoryUsage: 0,
+          restarts: 0,
         }
+      }
+      if (row.pod) componentMap[comp].pods.add(row.pod)
+      if (row.node && row.node !== 'unknown') componentMap[comp].nodes.add(row.node)
 
-        // Fetch executor metrics
-        const executorResponse = await fetch("/api/query", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            database,
-            sql: `
-              SELECT ts, metric_name, metric_value
-              FROM e6_executor_metrics
-              WHERE cluster_name = '${clusterName}'
-                AND ${timeFilter}
-              ORDER BY ts
-            `,
-          }),
-        })
-        const executorResult = await executorResponse.json()
-        if (executorResult.data) setExecutorData(executorResult.data)
-
-        // Fetch queue metrics (includes planner)
-        const queueResponse = await fetch("/api/query", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            database,
-            sql: `
-              SELECT ts, metric_name, metric_value
-              FROM e6_queue_metrics
-              WHERE cluster_name = '${clusterName}'
-                AND ${timeFilter}
-              ORDER BY ts
-            `,
-          }),
-        })
-        const queueResult = await queueResponse.json()
-        if (queueResult.data) setQueueData(queueResult.data)
-
-        // Fetch storage metrics
-        const storageResponse = await fetch("/api/query", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            database,
-            sql: `
-              SELECT ts, metric_name, metric_value
-              FROM e6_storage_metrics
-              WHERE cluster_name = '${clusterName}'
-                AND ${timeFilter}
-              ORDER BY ts
-            `,
-          }),
-        })
-        const storageResult = await storageResponse.json()
-        if (storageResult.data) setStorageData(storageResult.data)
-
-        // Fetch schema metrics
-        const schemaResponse = await fetch("/api/query", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            database,
-            sql: `
-              SELECT ts, metric_name, metric_value
-              FROM e6_schema_metrics
-              WHERE cluster_name = '${clusterName}'
-                AND ${timeFilter}
-              ORDER BY ts
-            `,
-          }),
-        })
-        const schemaResult = await schemaResponse.json()
-        if (schemaResult.data) setSchemaData(schemaResult.data)
-
-        // Fetch container metrics (for CPU and memory)
-        const containerResponse = await fetch("/api/query", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            database,
-            sql: `
-              SELECT ts, metric_name, metric_value
-              FROM e6_container_metrics
-              WHERE cluster_name = '${clusterName}'
-                AND ${timeFilter}
-              ORDER BY ts
-            `,
-          }),
-        })
-        const containerResult = await containerResponse.json()
-        if (containerResult.data) setContainerData(containerResult.data)
-
-        // Fetch component summary (pod counts, specs, and nodes) - use latest data within selected date range
-        const summaryResponse = await fetch("/api/query", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            database,
-            sql: `
-              WITH latest_ts AS (
-                SELECT MAX(ts) as max_ts
-                FROM e6_container_metrics
-                WHERE cluster_name = '${clusterName}'
-                  AND ${timeFilter}
-              )
-              SELECT
-                component,
-                pod,
-                node,
-                metric_name,
-                MAX(metric_value) as metric_value
-              FROM e6_container_metrics
-              WHERE cluster_name = '${clusterName}'
-                AND ts >= (SELECT max_ts FROM latest_ts) - INTERVAL '10 minutes'
-                AND ts <= (SELECT max_ts FROM latest_ts)
-                AND component != ''
-                AND metric_name IN (
-                  'e6data_container_spec_cpu_quota',
-                  'e6data_container_spec_cpu_period',
-                  'e6data_container_requests',
-                  'e6data_container_memory_usage_bytes',
-                  'e6data_container_restart_count'
-                )
-              GROUP BY component, pod, node, metric_name
-              ORDER BY component
-            `,
-          }),
-        })
-        const summaryResult = await summaryResponse.json()
-        if (summaryResult.data) {
-          // Group by component and aggregate specs
-          const componentMap: Record<string, {
-            pods: Set<string>
-            nodes: Set<string>
-            cpuQuota: number
-            cpuPeriod: number
-            memoryRequest: number
-            memoryUsage: number
-            restarts: number
-          }> = {}
-
-          for (const row of summaryResult.data) {
-            const comp = row.component
-            if (!componentMap[comp]) {
-              componentMap[comp] = {
-                pods: new Set(),
-                nodes: new Set(),
-                cpuQuota: 0,
-                cpuPeriod: 100000,
-                memoryRequest: 0,
-                memoryUsage: 0,
-                restarts: 0,
-              }
-            }
-            if (row.pod) componentMap[comp].pods.add(row.pod)
-            if (row.node && row.node !== 'unknown') componentMap[comp].nodes.add(row.node)
-
-            // Aggregate metrics (use max for specs, sum for usage)
-            switch (row.metric_name) {
-              case 'e6data_container_spec_cpu_quota':
-                componentMap[comp].cpuQuota = Math.max(componentMap[comp].cpuQuota, row.metric_value || 0)
-                break
-              case 'e6data_container_spec_cpu_period':
-                componentMap[comp].cpuPeriod = row.metric_value || 100000
-                break
-              case 'e6data_container_requests':
-                componentMap[comp].memoryRequest = Math.max(componentMap[comp].memoryRequest, row.metric_value || 0)
-                break
-              case 'e6data_container_memory_usage_bytes':
-                componentMap[comp].memoryUsage = Math.max(componentMap[comp].memoryUsage, row.metric_value || 0)
-                break
-              case 'e6data_container_restart_count':
-                componentMap[comp].restarts += row.metric_value || 0
-                break
-            }
-          }
-
-          const summary: ComponentSummary[] = Object.entries(componentMap).map(([comp, data]) => ({
-            component: comp,
-            podCount: data.pods.size,
-            cpuCores: data.cpuPeriod > 0 ? data.cpuQuota / data.cpuPeriod : 0,
-            memoryRequest: data.memoryRequest,
-            memoryUsage: data.memoryUsage,
-            restarts: data.restarts,
-            nodes: Array.from(data.nodes),
-          }))
-          setComponentSummary(summary)
-        }
-
-      } catch (err) {
-        console.error("Error fetching metrics:", err)
-        setError("Failed to fetch cluster metrics")
-      } finally {
-        setLoading(false)
+      switch (row.metric_name) {
+        case 'e6data_container_spec_cpu_quota':
+          componentMap[comp].cpuQuota = Math.max(componentMap[comp].cpuQuota, row.metric_value || 0)
+          break
+        case 'e6data_container_spec_cpu_period':
+          componentMap[comp].cpuPeriod = row.metric_value || 100000
+          break
+        case 'e6data_container_requests':
+          componentMap[comp].memoryRequest = Math.max(componentMap[comp].memoryRequest, row.metric_value || 0)
+          break
+        case 'e6data_container_memory_usage_bytes':
+          componentMap[comp].memoryUsage = Math.max(componentMap[comp].memoryUsage, row.metric_value || 0)
+          break
+        case 'e6data_container_restart_count':
+          componentMap[comp].restarts += row.metric_value || 0
+          break
       }
     }
 
-    if (database && clusterName && startTimestamp && endTimestamp) {
-      fetchMetrics()
-    }
-  }, [database, clusterName, startTimestamp, endTimestamp])
+    return Object.entries(componentMap).map(([comp, data]) => ({
+      component: comp,
+      podCount: data.pods.size,
+      cpuCores: data.cpuPeriod > 0 ? data.cpuQuota / data.cpuPeriod : 0,
+      memoryRequest: data.memoryRequest,
+      memoryUsage: data.memoryUsage,
+      restarts: data.restarts,
+      nodes: Array.from(data.nodes),
+    }))
+  }, [summaryData])
 
   // Transform data for dual-axis chart (CPU vs Cost)
-  const transformCpuCostData = (data: TimeSeriesPoint[], componentFilter: string): ChartDataPoint[] => {
+  const transformCpuCostData = (data: TimeSeriesPoint[] | null, componentFilter: string): ChartDataPoint[] => {
     if (!data || data.length === 0) return []
 
     const byTime: Record<string, ChartDataPoint> = {}
 
     data.forEach(point => {
-      // Filter by component
       if (!point.metric_name.toLowerCase().includes(componentFilter.toLowerCase())) {
         return
       }
@@ -362,7 +240,6 @@ export default function ClusterDetailPage() {
         byTime[timeKey] = { time: formatTime(point.ts), cpu: 0, cost: 0 }
       }
 
-      // Look for CPU-related metrics
       if (point.metric_name.includes('cpu') ||
           point.metric_name.includes('CPU') ||
           point.metric_name.includes('Thread') ||
@@ -371,22 +248,20 @@ export default function ClusterDetailPage() {
       }
     })
 
-    // Calculate cost based on CPU usage
     Object.values(byTime).forEach(point => {
-      point.cost = (point.cpu || 0) * 0.00001 // Simplified cost calculation
+      point.cost = (point.cpu || 0) * 0.00001
     })
 
     return Object.values(byTime).sort((a, b) => a.time.localeCompare(b.time))
   }
 
   // Transform data for dual-axis chart (Memory vs Cost)
-  const transformMemoryCostData = (data: TimeSeriesPoint[], componentFilter: string): ChartDataPoint[] => {
+  const transformMemoryCostData = (data: TimeSeriesPoint[] | null, componentFilter: string): ChartDataPoint[] => {
     if (!data || data.length === 0) return []
 
     const byTime: Record<string, ChartDataPoint> = {}
 
     data.forEach(point => {
-      // Filter by component
       if (!point.metric_name.toLowerCase().includes(componentFilter.toLowerCase())) {
         return
       }
@@ -396,7 +271,6 @@ export default function ClusterDetailPage() {
         byTime[timeKey] = { time: formatTime(point.ts), memory: 0, cost: 0 }
       }
 
-      // Look for memory-related metrics
       if (point.metric_name.includes('Memory') ||
           point.metric_name.includes('memory') ||
           point.metric_name.includes('Heap') ||
@@ -406,16 +280,15 @@ export default function ClusterDetailPage() {
       }
     })
 
-    // Calculate cost based on memory usage
     Object.values(byTime).forEach(point => {
-      point.cost = (point.memory || 0) * 0.00000001 // Simplified cost calculation
+      point.cost = (point.memory || 0) * 0.00000001
     })
 
     return Object.values(byTime).sort((a, b) => a.time.localeCompare(b.time))
   }
 
   // Transform container data for CPU/Memory charts
-  const transformContainerData = (componentType: ComponentType, metricType: 'cpu' | 'memory'): ChartDataPoint[] => {
+  const transformContainerData = (metricType: 'cpu' | 'memory'): ChartDataPoint[] => {
     if (!containerData || containerData.length === 0) return []
 
     const byTime: Record<string, ChartDataPoint> = {}
@@ -434,7 +307,6 @@ export default function ClusterDetailPage() {
       }
     })
 
-    // Calculate cost
     Object.values(byTime).forEach(point => {
       if (metricType === 'cpu') {
         point.cost = (point.cpu || 0) * 0.00001
@@ -447,7 +319,7 @@ export default function ClusterDetailPage() {
   }
 
   // Transform query metrics data for the query chart
-  const transformQueryMetricsData = (data: TimeSeriesPoint[]): QueryChartDataPoint[] => {
+  const transformQueryMetricsData = (data: TimeSeriesPoint[] | null): QueryChartDataPoint[] => {
     if (!data || data.length === 0) return []
 
     const byTime: Record<string, QueryChartDataPoint> = {}
@@ -484,8 +356,8 @@ export default function ClusterDetailPage() {
   }
 
   // Prepare chart data for each component
-  const executorCpuData = useMemo(() => transformContainerData('executor', 'cpu'), [containerData])
-  const executorMemoryData = useMemo(() => transformContainerData('executor', 'memory'), [containerData])
+  const executorCpuData = useMemo(() => transformContainerData('cpu'), [containerData])
+  const executorMemoryData = useMemo(() => transformContainerData('memory'), [containerData])
 
   const plannerCpuData = useMemo(() => transformCpuCostData(queueData, 'Planner'), [queueData])
   const plannerMemoryData = useMemo(() => transformMemoryCostData(queueData, 'Planner'), [queueData])
@@ -709,7 +581,7 @@ export default function ClusterDetailPage() {
           <Link href={`/e6/${database}`}>
             <Button variant="ghost" size="sm">
               <ChevronLeft className="h-4 w-4 mr-1" />
-              
+
             </Button>
           </Link>
           <div>

@@ -15,7 +15,8 @@ import {
 import { Building2, Server, ChevronRight, Database, HardDrive } from "lucide-react"
 import { DateBanner } from "@/components"
 import { useDate } from "@/components/providers"
-import { isAllowedSchema, E6_SCHEMA_PREFIX } from "@/lib/utils"
+import { useQuery } from "@/hooks/useQuery"
+import { E6_SCHEMA_PREFIX } from "@/lib/utils"
 
 interface CustomerSummary {
   database: string
@@ -26,133 +27,121 @@ interface CustomerSummary {
   [key: string]: unknown
 }
 
-interface ClusterSummary {
-  cluster_name: string
-  engine_uptime: number
-  executor_count: number
+interface DatabaseRow {
+  schema_name: string
+}
+
+interface CustomerStatsRow {
+  cluster_count: number
+  last_updated: string | null
+}
+
+interface ContainerCountRow {
   container_count: number
-  queue_depth: number
 }
 
 export default function E6OverviewPage() {
   const [customers, setCustomers] = useState<CustomerSummary[]>([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
   const { startTimestamp, endTimestamp } = useDate()
 
-  // Fetch all e6_* databases and their summary stats
+  // Fetch all databases using the query hook
+  const { data: dbData, loading: dbLoading, error: dbError } = useQuery<DatabaseRow>(
+    "e6",
+    "getAllDatabases",
+    [],
+    { database: "information_schema" }
+  )
+
+  // Filter to e6_* databases
+  const e6Databases = useMemo(() => {
+    if (!dbData) return []
+    return dbData
+      .map((row) => row.schema_name)
+      .filter((db) => db.startsWith(E6_SCHEMA_PREFIX))
+  }, [dbData])
+
+  // Fetch stats for each database (we need to do this in useEffect since we need dynamic databases)
   useEffect(() => {
-    async function fetchCustomers() {
-      setLoading(true)
-      setError(null)
-
-      // Use date range from context
-      const timeFilter = `ts >= '${startTimestamp}'::timestamp AND ts < '${endTimestamp}'::timestamp`
-
-      try {
-        // First, get all databases
-        const dbResponse = await fetch("/api/query", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            database: "information_schema",
-            sql: "SELECT schema_name FROM schemata ORDER BY schema_name",
-          }),
-        })
-        const dbData = await dbResponse.json()
-
-        if (!dbData.data) {
-          setCustomers([])
-          setLoading(false)
-          return
-        }
-
-        // Filter to e6_* databases
-        const e6Databases = dbData.data
-          .map((row: { schema_name: string }) => row.schema_name)
-          .filter((db: string) => db.startsWith(E6_SCHEMA_PREFIX))
-
-        // For each database, get summary stats
-        const summaries: CustomerSummary[] = []
-
-        for (const db of e6Databases) {
-          try {
-            // Get cluster count and last updated for selected date range
-            const statsResponse = await fetch("/api/query", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                database: db,
-                sql: `
-                  SELECT
-                    COUNT(DISTINCT cluster_name) as cluster_count,
-                    MAX(ts) as last_updated
-                  FROM e6_engine_metrics
-                  WHERE ${timeFilter}
-                `,
-              }),
-            })
-            const statsData = await statsResponse.json()
-
-            // Get container count for selected date range
-            const containerResponse = await fetch("/api/query", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                database: db,
-                sql: `
-                  SELECT COUNT(DISTINCT pod) as container_count
-                  FROM e6_container_metrics
-                  WHERE ${timeFilter}
-                `,
-              }),
-            })
-            const containerData = await containerResponse.json()
-
-            const clusterCount = statsData.data?.[0]?.cluster_count || 0
-            const lastUpdated = statsData.data?.[0]?.last_updated || null
-            const containerCount = containerData.data?.[0]?.container_count || 0
-
-            // Create display name from database name
-            const displayName = db
-              .replace(E6_SCHEMA_PREFIX, "")
-              .split("_")
-              .map((word: string) => word.charAt(0).toUpperCase() + word.slice(1))
-              .join(" ")
-
-            summaries.push({
-              database: db,
-              displayName,
-              clusterCount,
-              containerCount,
-              lastUpdated,
-            })
-          } catch (err) {
-            console.error(`Error fetching stats for ${db}:`, err)
-            // Still add the database even if stats fail
-            summaries.push({
-              database: db,
-              displayName: db.replace(E6_SCHEMA_PREFIX, "").replace(/_/g, " "),
-              clusterCount: 0,
-              containerCount: 0,
-              lastUpdated: null,
-            })
-          }
-        }
-
-        setCustomers(summaries)
-      } catch (err) {
-        console.error("Error fetching customers:", err)
-        setError("Failed to fetch customer data")
-      } finally {
+    async function fetchCustomerStats() {
+      if (e6Databases.length === 0) {
+        setCustomers([])
         setLoading(false)
+        return
       }
+
+      setLoading(true)
+      const dateRange = { startTs: startTimestamp, endTs: endTimestamp }
+
+      const summaries: CustomerSummary[] = []
+
+      for (const db of e6Databases) {
+        try {
+          // Fetch customer stats using API
+          const statsResponse = await fetch("/api/query", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              schema: "e6",
+              queryName: "getCustomerStats",
+              params: [dateRange],
+              database: db,
+            }),
+          })
+          const statsResult = await statsResponse.json()
+
+          // Fetch container count using API
+          const containerResponse = await fetch("/api/query", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              schema: "e6",
+              queryName: "getContainerCount",
+              params: [dateRange],
+              database: db,
+            }),
+          })
+          const containerResult = await containerResponse.json()
+
+          const clusterCount = statsResult.data?.[0]?.cluster_count || 0
+          const lastUpdated = statsResult.data?.[0]?.last_updated || null
+          const containerCount = containerResult.data?.[0]?.container_count || 0
+
+          // Create display name from database name
+          const displayName = db
+            .replace(E6_SCHEMA_PREFIX, "")
+            .split("_")
+            .map((word: string) => word.charAt(0).toUpperCase() + word.slice(1))
+            .join(" ")
+
+          summaries.push({
+            database: db,
+            displayName,
+            clusterCount,
+            containerCount,
+            lastUpdated,
+          })
+        } catch (err) {
+          console.error(`Error fetching stats for ${db}:`, err)
+          // Still add the database even if stats fail
+          summaries.push({
+            database: db,
+            displayName: db.replace(E6_SCHEMA_PREFIX, "").replace(/_/g, " "),
+            clusterCount: 0,
+            containerCount: 0,
+            lastUpdated: null,
+          })
+        }
+      }
+
+      setCustomers(summaries)
+      setLoading(false)
     }
 
-    if (startTimestamp && endTimestamp) {
-      fetchCustomers()
+    if (startTimestamp && endTimestamp && !dbLoading) {
+      fetchCustomerStats()
     }
-  }, [startTimestamp, endTimestamp])
+  }, [e6Databases, startTimestamp, endTimestamp, dbLoading])
 
   // Calculate totals
   const totals = useMemo(() => {
@@ -222,7 +211,9 @@ export default function E6OverviewPage() {
     },
   ]
 
-  if (loading) {
+  const isLoading = dbLoading || loading
+
+  if (isLoading) {
     return (
       <div className="space-y-6">
         <div>
@@ -248,12 +239,12 @@ export default function E6OverviewPage() {
     )
   }
 
-  if (error) {
+  if (dbError) {
     return (
       <div className="space-y-6">
         <div>
           <h1 className="text-2xl font-bold">E6 Clusters</h1>
-          <p className="text-red-500">{error}</p>
+          <p className="text-red-500">{dbError}</p>
         </div>
       </div>
     )

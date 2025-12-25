@@ -16,6 +16,7 @@ import {
 } from "laminar-ui"
 import { DateBanner } from "@/components"
 import { useDate } from "@/components/providers"
+import { useQuery } from "@/hooks/useQuery"
 import {
   Building2,
   Server,
@@ -45,13 +46,31 @@ interface CustomerStats {
   totalQueueDepth: number
 }
 
+interface ClusterListRow {
+  cluster_name: string
+  last_updated: string | null
+}
+
+interface ExecutorCountRow {
+  cluster_name: string
+  executor_count: number
+}
+
+interface ContainerCountRow {
+  cluster_name: string
+  container_count: number
+}
+
+interface QueueDepthRow {
+  cluster_name: string
+  queue_depth: number
+}
+
 export default function CustomerDetailPage() {
   const params = useParams()
   const database = params.customer as string
-  const [clusters, setClusters] = useState<ClusterStats[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
   const { startTimestamp, endTimestamp } = useDate()
+  const dateRange = { startTs: startTimestamp, endTs: endTimestamp }
 
   // Create display name from database name
   const displayName = useMemo(() => {
@@ -62,168 +81,75 @@ export default function CustomerDetailPage() {
       .join(" ")
   }, [database])
 
-  // Fetch cluster data
-  useEffect(() => {
-    async function fetchClusters() {
-      setLoading(true)
-      setError(null)
+  // Fetch cluster list using query hook
+  const { data: clusterListData, loading: clusterListLoading, error: clusterListError } = useQuery<ClusterListRow>(
+    "e6",
+    "getClusterList",
+    [dateRange],
+    { database, refetchInterval: 60000 }
+  )
 
-      // Use date range from context
-      const timeFilter = `ts >= '${startTimestamp}'::timestamp AND ts < '${endTimestamp}'::timestamp`
+  // Fetch executor counts
+  const { data: executorData } = useQuery<ExecutorCountRow>(
+    "e6",
+    "getExecutorCountByCluster",
+    [dateRange],
+    { database, refetchInterval: 60000 }
+  )
 
-      try {
-        // Get cluster list and latest timestamp from e6_engine_metrics for selected date
-        const engineResponse = await fetch("/api/query", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            database,
-            sql: `
-              SELECT
-                cluster_name,
-                MAX(ts) as last_updated
-              FROM e6_engine_metrics
-              WHERE ${timeFilter}
-              GROUP BY cluster_name
-              ORDER BY cluster_name
-            `,
-          }),
-        })
-        const engineData = await engineResponse.json()
+  // Fetch container counts
+  const { data: containerData } = useQuery<ContainerCountRow>(
+    "e6",
+    "getContainerCountByCluster",
+    [dateRange],
+    { database, refetchInterval: 60000 }
+  )
 
-        // Get executor counts per cluster (using pod as executor identifier) - use latest data in date range
-        const executorResponse = await fetch("/api/query", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            database,
-            sql: `
-              WITH latest_ts AS (
-                SELECT cluster_name, MAX(ts) as max_ts
-                FROM e6_executor_metrics
-                WHERE ${timeFilter}
-                GROUP BY cluster_name
-              )
-              SELECT
-                e.cluster_name,
-                COUNT(DISTINCT e.pod) as executor_count
-              FROM e6_executor_metrics e
-              JOIN latest_ts l ON e.cluster_name = l.cluster_name
-                AND e.ts >= l.max_ts - INTERVAL '10 minutes'
-                AND e.ts <= l.max_ts
-              GROUP BY e.cluster_name
-            `,
-          }),
-        })
-        const executorData = await executorResponse.json()
+  // Fetch queue depths
+  const { data: queueData } = useQuery<QueueDepthRow>(
+    "e6",
+    "getQueueDepthByCluster",
+    [dateRange],
+    { database, refetchInterval: 60000 }
+  )
 
-        // Get container counts per cluster - use latest data in date range
-        const containerResponse = await fetch("/api/query", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            database,
-            sql: `
-              WITH latest_ts AS (
-                SELECT cluster_name, MAX(ts) as max_ts
-                FROM e6_container_metrics
-                WHERE ${timeFilter}
-                GROUP BY cluster_name
-              )
-              SELECT
-                c.cluster_name,
-                COUNT(DISTINCT c.pod) as container_count
-              FROM e6_container_metrics c
-              JOIN latest_ts l ON c.cluster_name = l.cluster_name
-                AND c.ts >= l.max_ts - INTERVAL '10 minutes'
-                AND c.ts <= l.max_ts
-              GROUP BY c.cluster_name
-            `,
-          }),
-        })
-        const containerData = await containerResponse.json()
+  // Combine all data into cluster stats
+  const clusters = useMemo<ClusterStats[]>(() => {
+    if (!clusterListData) return []
 
-        // Get queue depth per cluster (using NumExecutionQueuedQueries metric) - use latest data in date range
-        const queueResponse = await fetch("/api/query", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            database,
-            sql: `
-              WITH latest_ts AS (
-                SELECT cluster_name, MAX(ts) as max_ts
-                FROM e6_queue_metrics
-                WHERE metric_name = 'io_e6x_E6Queue_NumExecutionQueuedQueries'
-                  AND ${timeFilter}
-                GROUP BY cluster_name
-              )
-              SELECT
-                q.cluster_name,
-                MAX(q.metric_value) as queue_depth
-              FROM e6_queue_metrics q
-              JOIN latest_ts l ON q.cluster_name = l.cluster_name
-                AND q.ts >= l.max_ts - INTERVAL '10 minutes'
-                AND q.ts <= l.max_ts
-              WHERE q.metric_name = 'io_e6x_E6Queue_NumExecutionQueuedQueries'
-              GROUP BY q.cluster_name
-            `,
-          }),
-        })
-        const queueData = await queueResponse.json()
-
-        // Build executor map
-        const executorMap: Record<string, number> = {}
-        if (executorData.data) {
-          for (const row of executorData.data) {
-            executorMap[row.cluster_name] = row.executor_count || 0
-          }
-        }
-
-        // Build container map
-        const containerMap: Record<string, number> = {}
-        if (containerData.data) {
-          for (const row of containerData.data) {
-            containerMap[row.cluster_name] = row.container_count || 0
-          }
-        }
-
-        // Build queue map
-        const queueMap: Record<string, number> = {}
-        if (queueData.data) {
-          for (const row of queueData.data) {
-            queueMap[row.cluster_name] = row.queue_depth || 0
-          }
-        }
-
-        // Combine all data
-        const clusterStats: ClusterStats[] = []
-        if (engineData.data) {
-          for (const row of engineData.data) {
-            clusterStats.push({
-              cluster_name: row.cluster_name,
-              engine_uptime: 0, // Not available in current schema
-              executor_count: executorMap[row.cluster_name] || 0,
-              container_count: containerMap[row.cluster_name] || 0,
-              queue_depth: queueMap[row.cluster_name] || 0,
-              running_queries: 0, // Not available in current schema
-              last_updated: row.last_updated,
-            })
-          }
-        }
-
-        setClusters(clusterStats)
-      } catch (err) {
-        console.error("Error fetching cluster data:", err)
-        setError("Failed to fetch cluster data")
-      } finally {
-        setLoading(false)
+    // Build maps for lookups
+    const executorMap: Record<string, number> = {}
+    if (executorData) {
+      for (const row of executorData) {
+        executorMap[row.cluster_name] = row.executor_count || 0
       }
     }
 
-    if (database && startTimestamp && endTimestamp) {
-      fetchClusters()
+    const containerMap: Record<string, number> = {}
+    if (containerData) {
+      for (const row of containerData) {
+        containerMap[row.cluster_name] = row.container_count || 0
+      }
     }
-  }, [database, startTimestamp, endTimestamp])
+
+    const queueMap: Record<string, number> = {}
+    if (queueData) {
+      for (const row of queueData) {
+        queueMap[row.cluster_name] = row.queue_depth || 0
+      }
+    }
+
+    // Combine into cluster stats
+    return clusterListData.map((row) => ({
+      cluster_name: row.cluster_name,
+      engine_uptime: 0, // Not available in current schema
+      executor_count: executorMap[row.cluster_name] || 0,
+      container_count: containerMap[row.cluster_name] || 0,
+      queue_depth: queueMap[row.cluster_name] || 0,
+      running_queries: 0, // Not available in current schema
+      last_updated: row.last_updated,
+    }))
+  }, [clusterListData, executorData, containerData, queueData])
 
   // Calculate customer stats
   const customerStats: CustomerStats = useMemo(() => {
@@ -322,7 +248,7 @@ export default function CustomerDetailPage() {
     },
   ]
 
-  if (loading) {
+  if (clusterListLoading) {
     return (
       <div className="space-y-6">
         <div className="flex items-center gap-4">
@@ -355,19 +281,19 @@ export default function CustomerDetailPage() {
     )
   }
 
-  if (error) {
+  if (clusterListError) {
     return (
       <div className="space-y-6">
         <div className="flex items-center gap-4">
           <Link href="/e6">
             <Button variant="ghost" size="sm">
               <ChevronLeft className="h-4 w-4 mr-1" />
-              
+
             </Button>
           </Link>
           <div>
             <h1 className="text-2xl font-bold">{displayName}</h1>
-            <p className="text-red-500">{error}</p>
+            <p className="text-red-500">{clusterListError}</p>
           </div>
         </div>
       </div>
@@ -383,7 +309,7 @@ export default function CustomerDetailPage() {
         <Link href="/e6">
           <Button variant="ghost" size="sm">
             <ChevronLeft className="h-4 w-4 mr-1" />
-            
+
           </Button>
         </Link>
         <div>

@@ -9,6 +9,7 @@ interface QueryOptions {
   enabled?: boolean
   refetchInterval?: number
   staleTime?: number
+  database?: string // Optional custom database (for e6 customer-specific databases)
 }
 
 // Circuit breaker state
@@ -48,7 +49,7 @@ function recordFailure() {
   }
 }
 
-async function fetchQuery<T>(schema: string, queryName: string, params?: unknown[]): Promise<T[]> {
+async function fetchQuery<T>(schema: string, queryName: string, params?: unknown[], database?: string): Promise<T[]> {
   // Check circuit breaker
   if (!checkCircuitBreaker()) {
     throw new Error('Circuit breaker is open - too many failures. Retrying soon...')
@@ -58,7 +59,7 @@ async function fetchQuery<T>(schema: string, queryName: string, params?: unknown
     const response = await fetch("/api/query", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ schema, queryName, params }),
+      body: JSON.stringify({ schema, queryName, params, database }),
     })
 
     if (!response.ok) {
@@ -80,9 +81,9 @@ async function fetchQuery<T>(schema: string, queryName: string, params?: unknown
   }
 }
 
-// Generate a stable query key from schema, queryName, and params
-function getQueryKey(schema: string, queryName: string, params?: unknown[]): unknown[] {
-  return ["greptimedb", schema, queryName, ...(params || [])]
+// Generate a stable query key from schema, queryName, params, and database
+function getQueryKey(schema: string, queryName: string, params?: unknown[], database?: string): unknown[] {
+  return ["greptimedb", schema, queryName, database, ...(params || [])]
 }
 
 // Exponential backoff retry delay
@@ -97,7 +98,7 @@ export function useQuery<T = Record<string, unknown>>(
   params?: unknown[],
   options?: QueryOptions
 ) {
-  const queryKey = getQueryKey(schema, queryName, params)
+  const queryKey = getQueryKey(schema, queryName, params, options?.database)
 
   const {
     data,
@@ -106,7 +107,7 @@ export function useQuery<T = Record<string, unknown>>(
     refetch,
   } = useTanstackQuery({
     queryKey,
-    queryFn: () => fetchQuery<T>(schema, queryName, params),
+    queryFn: () => fetchQuery<T>(schema, queryName, params, options?.database),
     enabled: options?.enabled ?? true,
     refetchInterval: options?.refetchInterval,
     staleTime: options?.staleTime ?? 5 * 60 * 1000, // 5 minutes default stale time

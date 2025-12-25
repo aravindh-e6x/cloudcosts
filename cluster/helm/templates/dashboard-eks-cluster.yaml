@@ -1,3 +1,4 @@
+{{- if .Values.grafanaDashboards.eksCluster.enabled }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -7,4 +8,5 @@ metadata:
     grafana_dashboard: "1"
 data:
   eks-cluster.json: |-
-{{ .Files.Get "dashboards/eks-cluster.json" | indent 4 }}
+{{ .Files.Get "grafana/dashboards/eks-cluster.json" | indent 4 }}
+{{- end }}

@@ -32,55 +32,32 @@ spec:
       securityContext:
         runAsNonRoot: true
         runAsUser: 65534
+      {{- with .Values.global.imagePullSecrets }}
       imagePullSecrets:
-        - name: ecr-pull-secret
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: vantage-exporter
-          image: "{{ .Values.vantageExporter.image.repository }}:{{ .Values.vantageExporter.image.tag }}"
-          imagePullPolicy: {{ .Values.vantageExporter.image.pullPolicy }}
+          image: "{{ .Values.global.imageRegistry }}/vantage-exporter:{{ .Values.vantageExporter.image.tag }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
           env:
-            # Vantage API configuration
             - name: VANTAGE_API_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: {{ .Release.Name }}-vantage-token
                   key: token
-            - name: VANTAGE_API_URL
-              value: {{ .Values.vantageExporter.apiUrl | quote }}
-            # GreptimeDB configuration
             - name: GREPTIMEDB_URL
-              value: {{ .Values.vantageExporter.greptimeUrl | quote }}
+              value: {{ .Values.global.greptimedb.url | quote }}
             - name: GREPTIMEDB_USERNAME
-              value: {{ .Values.vantageExporter.greptimeUsername | quote }}
+              value: {{ .Values.global.greptimedb.username | quote }}
             - name: GREPTIMEDB_PASSWORD
-              value: {{ .Values.vantageExporter.greptimePassword | quote }}
+              value: {{ .Values.global.greptimedb.password | quote }}
             - name: GREPTIMEDB_DATABASE
-              value: {{ .Values.vantageExporter.greptimeDatabase | default "vantage" | quote }}
-            # Collection settings
+              value: {{ .Values.vantageExporter.database | quote }}
             - name: PUSH_INTERVAL
               value: {{ .Values.vantageExporter.pushInterval | quote }}
             - name: HISTORICAL_DAYS
               value: {{ .Values.vantageExporter.historicalDays | quote }}
-            - name: COLLECT_BY_PROVIDER
-              value: {{ .Values.vantageExporter.collectByProvider | quote }}
-            - name: COLLECT_BY_ACCOUNT
-              value: {{ .Values.vantageExporter.collectByAccount | quote }}
-            - name: COLLECT_BY_SERVICE
-              value: {{ .Values.vantageExporter.collectByService | quote }}
-            - name: COLLECT_BY_RESOURCE
-              value: {{ .Values.vantageExporter.collectByResource | quote }}
-            {{- if .Values.vantageExporter.costReportTokens }}
-            - name: COST_REPORT_TOKENS
-              value: {{ .Values.vantageExporter.costReportTokens | quote }}
-            {{- end }}
           resources:
             {{- toYaml .Values.vantageExporter.resources | nindent 12 }}
-      {{- with .Values.vantageExporter.nodeSelector }}
-      nodeSelector:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-      {{- with .Values.vantageExporter.tolerations }}
-      tolerations:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
 {{- end }}

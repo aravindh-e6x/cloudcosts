@@ -15,17 +15,17 @@ const queryRegistry: Record<string, QueryModule> = {
   e6: e6Queries as QueryModule,
 }
 
-// Database mapping for each schema
+// Database mapping for each schema (can be overridden by database param)
 const databaseMap: Record<string, string> = {
   kubernetes: "kubernetes",
   vantage: "vantage",
-  e6: "e6",
+  e6: "information_schema", // Default for e6, but typically overridden with customer database
 }
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { schema, queryName, params } = body
+    const { schema, queryName, params, database: customDatabase } = body
 
     if (!schema || !queryName) {
       logger.warn({ schema, queryName }, "API request missing required fields")
@@ -55,7 +55,8 @@ export async function POST(request: NextRequest) {
 
     // Generate SQL from query function with params
     const sql = params ? queryFn(...params) : queryFn()
-    const database = databaseMap[schema]
+    // Use custom database if provided (for e6 customer-specific databases), otherwise use default
+    const database = customDatabase || databaseMap[schema]
 
     const data = await query(database, sql)
     return NextResponse.json({ data })

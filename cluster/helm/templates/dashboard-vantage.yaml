@@ -1,3 +1,4 @@
+{{- if .Values.grafanaDashboards.vantage.enabled }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -7,4 +8,5 @@ metadata:
     grafana_dashboard: "1"
 data:
   vantage.json: |-
-{{ .Files.Get "dashboards/vantage.json" | indent 4 }}
+{{ .Files.Get "grafana/dashboards/vantage.json" | indent 4 }}
+{{- end }}

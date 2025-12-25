@@ -1,0 +1,46 @@
+{{- if .Values.e6mockExporter.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "monitoring-stack.fullname" . }}-e6mock-exporter
+  labels:
+    {{- include "monitoring-stack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: e6mock-exporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "monitoring-stack.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: e6mock-exporter
+  template:
+    metadata:
+      labels:
+        {{- include "monitoring-stack.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: e6mock-exporter
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: e6mock-exporter
+          image: "{{ .Values.global.imageRegistry }}/e6mock-exporter:{{ .Values.e6mockExporter.image.tag }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          env:
+            - name: GREPTIMEDB_URL
+              value: {{ .Values.global.greptimedb.url | quote }}
+            - name: GREPTIMEDB_USERNAME
+              value: {{ .Values.global.greptimedb.username | quote }}
+            - name: GREPTIMEDB_PASSWORD
+              value: {{ .Values.global.greptimedb.password | quote }}
+            - name: DATABASE
+              value: {{ .Values.e6mockExporter.database | quote }}
+            - name: SCRAPE_INTERVAL
+              value: {{ .Values.e6mockExporter.scrapeInterval | quote }}
+          resources:
+            {{- toYaml .Values.e6mockExporter.resources | nindent 12 }}
+{{- end }}

@@ -1,3 +1,4 @@
+{{- if .Values.grafanaDashboards.pocCosts.enabled }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -7,4 +8,5 @@ metadata:
     grafana_dashboard: "1"
 data:
   poc-costs.json: |-
-{{ .Files.Get "dashboards/poc-costs.json" | indent 4 }}
+{{ .Files.Get "grafana/dashboards/poc-costs.json" | indent 4 }}
+{{- end }}
