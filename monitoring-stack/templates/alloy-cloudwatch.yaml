@@ -373,6 +373,43 @@ data:
         }
       }
     }
+
+    // =============================================================================
+    // Exporter Heartbeat - Self-monitoring metrics
+    // =============================================================================
+    prometheus.exporter.self "alloy_cloudwatch" {}
+
+    prometheus.scrape "alloy_self" {
+      targets    = prometheus.exporter.self.alloy_cloudwatch.targets
+      forward_to = [prometheus.relabel.heartbeat.receiver]
+      scrape_interval = "1m"
+      job_name = "alloy-cloudwatch-self"
+    }
+
+    prometheus.relabel "heartbeat" {
+      forward_to = [prometheus.remote_write.greptimedb_system.receiver]
+
+      // Keep only up metric and rename it
+      rule {
+        source_labels = ["__name__"]
+        regex = "up"
+        action = "keep"
+      }
+      rule {
+        target_label = "exporter"
+        replacement = "alloy-cloudwatch"
+      }
+    }
+
+    prometheus.remote_write "greptimedb_system" {
+      endpoint {
+        url = "{{ .Values.cloudwatchExporter.greptimedb.url }}/v1/prometheus/write?db=system"
+        basic_auth {
+          username = "{{ .Values.cloudwatchExporter.greptimedb.username }}"
+          password = "{{ .Values.cloudwatchExporter.greptimedb.password }}"
+        }
+      }
+    }
 ---
 apiVersion: apps/v1
 kind: Deployment

@@ -456,11 +456,44 @@ def collect_other_io_e6x_metrics(grafana: GrafanaClient, datasource_id: int, met
     return rows
 
 
+def push_heartbeat(greptimedb: GreptimeDBClient, database: str, customer_name: str,
+                   status: str, records_collected: int, duration: float):
+    """Push exporter heartbeat metric."""
+    ts = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+    timestamp_epoch = int(datetime.now(timezone.utc).timestamp())
+
+    # Create heartbeat table if not exists
+    greptimedb.execute_sql(database, """
+        CREATE TABLE IF NOT EXISTS exporter_heartbeat (
+            ts TIMESTAMP TIME INDEX,
+            exporter STRING,
+            customer STRING,
+            status STRING,
+            records_collected DOUBLE,
+            duration_seconds DOUBLE,
+            PRIMARY KEY (exporter, customer)
+        )
+    """)
+
+    # Insert heartbeat
+    greptimedb.insert_rows(
+        database,
+        'exporter_heartbeat',
+        ['ts', 'exporter', 'customer', 'status', 'records_collected', 'duration_seconds'],
+        [(ts, 'e6metrics-exporter', customer_name, status, records_collected, round(duration, 2))]
+    )
+    logger.info(f"[{customer_name}] Pushed heartbeat: status={status}, records={records_collected}, duration={duration:.2f}s")
+
+
 def scrape_customer(grafana: GrafanaClient, greptimedb: GreptimeDBClient, customer: dict):
     """Scrape all e6 metrics for a single customer."""
     name = customer['name']
     datasource_id = customer['datasourceId']
     database = customer['database']
+
+    start_time = time.time()
+    status = 'success'
+    total_records = 0
 
     logger.info(f"[{name}] Starting e6 metrics collection from datasource {datasource_id}")
 
@@ -485,8 +518,10 @@ def scrape_customer(grafana: GrafanaClient, greptimedb: GreptimeDBClient, custom
         if rows:
             greptimedb.insert_rows(database, 'e6_engine_metrics',
                 ['ts', 'cluster_name', 'metric_name', 'metric_value'], rows)
+            total_records += len(rows)
             logger.info(f"[{name}] Wrote {len(rows)} e6_engine_metrics rows")
     except Exception as e:
+        status = 'partial'
         logger.error(f"[{name}] Error collecting e6_engine_metrics: {e}")
 
     # Collect E6 Gateway metrics
@@ -495,8 +530,10 @@ def scrape_customer(grafana: GrafanaClient, greptimedb: GreptimeDBClient, custom
         if rows:
             greptimedb.insert_rows(database, 'e6_gateway_metrics',
                 ['ts', 'cluster_name', 'workspace', 'metric_name', 'metric_value'], rows)
+            total_records += len(rows)
             logger.info(f"[{name}] Wrote {len(rows)} e6_gateway_metrics rows")
     except Exception as e:
+        status = 'partial'
         logger.error(f"[{name}] Error collecting e6_gateway_metrics: {e}")
 
     # Collect E6 Queue metrics
@@ -505,8 +542,10 @@ def scrape_customer(grafana: GrafanaClient, greptimedb: GreptimeDBClient, custom
         if rows:
             greptimedb.insert_rows(database, 'e6_queue_metrics',
                 ['ts', 'cluster_name', 'metric_name', 'metric_value'], rows)
+            total_records += len(rows)
             logger.info(f"[{name}] Wrote {len(rows)} e6_queue_metrics rows")
     except Exception as e:
+        status = 'partial'
         logger.error(f"[{name}] Error collecting e6_queue_metrics: {e}")
 
     # Collect E6 Executor metrics
@@ -515,8 +554,10 @@ def scrape_customer(grafana: GrafanaClient, greptimedb: GreptimeDBClient, custom
         if rows:
             greptimedb.insert_rows(database, 'e6_executor_metrics',
                 ['ts', 'cluster_name', 'component', 'pod', 'metric_name', 'metric_value'], rows)
+            total_records += len(rows)
             logger.info(f"[{name}] Wrote {len(rows)} e6_executor_metrics rows")
     except Exception as e:
+        status = 'partial'
         logger.error(f"[{name}] Error collecting e6_executor_metrics: {e}")
 
     # Collect E6 Schema metrics
@@ -525,8 +566,10 @@ def scrape_customer(grafana: GrafanaClient, greptimedb: GreptimeDBClient, custom
         if rows:
             greptimedb.insert_rows(database, 'e6_schema_metrics',
                 ['ts', 'cluster_name', 'metric_name', 'metric_value'], rows)
+            total_records += len(rows)
             logger.info(f"[{name}] Wrote {len(rows)} e6_schema_metrics rows")
     except Exception as e:
+        status = 'partial'
         logger.error(f"[{name}] Error collecting e6_schema_metrics: {e}")
 
     # Collect E6 Storage metrics
@@ -535,8 +578,10 @@ def scrape_customer(grafana: GrafanaClient, greptimedb: GreptimeDBClient, custom
         if rows:
             greptimedb.insert_rows(database, 'e6_storage_metrics',
                 ['ts', 'cluster_name', 'metric_name', 'metric_value'], rows)
+            total_records += len(rows)
             logger.info(f"[{name}] Wrote {len(rows)} e6_storage_metrics rows")
     except Exception as e:
+        status = 'partial'
         logger.error(f"[{name}] Error collecting e6_storage_metrics: {e}")
 
     # Collect E6 Container metrics
@@ -545,8 +590,10 @@ def scrape_customer(grafana: GrafanaClient, greptimedb: GreptimeDBClient, custom
         if rows:
             greptimedb.insert_rows(database, 'e6_container_metrics',
                 ['ts', 'cluster_name', 'component', 'pod', 'container', 'node', 'resource_type', 'metric_name', 'metric_value'], rows)
+            total_records += len(rows)
             logger.info(f"[{name}] Wrote {len(rows)} e6_container_metrics rows")
     except Exception as e:
+        status = 'partial'
         logger.error(f"[{name}] Error collecting e6_container_metrics: {e}")
 
     # Collect E6 Cluster metrics
@@ -555,8 +602,10 @@ def scrape_customer(grafana: GrafanaClient, greptimedb: GreptimeDBClient, custom
         if rows:
             greptimedb.insert_rows(database, 'e6_cluster_metrics',
                 ['ts', 'cluster_name', 'metric_name', 'metric_value'], rows)
+            total_records += len(rows)
             logger.info(f"[{name}] Wrote {len(rows)} e6_cluster_metrics rows")
     except Exception as e:
+        status = 'partial'
         logger.error(f"[{name}] Error collecting e6_cluster_metrics: {e}")
 
     # Collect other io_e6x metrics
@@ -565,9 +614,18 @@ def scrape_customer(grafana: GrafanaClient, greptimedb: GreptimeDBClient, custom
         if rows:
             greptimedb.insert_rows(database, 'e6_generic_metrics',
                 ['ts', 'cluster_name', 'labels', 'metric_name', 'metric_value'], rows)
+            total_records += len(rows)
             logger.info(f"[{name}] Wrote {len(rows)} e6_generic_metrics rows")
     except Exception as e:
+        status = 'partial'
         logger.error(f"[{name}] Error collecting e6_generic_metrics: {e}")
+
+    # Push heartbeat
+    duration = time.time() - start_time
+    try:
+        push_heartbeat(greptimedb, database, name, status, total_records, duration)
+    except Exception as e:
+        logger.warning(f"[{name}] Failed to push heartbeat: {e}")
 
     logger.info(f"[{name}] E6 metrics collection complete")
 

@@ -214,3 +214,43 @@ data:
       }
     }
 
+    // =============================================================================
+    // Exporter Heartbeat - Self-monitoring metrics
+    // =============================================================================
+    prometheus.exporter.self "monitoring_agent" {}
+
+    prometheus.scrape "alloy_self" {
+      targets    = prometheus.exporter.self.monitoring_agent.targets
+      forward_to = [prometheus.relabel.heartbeat.receiver]
+      scrape_interval = "1m"
+      job_name = "monitoring-agent-self"
+    }
+
+    prometheus.relabel "heartbeat" {
+      forward_to = [prometheus.remote_write.greptimedb_system.receiver]
+
+      // Keep only up metric
+      rule {
+        source_labels = ["__name__"]
+        regex = "up"
+        action = "keep"
+      }
+      rule {
+        target_label = "exporter"
+        replacement = "monitoring-agent"
+      }
+    }
+
+    prometheus.remote_write "greptimedb_system" {
+      endpoint {
+        url = "{{ .Values.greptimedb.urlBase }}/v1/prometheus/write?db=system"
+        basic_auth {
+          username = "{{ .Values.greptimedb.username }}"
+          password = "{{ .Values.greptimedb.password }}"
+        }
+      }
+      external_labels = {
+        cluster = "{{ .Values.cluster.name }}",
+      }
+    }
+

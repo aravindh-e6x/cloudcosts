@@ -590,25 +590,85 @@ class VantageExporter:
 
     def collect_and_push(self):
         """Collect all metrics from Vantage and push to GreptimeDB."""
-        # Collect raw data
-        data = self.collect_all_data()
+        start_time = time.time()
+        status = 'success'
+        error_message = ''
+        records_collected = 0
 
-        # Convert to metrics format
-        all_metrics = []
-        all_metrics.extend(self._convert_provider_costs_to_metrics(data['costs_by_provider']))
-        all_metrics.extend(self._convert_account_costs_to_metrics(data['costs_by_account']))
-        all_metrics.extend(self._convert_service_costs_to_metrics(data['costs_by_service']))
-        all_metrics.extend(self._convert_tag_costs_to_metrics(data['costs_by_tag']))
-        all_metrics.extend(self._convert_tags_inventory_to_metrics(data['tags_inventory']))
-        all_metrics.extend(self._convert_resources_to_metrics(data['resources']))
-        all_metrics.extend(self._convert_cost_reports_to_metrics(data['cost_reports']))
+        try:
+            # Collect raw data
+            data = self.collect_all_data()
 
-        # Push all metrics to GreptimeDB
-        if all_metrics and self.greptimedb:
-            logger.info(f"Pushing {len(all_metrics)} metrics to GreptimeDB...")
-            self.greptimedb.push_metrics(all_metrics)
+            # Convert to metrics format
+            all_metrics = []
+            all_metrics.extend(self._convert_provider_costs_to_metrics(data['costs_by_provider']))
+            all_metrics.extend(self._convert_account_costs_to_metrics(data['costs_by_account']))
+            all_metrics.extend(self._convert_service_costs_to_metrics(data['costs_by_service']))
+            all_metrics.extend(self._convert_tag_costs_to_metrics(data['costs_by_tag']))
+            all_metrics.extend(self._convert_tags_inventory_to_metrics(data['tags_inventory']))
+            all_metrics.extend(self._convert_resources_to_metrics(data['resources']))
+            all_metrics.extend(self._convert_cost_reports_to_metrics(data['cost_reports']))
 
-        logger.info(f"Collection and push completed, {len(all_metrics)} metrics")
+            records_collected = len(all_metrics)
+
+            # Push all metrics to GreptimeDB
+            if all_metrics and self.greptimedb:
+                logger.info(f"Pushing {len(all_metrics)} metrics to GreptimeDB...")
+                self.greptimedb.push_metrics(all_metrics)
+
+            logger.info(f"Collection and push completed, {len(all_metrics)} metrics")
+
+        except Exception as e:
+            status = 'failed'
+            error_message = str(e)[:256]
+            logger.error(f"Collection failed: {e}")
+            raise
+
+        finally:
+            # Push heartbeat metric
+            duration = time.time() - start_time
+            self._push_heartbeat(status, records_collected, duration, error_message)
+
+    def _push_heartbeat(self, status: str, records_collected: int, duration: float, error_message: str = ''):
+        """Push exporter heartbeat metric."""
+        if not self.greptimedb:
+            return
+
+        timestamp_ms = int(datetime.now().timestamp() * 1000)
+
+        heartbeat_metrics = [
+            {
+                'name': 'exporter_last_run_timestamp',
+                'labels': {
+                    'exporter': 'vantage-exporter',
+                    'status': status,
+                },
+                'value': timestamp_ms / 1000,  # Unix timestamp in seconds
+                'timestamp_ms': timestamp_ms
+            },
+            {
+                'name': 'exporter_last_run_duration_seconds',
+                'labels': {
+                    'exporter': 'vantage-exporter',
+                },
+                'value': duration,
+                'timestamp_ms': timestamp_ms
+            },
+            {
+                'name': 'exporter_last_run_records',
+                'labels': {
+                    'exporter': 'vantage-exporter',
+                },
+                'value': records_collected,
+                'timestamp_ms': timestamp_ms
+            },
+        ]
+
+        try:
+            self.greptimedb.push_metrics(heartbeat_metrics)
+            logger.info(f"Pushed heartbeat: status={status}, records={records_collected}, duration={duration:.2f}s")
+        except Exception as e:
+            logger.warning(f"Failed to push heartbeat metric: {e}")
 
     def _date_to_timestamp_ms(self, date_str: str) -> int:
         """Convert date string to millisecond timestamp."""
