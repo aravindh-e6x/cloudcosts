@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { serverLogger as logger } from "@/lib/logger"
+import logger from "@/lib/logger.server"
 
 const VANTAGE_API_URL = process.env.VANTAGE_API_URL || "https://api.vantage.sh/v2"
 const VANTAGE_API_TOKEN = process.env.VANTAGE_API_TOKEN
