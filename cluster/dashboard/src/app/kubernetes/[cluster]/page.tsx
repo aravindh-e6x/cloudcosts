@@ -41,7 +41,6 @@ import {
 } from "@/components/shared"
 import { useDate } from "@/components/providers"
 import { useQuery, formatBytes, formatCpu, formatCurrency, formatTime } from "@/hooks/useQuery"
-import { kubernetesQueries } from "@/lib/queries"
 import { CHART_COLORS } from "@/lib/utils"
 import { Activity, ArrowLeft, BarChart2 } from "lucide-react"
 
@@ -53,36 +52,37 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
   const selectedCluster = decodeURIComponent(cluster)
 
   const { selectedDate, startTimestamp, endTimestamp } = useDate()
+  const dateRange = { startTs: startTimestamp, endTs: endTimestamp }
   const [selectedNamespace, setSelectedNamespace] = useState<string>("all")
 
   // Modal state for time series charts
   const [openModal, setOpenModal] = useState<'cpu' | 'memory' | 'pod' | 'efficiency' | null>(null)
 
   // Fetch data with loading and error states - all queries filtered by local timezone day
-  const { data: namespaces } = useQuery("kubernetes", kubernetesQueries.namespaces(selectedCluster, startTimestamp, endTimestamp), { refetchInterval: 60000 })
-  const { data: pods, loading: podsLoading, error: podsError, refetch: refetchPods } = useQuery("kubernetes", kubernetesQueries.pods(selectedCluster, startTimestamp, endTimestamp, selectedNamespace), { refetchInterval: 30000 })
-  const { data: nodes, loading: nodesLoading, error: nodesError, refetch: refetchNodes } = useQuery("kubernetes", kubernetesQueries.nodes(selectedCluster, startTimestamp, endTimestamp), { refetchInterval: 30000 })
-  const { data: summary } = useQuery("kubernetes", kubernetesQueries.clusterSummary(selectedCluster, startTimestamp, endTimestamp), { refetchInterval: 30000 })
-  const { data: namespaceCosts } = useQuery("kubernetes", kubernetesQueries.costByNamespace(selectedCluster, startTimestamp, endTimestamp), { refetchInterval: 60000 })
-  const { data: cpuTimeSeries, loading: cpuLoading } = useQuery("kubernetes", kubernetesQueries.podCpuTimeSeries(selectedCluster, startTimestamp, endTimestamp, selectedNamespace), { refetchInterval: 60000 })
-  const { data: memoryTimeSeries, loading: memoryLoading } = useQuery("kubernetes", kubernetesQueries.podMemoryTimeSeries(selectedCluster, startTimestamp, endTimestamp, selectedNamespace), { refetchInterval: 60000 })
-  const { data: nodeCpuTimeSeries, loading: nodeCpuLoading } = useQuery("kubernetes", kubernetesQueries.nodeCpuTimeSeries(selectedCluster, startTimestamp, endTimestamp), { refetchInterval: 60000 })
+  const { data: namespaces } = useQuery("kubernetes", "getNamespaces", [selectedCluster, dateRange], { refetchInterval: 60000 })
+  const { data: pods, loading: podsLoading, error: podsError, refetch: refetchPods } = useQuery("kubernetes", "getPods", [selectedCluster, dateRange, selectedNamespace], { refetchInterval: 30000 })
+  const { data: nodes, loading: nodesLoading, error: nodesError, refetch: refetchNodes } = useQuery("kubernetes", "getNodes", [selectedCluster, dateRange], { refetchInterval: 30000 })
+  const { data: summary } = useQuery("kubernetes", "getClusterSummary", [selectedCluster, dateRange], { refetchInterval: 30000 })
+  const { data: namespaceCosts } = useQuery("kubernetes", "getCostByNamespace", [selectedCluster, dateRange], { refetchInterval: 60000 })
+  const { data: cpuTimeSeries, loading: cpuLoading } = useQuery("kubernetes", "getPodCpuTimeSeries", [selectedCluster, dateRange, selectedNamespace], { refetchInterval: 60000 })
+  const { data: memoryTimeSeries, loading: memoryLoading } = useQuery("kubernetes", "getPodMemoryTimeSeries", [selectedCluster, dateRange, selectedNamespace], { refetchInterval: 60000 })
+  const { data: nodeCpuTimeSeries, loading: nodeCpuLoading } = useQuery("kubernetes", "getNodeCpuTimeSeries", [selectedCluster, dateRange], { refetchInterval: 60000 })
 
   // Enhanced visualization queries - all filtered by local timezone day
-  const { data: cpuByNsTimeSeries } = useQuery("kubernetes", kubernetesQueries.cpuByNamespaceTimeSeries(selectedCluster, startTimestamp, endTimestamp), { refetchInterval: 60000 })
-  const { data: memByNsTimeSeries } = useQuery("kubernetes", kubernetesQueries.memoryByNamespaceTimeSeries(selectedCluster, startTimestamp, endTimestamp), { refetchInterval: 60000 })
-  const { data: capacityTypes } = useQuery("kubernetes", kubernetesQueries.nodeCapacityTypes(selectedCluster, startTimestamp, endTimestamp), { refetchInterval: 60000 })
-  const { data: nsEfficiency } = useQuery("kubernetes", kubernetesQueries.namespaceEfficiency(selectedCluster, startTimestamp, endTimestamp), { refetchInterval: 60000 })
-  const { data: nodeAllocatable } = useQuery("kubernetes", kubernetesQueries.nodeAllocatable(selectedCluster, startTimestamp, endTimestamp), { refetchInterval: 60000 })
+  const { data: cpuByNsTimeSeries } = useQuery("kubernetes", "getCpuByNamespaceTimeSeries", [selectedCluster, dateRange], { refetchInterval: 60000 })
+  const { data: memByNsTimeSeries } = useQuery("kubernetes", "getMemoryByNamespaceTimeSeries", [selectedCluster, dateRange], { refetchInterval: 60000 })
+  const { data: capacityTypes } = useQuery("kubernetes", "getNodeCapacityTypes", [selectedCluster, dateRange], { refetchInterval: 60000 })
+  const { data: nsEfficiency } = useQuery("kubernetes", "getNamespaceEfficiency", [selectedCluster, dateRange], { refetchInterval: 60000 })
+  const { data: nodeAllocatable } = useQuery("kubernetes", "getNodeAllocatable", [selectedCluster, dateRange], { refetchInterval: 60000 })
 
   // Time series data for modal charts (only fetch when modal is open)
-  const { data: cpuAllocTimeSeries } = useQuery("kubernetes", kubernetesQueries.cpuAllocationTimeSeries(selectedCluster, startTimestamp, endTimestamp), { refetchInterval: 60000, enabled: openModal === 'cpu' })
-  const { data: memAllocTimeSeries } = useQuery("kubernetes", kubernetesQueries.memoryAllocationTimeSeries(selectedCluster, startTimestamp, endTimestamp), { refetchInterval: 60000, enabled: openModal === 'memory' })
-  const { data: podCountTimeSeries } = useQuery("kubernetes", kubernetesQueries.podCountTimeSeries(selectedCluster, startTimestamp, endTimestamp), { refetchInterval: 60000, enabled: openModal === 'pod' })
-  const { data: efficiencyTimeSeries } = useQuery("kubernetes", kubernetesQueries.efficiencyTimeSeries(selectedCluster, startTimestamp, endTimestamp), { refetchInterval: 60000, enabled: openModal === 'efficiency' })
+  const { data: cpuAllocTimeSeries } = useQuery("kubernetes", "getCpuAllocationTimeSeries", [selectedCluster, dateRange], { refetchInterval: 60000, enabled: openModal === 'cpu' })
+  const { data: memAllocTimeSeries } = useQuery("kubernetes", "getMemoryAllocationTimeSeries", [selectedCluster, dateRange], { refetchInterval: 60000, enabled: openModal === 'memory' })
+  const { data: podCountTimeSeries } = useQuery("kubernetes", "getPodCountTimeSeries", [selectedCluster, dateRange], { refetchInterval: 60000, enabled: openModal === 'pod' })
+  const { data: efficiencyTimeSeries } = useQuery("kubernetes", "getEfficiencyTimeSeries", [selectedCluster, dateRange], { refetchInterval: 60000, enabled: openModal === 'efficiency' })
 
   // Data health query - check last data timestamp
-  const { data: dataHealth } = useQuery<{ last_data: string }>("kubernetes", kubernetesQueries.dataHealth(selectedCluster), { refetchInterval: 60000 })
+  const { data: dataHealth } = useQuery<{ last_data: string }>("kubernetes", "getDataHealth", [selectedCluster], { refetchInterval: 60000 })
   const lastDataTimestamp = dataHealth?.[0]?.last_data || null
 
   const namespaceList = useMemo(() => namespaces?.map((n: Record<string, unknown>) => n.namespace as string) || [], [namespaces])
@@ -259,7 +259,6 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
             <InfoPopover
               title="CPU Utilization"
               description="Percentage of CPU used vs allocated across all pods. Calculated from container_cpu_usage_seconds_total / container_cpu_allocation. Red indicates >80%, yellow >60%."
-              sql={kubernetesQueries.pods(selectedCluster, startTimestamp, endTimestamp, selectedNamespace)}
             />
           </div>
           <CardContent className="pt-6 flex flex-col items-center">
@@ -291,7 +290,6 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
             <InfoPopover
               title="Memory Utilization"
               description="Percentage of memory used vs allocated across all pods. Calculated from container_memory_working_set_bytes / container_memory_allocation_bytes. Red indicates >80%, yellow >60%."
-              sql={kubernetesQueries.pods(selectedCluster, startTimestamp, endTimestamp, selectedNamespace)}
             />
           </div>
           <CardContent className="pt-6 flex flex-col items-center">
@@ -323,7 +321,6 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
             <InfoPopover
               title="Pod Capacity"
               description="Running pods vs total allocatable pod capacity across all nodes. Shows how close the cluster is to its pod scheduling limit."
-              sql={kubernetesQueries.nodeAllocatable(selectedCluster, startTimestamp, endTimestamp)}
             />
           </div>
           <CardContent className="pt-6 flex flex-col items-center">
@@ -361,7 +358,6 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
             <InfoPopover
               title="Resource Efficiency"
               description="Average efficiency score across namespaces. Measures how much of the allocated CPU is actually being used. Higher is better - low values indicate over-provisioning."
-              sql={kubernetesQueries.namespaceEfficiency(selectedCluster, startTimestamp, endTimestamp)}
             />
           </div>
           <CardContent className="pt-6 flex flex-col items-center">
@@ -510,7 +506,6 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
               <InfoPopover
                 title="Top Namespaces by Cost"
                 description="Horizontal bar chart ranking the top 10 namespaces by estimated total cost for the selected date. Useful for identifying which workloads are consuming the most resources."
-                sql={kubernetesQueries.costByNamespace(selectedCluster, startTimestamp, endTimestamp)}
               />
             </div>
             <CardDescription>Cost ranking for {selectedDate}</CardDescription>
@@ -542,7 +537,6 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
               <InfoPopover
                 title="Node Capacity Types"
                 description="Breakdown of node costs by capacity type (Spot vs On-Demand). Shows total cost for the selected date by capacity type from EKS node labels."
-                sql={kubernetesQueries.nodeCapacityTypes(selectedCluster, startTimestamp, endTimestamp)}
               />
             </div>
             <CardDescription>Spot vs On-Demand cost</CardDescription>
@@ -571,7 +565,6 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
               <InfoPopover
                 title="CPU Usage by Namespace"
                 description="Stacked area chart showing CPU consumption for the selected date, broken down by namespace. Helps identify which namespaces are consuming the most CPU over time."
-                sql={kubernetesQueries.cpuByNamespaceTimeSeries(selectedCluster, startTimestamp, endTimestamp)}
               />
             </div>
             <CardDescription>Stacked CPU consumption over time (selected date)</CardDescription>
@@ -605,7 +598,6 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
               <InfoPopover
                 title="Resource Efficiency"
                 description="Stacked bar chart showing CPU requests vs actual usage per namespace. The 'unused' portion represents over-provisioned resources that could be reclaimed."
-                sql={kubernetesQueries.namespaceEfficiency(selectedCluster, startTimestamp, endTimestamp)}
               />
             </div>
             <CardDescription>CPU used vs unused per namespace</CardDescription>
@@ -686,7 +678,6 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
                 <InfoPopover
                   title="Pod Resources"
                   description="Lists all pods with their CPU and memory allocation vs actual usage. Data is aggregated from container_cpu_allocation, container_memory_allocation_bytes, container_cpu_usage_seconds_total, and container_memory_working_set_bytes."
-                  sql={kubernetesQueries.pods(selectedCluster, startTimestamp, endTimestamp, selectedNamespace)}
                 />
               </div>
               <CardDescription>
@@ -715,7 +706,6 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
                   <InfoPopover
                     title="Pod CPU Usage"
                     description="Line chart showing CPU usage for the selected date for the top 5 pods. Data is sampled per hour from container_cpu_usage_seconds_total."
-                    sql={kubernetesQueries.podCpuTimeSeries(selectedCluster, startTimestamp, endTimestamp, selectedNamespace)}
                   />
                 </div>
                 <CardDescription>CPU usage over time (selected date)</CardDescription>
@@ -748,7 +738,6 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
                   <InfoPopover
                     title="Pod Memory Usage"
                     description="Line chart showing memory usage (working set) for the selected date for the top 5 pods. Values are converted to MB for readability."
-                    sql={kubernetesQueries.podMemoryTimeSeries(selectedCluster, startTimestamp, endTimestamp, selectedNamespace)}
                   />
                 </div>
                 <CardDescription>Memory usage in MB over time (selected date)</CardDescription>
@@ -784,7 +773,6 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
                 <InfoPopover
                   title="Cost by Namespace"
                   description="Table showing estimated total cost per namespace for the selected date, based on CPU ($0.03/core-hour) and memory ($0.004/GB-hour) allocation. Sorted by highest cost first."
-                  sql={kubernetesQueries.costByNamespace(selectedCluster, startTimestamp, endTimestamp)}
                 />
               </div>
               <CardDescription>Total cost by namespace for {selectedDate}</CardDescription>
@@ -825,7 +813,6 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
                 <InfoPopover
                   title="Node Resources"
                   description="Lists all cluster nodes with instance type, region, CPU/memory capacity, memory used, pod count, and total cost for the selected date. Data is from kube_node_info, node_total_hourly_cost, and kube_node_status_capacity."
-                  sql={kubernetesQueries.nodes(selectedCluster, startTimestamp, endTimestamp)}
                 />
               </div>
               <CardDescription>
@@ -853,7 +840,6 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
                 <InfoPopover
                   title="Node CPU Usage"
                   description="Line chart showing CPU seconds consumed per node for the selected date. Sampled per hour from node_cpu_seconds_total metric."
-                  sql={kubernetesQueries.nodeCpuTimeSeries(selectedCluster, startTimestamp, endTimestamp)}
                 />
               </div>
               <CardDescription>CPU seconds per node (selected date)</CardDescription>
@@ -887,7 +873,6 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
                 <InfoPopover
                   title="Node Cost Breakdown"
                   description="Table showing total cost per node for the selected date from node_total_hourly_cost metric. Sorted by highest cost first. Includes instance type and pod count for cost attribution."
-                  sql={kubernetesQueries.nodes(selectedCluster, startTimestamp, endTimestamp)}
                 />
               </div>
               <CardDescription>Total cost per node for {selectedDate}</CardDescription>

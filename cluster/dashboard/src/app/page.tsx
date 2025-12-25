@@ -25,7 +25,6 @@ import {
 } from "@/components/shared"
 import { useDate } from "@/components/providers"
 import { useQuery, formatCurrency, formatDate } from "@/hooks/useQuery"
-import { overviewQueries } from "@/lib/queries"
 
 function ChangeCell({ current, previous }: { current: number; previous: number }) {
   if (previous === 0) return <span className="text-muted-foreground">-</span>
@@ -67,10 +66,10 @@ export default function OverviewPage() {
     }
   }, [timeRange])
 
-  const { data: execSummaryData, loading: execLoading, error: execError, refetch: refetchExec } = useQuery("vantage", overviewQueries.executiveSummary(selectedDate), { refetchInterval: 300000 })
-  const { data: providerCostData, loading: providerLoading, error: providerError, refetch: refetchProvider } = useQuery("vantage", overviewQueries.costByProviderFull(selectedDate), { refetchInterval: 300000 })
-  const { data: topServicesData, loading: servicesLoading, error: servicesError, refetch: refetchServices } = useQuery("vantage", overviewQueries.topServicesFull(selectedDate), { refetchInterval: 300000 })
-  const { data: dailyCostTrend, loading: trendLoading, error: trendError, refetch: refetchTrend } = useQuery("vantage", overviewQueries.dailyCostTrendByDate(selectedDate), { refetchInterval: 300000 })
+  const { data: execSummaryData, loading: execLoading, error: execError, refetch: refetchExec } = useQuery("vantage", "getExecutiveSummary", [selectedDate], { refetchInterval: 300000 })
+  const { data: providerCostData, loading: providerLoading, error: providerError, refetch: refetchProvider } = useQuery("vantage", "getCostByProvider", [selectedDate], { refetchInterval: 300000 })
+  const { data: topServicesData, loading: servicesLoading, error: servicesError, refetch: refetchServices } = useQuery("vantage", "getTopServices", [selectedDate, 10], { refetchInterval: 300000 })
+  const { data: dailyCostTrend, loading: trendLoading, error: trendError, refetch: refetchTrend } = useQuery("vantage", "getDailyCostTrend", [selectedDate], { refetchInterval: 300000 })
 
   const execSummary = execSummaryData?.[0] as Record<string, number> | undefined
 
@@ -170,7 +169,6 @@ export default function OverviewPage() {
               currentLabel={dateLabels.today}
               previousLabel={dateLabels.yesterday}
               description="Compares total cloud spend for the selected date against the previous day."
-              sql={overviewQueries.todayVsYesterdaySql(selectedDate)}
             />
             <ComparisonCard
               title="This Week vs Last Week"
@@ -179,7 +177,6 @@ export default function OverviewPage() {
               currentLabel={dateLabels.thisWeek}
               previousLabel={dateLabels.lastWeek}
               description="Compares week-to-date spend (from start of current week) against the full previous week."
-              sql={overviewQueries.thisWeekVsLastWeekSql(selectedDate)}
             />
             <ComparisonCard
               title="This Week vs Same Week Last Month"
@@ -188,7 +185,6 @@ export default function OverviewPage() {
               currentLabel={dateLabels.thisWeek}
               previousLabel={dateLabels.sameWeekLastMonth}
               description="Compares week-to-date spend against the same week (approximately 4 weeks ago) from last month."
-              sql={overviewQueries.thisWeekVsSameWeekLastMonthSql(selectedDate)}
             />
             <ComparisonCard
               title="MTD vs Same Period Last Month"
@@ -197,7 +193,6 @@ export default function OverviewPage() {
               currentLabel={dateLabels.mtd}
               previousLabel={dateLabels.prevMtd}
               description="Compares month-to-date spend against the same number of days in the previous month."
-              sql={overviewQueries.mtdVsSamePeriodLastMonthSql(selectedDate)}
             />
           </>
         )}
@@ -211,7 +206,6 @@ export default function OverviewPage() {
             <InfoPopover
               title="Costs by Cloud Provider"
               description="Breakdown of cloud costs by provider (AWS, GCP, Azure, etc.). Shows today's cost, yesterday's cost, day-over-day change, last 7 days total, month-to-date, previous month-to-date, and month-over-month change."
-              sql={overviewQueries.costByProviderFull(selectedDate)}
             />
           </div>
           <CardDescription>Cost breakdown by cloud provider with daily, weekly, and monthly comparisons</CardDescription>
@@ -237,7 +231,6 @@ export default function OverviewPage() {
             <InfoPopover
               title="Daily Cost Trend"
               description="Bar chart showing daily total cloud spend over the last 30 days ending on the selected date. Helps visualize spending patterns and identify anomalies."
-              sql={overviewQueries.dailyCostTrendByDate(selectedDate)}
             />
           </div>
           <CardDescription>Daily cloud spend over the last 30 days</CardDescription>
@@ -270,7 +263,6 @@ export default function OverviewPage() {
             <InfoPopover
               title="Top 10 Services"
               description="Shows the 10 highest cost services across all cloud providers. Includes daily, weekly, and monthly cost breakdowns with period-over-period comparisons."
-              sql={overviewQueries.topServicesFull(selectedDate)}
             />
           </div>
           <CardDescription>Highest cost services across all providers</CardDescription>

@@ -1,48 +1,74 @@
-const GREPTIMEDB_URL = process.env.GREPTIMEDB_URL
-const GREPTIMEDB_USERNAME = process.env.GREPTIMEDB_USERNAME
-const GREPTIMEDB_PASSWORD = process.env.GREPTIMEDB_PASSWORD
+import logger from './logger.server'
 
-if (!GREPTIMEDB_URL || !GREPTIMEDB_USERNAME || !GREPTIMEDB_PASSWORD) {
-  throw new Error("Missing required environment variables: GREPTIMEDB_URL, GREPTIMEDB_USERNAME, GREPTIMEDB_PASSWORD")
-}
+const QUERY_TIMEOUT_MS = 30000
 
-export interface QueryResult {
-  columns: string[]
-  rows: unknown[][]
-}
+function getConfig() {
+  const url = process.env.GREPTIMEDB_URL
+  const username = process.env.GREPTIMEDB_USERNAME
+  const password = process.env.GREPTIMEDB_PASSWORD
 
-export async function query(database: string, sql: string): Promise<QueryResult> {
-  const response = await fetch(`${GREPTIMEDB_URL}/v1/sql?db=${database}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      Authorization: `Basic ${Buffer.from(`${GREPTIMEDB_USERNAME}:${GREPTIMEDB_PASSWORD}`).toString("base64")}`,
-    },
-    body: new URLSearchParams({ sql }),
-  })
-
-  if (!response.ok) {
-    throw new Error(`Query failed: ${response.status} ${response.statusText}`)
+  if (!url || !username || !password) {
+    throw new Error('Missing required environment variables: GREPTIMEDB_URL, GREPTIMEDB_USERNAME, GREPTIMEDB_PASSWORD')
   }
 
-  const data = await response.json()
-
-  if (data.output && data.output[0]?.records) {
-    const records = data.output[0].records
-    const columns = records.schema.column_schemas.map((col: { name: string }) => col.name)
-    const rows = records.rows || []
-    return { columns, rows }
-  }
-
-  return { columns: [], rows: [] }
+  return { url, username, password }
 }
 
-export function toObjects<T = Record<string, unknown>>(result: QueryResult): T[] {
-  return result.rows.map((row) => {
-    const obj: Record<string, unknown> = {}
-    result.columns.forEach((col, i) => {
-      obj[col] = row[i]
+export async function query<T = Record<string, unknown>>(database: string, sql: string): Promise<T[]> {
+  const startTime = Date.now()
+  const config = getConfig()
+
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), QUERY_TIMEOUT_MS)
+
+  try {
+    logger.debug({ database, sql: sql.substring(0, 200) }, 'Executing query')
+
+    const response = await fetch(`${config.url}/v1/sql?db=${database}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Authorization: `Basic ${Buffer.from(`${config.username}:${config.password}`).toString('base64')}`,
+      },
+      body: new URLSearchParams({ sql }),
+      signal: controller.signal,
     })
-    return obj as T
-  })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      logger.error({ database, status: response.status, error: errorText }, 'Query failed')
+      throw new Error(`Query failed: ${response.status} ${response.statusText} - ${errorText}`)
+    }
+
+    const data = await response.json()
+    const durationMs = Date.now() - startTime
+
+    if (data.output && data.output[0]?.records) {
+      const records = data.output[0].records
+      const columns: string[] = records.schema.column_schemas.map((col: { name: string }) => col.name)
+      const rows: unknown[][] = records.rows || []
+
+      const result = rows.map((row) => {
+        const obj: Record<string, unknown> = {}
+        columns.forEach((col, i) => {
+          obj[col] = row[i]
+        })
+        return obj as T
+      })
+
+      logger.debug({ database, rowCount: result.length, durationMs }, 'Query completed')
+      return result
+    }
+
+    logger.debug({ database, rowCount: 0, durationMs }, 'Query completed (empty result)')
+    return []
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      logger.error({ database, timeoutMs: QUERY_TIMEOUT_MS }, 'Query timed out')
+      throw new Error(`Query timed out after ${QUERY_TIMEOUT_MS}ms`)
+    }
+    throw error
+  } finally {
+    clearTimeout(timeoutId)
+  }
 }

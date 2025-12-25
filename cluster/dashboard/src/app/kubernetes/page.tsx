@@ -14,7 +14,6 @@ import {
 import { InfoPopover, DateBanner, DataHealthIndicator } from "@/components/shared"
 import { useDate } from "@/components/providers"
 import { useQuery, formatBytes, formatCurrency } from "@/hooks/useQuery"
-import { kubernetesQueries } from "@/lib/queries"
 import { Server, Cpu, HardDrive, Box, Layers, DollarSign, ArrowRight } from "lucide-react"
 
 interface ClusterBasic {
@@ -51,11 +50,12 @@ function ClusterCardSkeleton() {
   )
 }
 
-function ClusterCard({ cluster, selectedDate, startTimestamp, endTimestamp }: { cluster: ClusterBasic; selectedDate: string; startTimestamp: string; endTimestamp: string }) {
+function ClusterCard({ cluster, selectedDate, startTs, endTs }: { cluster: ClusterBasic; selectedDate: string; startTs: string; endTs: string }) {
   // Fetch additional stats for this cluster
   const { data: statsData } = useQuery<ClusterStats>(
     "kubernetes",
-    kubernetesQueries.clusterStats(cluster.cluster, startTimestamp, endTimestamp),
+    "getClusterStats",
+    [cluster.cluster, { startTs, endTs }],
     { refetchInterval: 300000 }
   )
 
@@ -134,12 +134,18 @@ function KubernetesPageContent() {
 
   const { data: rawClusters, loading, error } = useQuery<ClusterBasic>(
     "kubernetes",
-    kubernetesQueries.allClustersSummary(startTimestamp, endTimestamp),
+    "getAllClusters",
+    [{ startTs: startTimestamp, endTs: endTimestamp }],
     { refetchInterval: 300000 }
   )
 
   // Data health query - check last data timestamp
-  const { data: dataHealth } = useQuery<{ last_data: string }>("kubernetes", kubernetesQueries.globalDataHealth, { refetchInterval: 60000 })
+  const { data: dataHealth } = useQuery<{ last_data: string }>(
+    "kubernetes",
+    "getGlobalDataHealth",
+    [],
+    { refetchInterval: 60000 }
+  )
   const lastDataTimestamp = dataHealth?.[0]?.last_data || null
 
   // Deduplicate clusters by name (take max node count for each unique cluster)
@@ -169,7 +175,6 @@ function KubernetesPageContent() {
           <InfoPopover
             title="Kubernetes Clusters"
             description="Lists all Kubernetes clusters with their resource metrics for the selected date. Each card shows node count, pod count, namespaces, CPU/memory allocation, and total cost based on node pricing."
-            sql={`-- Cluster list query:\n${kubernetesQueries.allClustersSummary(startTimestamp, endTimestamp)}\n\n-- Per-cluster stats query (example):\n${kubernetesQueries.clusterStats('CLUSTER_NAME', startTimestamp, endTimestamp)}`}
           />
         </div>
         <DataHealthIndicator
@@ -197,7 +202,7 @@ function KubernetesPageContent() {
       ) : clusters && clusters.length > 0 ? (
         <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
           {clusters.map((cluster) => (
-            <ClusterCard key={cluster.cluster} cluster={cluster} selectedDate={selectedDate} startTimestamp={startTimestamp} endTimestamp={endTimestamp} />
+            <ClusterCard key={cluster.cluster} cluster={cluster} selectedDate={selectedDate} startTs={startTimestamp} endTs={endTimestamp} />
           ))}
         </div>
       ) : (
