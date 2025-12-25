@@ -191,27 +191,27 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
   }, [nsEfficiency])
 
   const podColumns = [
-    { key: "name", header: "Pod Name", sortable: true },
-    { key: "namespace", header: "Namespace", sortable: true },
-    { key: "node", header: "Node", sortable: true },
-    { key: "created_by_kind", header: "Owner Kind", sortable: true, render: (value: unknown) => (
+    { key: "name", header: "Pod Name" },
+    { key: "namespace", header: "Namespace" },
+    { key: "node", header: "Node" },
+    { key: "created_by_kind", header: "Owner Kind", render: (value: unknown) => (
       <Badge variant="outline">{String(value) || "N/A"}</Badge>
     )},
-    { key: "cpu_alloc", header: "CPU Alloc", sortable: true, render: (value: unknown) => formatCpu(Number(value) * 1000) },
-    { key: "cpu_used", header: "CPU Used", sortable: true, render: (value: unknown) => formatCpu(Number(value) * 1000) },
-    { key: "mem_alloc", header: "Mem Alloc", sortable: true, render: (value: unknown) => formatBytes(Number(value)) },
-    { key: "mem_used", header: "Mem Used", sortable: true, render: (value: unknown) => formatBytes(Number(value)) },
+    { key: "cpu_alloc", header: "CPU Alloc", render: (value: unknown) => formatCpu(Number(value) * 1000) },
+    { key: "cpu_used", header: "CPU Used", render: (value: unknown) => formatCpu(Number(value) * 1000) },
+    { key: "mem_alloc", header: "Mem Alloc", render: (value: unknown) => formatBytes(Number(value)) },
+    { key: "mem_used", header: "Mem Used", render: (value: unknown) => formatBytes(Number(value)) },
   ]
 
   const nodeColumns = [
-    { key: "name", header: "Node Name", sortable: true },
-    { key: "instance_type", header: "Instance Type", sortable: true },
-    { key: "region", header: "Region", sortable: true },
-    { key: "cpu_capacity", header: "CPU Cap", sortable: true, render: (value: unknown) => `${Number(value)} cores` },
-    { key: "mem_capacity", header: "Mem Cap", sortable: true, render: (value: unknown) => formatBytes(Number(value)) },
-    { key: "mem_used", header: "Mem Used", sortable: true, render: (value: unknown) => formatBytes(Number(value)) },
-    { key: "pods", header: "Pods", sortable: true },
-    { key: "total_cost", header: "Total Cost", sortable: true, render: (value: unknown) => formatCurrency(Number(value), 2) },
+    { key: "name", header: "Node Name" },
+    { key: "instance_type", header: "Instance Type" },
+    { key: "region", header: "Region" },
+    { key: "cpu_capacity", header: "CPU Cap", render: (value: unknown) => `${Number(value)} cores` },
+    { key: "mem_capacity", header: "Mem Cap", render: (value: unknown) => formatBytes(Number(value)) },
+    { key: "mem_used", header: "Mem Used", render: (value: unknown) => formatBytes(Number(value)) },
+    { key: "pods", header: "Pods" },
+    { key: "total_cost", header: "Total Cost", render: (value: unknown) => formatCurrency(Number(value), 2) },
   ]
 
   return (
@@ -797,10 +797,10 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
                     total_cost: n.total_cost || 0,
                   }))}
                   columns={[
-                    { key: "namespace", header: "Namespace", sortable: true },
-                    { key: "total_cpu", header: "CPU", sortable: true, render: (value: unknown) => formatCpu(Number(value) * 1000) },
-                    { key: "total_mem", header: "Memory", sortable: true, render: (value: unknown) => formatBytes(Number(value)) },
-                    { key: "total_cost", header: "Total Cost", sortable: true, render: (value: unknown) => formatCurrency(Number(value), 2) },
+                    { key: "namespace", header: "Namespace" },
+                    { key: "total_cpu", header: "CPU", render: (value: unknown) => formatCpu(Number(value) * 1000) },
+                    { key: "total_mem", header: "Memory", render: (value: unknown) => formatBytes(Number(value)) },
+                    { key: "total_cost", header: "Total Cost", render: (value: unknown) => formatCurrency(Number(value), 2) },
                   ]}
                   hoverable
                   striped
@@ -894,10 +894,10 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
                 <DataTable
                   data={sortedNodesByCost}
                   columns={[
-                    { key: "name", header: "Node Name", sortable: true },
-                    { key: "instance_type", header: "Instance Type", sortable: true },
-                    { key: "pods", header: "Pods", sortable: true },
-                    { key: "total_cost", header: "Total Cost", sortable: true, render: (value: unknown) => formatCurrency(Number(value), 2) },
+                    { key: "name", header: "Node Name" },
+                    { key: "instance_type", header: "Instance Type" },
+                    { key: "pods", header: "Pods" },
+                    { key: "total_cost", header: "Total Cost", render: (value: unknown) => formatCurrency(Number(value), 2) },
                   ]}
                   hoverable
                   striped

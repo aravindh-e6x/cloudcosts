@@ -182,7 +182,6 @@ export default function E6OverviewPage() {
     {
       key: "displayName",
       header: "Customer",
-      sortable: true,
       render: (value: unknown, row: CustomerSummary) => (
         <Link
           href={`/e6/${row.database}`}
@@ -204,7 +203,6 @@ export default function E6OverviewPage() {
     {
       key: "clusterCount",
       header: "Clusters",
-      sortable: true,
       render: (value: unknown) => (
         <Badge variant="secondary">{String(value)}</Badge>
       ),
@@ -212,7 +210,6 @@ export default function E6OverviewPage() {
     {
       key: "containerCount",
       header: "Containers",
-      sortable: true,
     },
     {
       key: "lastUpdated",

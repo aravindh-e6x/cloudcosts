@@ -266,7 +266,6 @@ export default function CustomerDetailPage() {
     {
       key: "cluster_name",
       header: "Cluster",
-      sortable: true,
       render: (value: unknown, row: ClusterStats) => (
         <Link
           href={`/e6/${database}/${encodeURIComponent(row.cluster_name)}`}
@@ -281,7 +280,6 @@ export default function CustomerDetailPage() {
     {
       key: "engine_uptime",
       header: "Uptime",
-      sortable: true,
       render: (value: unknown) => (
         <span className="text-sm">{formatUptime(Number(value))}</span>
       ),
@@ -289,7 +287,6 @@ export default function CustomerDetailPage() {
     {
       key: "executor_count",
       header: "Executors",
-      sortable: true,
       render: (value: unknown) => (
         <Badge variant="secondary">{String(value)}</Badge>
       ),
@@ -297,12 +294,10 @@ export default function CustomerDetailPage() {
     {
       key: "container_count",
       header: "Containers",
-      sortable: true,
     },
     {
       key: "queue_depth",
       header: "Queue Depth",
-      sortable: true,
       render: (value: unknown) => {
         const depth = Number(value)
         return (
@@ -315,7 +310,6 @@ export default function CustomerDetailPage() {
     {
       key: "running_queries",
       header: "Running",
-      sortable: true,
     },
     {
       key: "last_updated",

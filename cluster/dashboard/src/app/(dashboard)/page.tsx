@@ -84,33 +84,33 @@ export default function OverviewPage() {
   }, [dailyCostTrend])
 
   const providerColumns = [
-    { key: "provider", header: "Provider", sortable: true, render: (v: unknown, r: Record<string, unknown>) => (
+    { key: "provider", header: "Provider", render: (v: unknown, r: Record<string, unknown>) => (
       r.provider === "TOTAL" ? <span className="font-bold">{String(v)}</span> : <Badge variant="outline">{String(v).toUpperCase()}</Badge>
     )},
-    { key: "today", header: `Today (${dateLabels.today})`, sortable: true, render: (v: unknown, r: Record<string, unknown>) => (
+    { key: "today", header: `Today (${dateLabels.today})`, render: (v: unknown, r: Record<string, unknown>) => (
       <span className={r.provider === "TOTAL" ? "font-bold" : ""}>{formatCurrency(Number(v))}</span>
     )},
-    { key: "yesterday", header: `Yesterday (${dateLabels.yesterday})`, sortable: true, render: (v: unknown, r: Record<string, unknown>) => (
+    { key: "yesterday", header: `Yesterday (${dateLabels.yesterday})`, render: (v: unknown, r: Record<string, unknown>) => (
       <span className={r.provider === "TOTAL" ? "font-bold" : ""}>{formatCurrency(Number(v))}</span>
     )},
-    { key: "last_7d", header: `Last 7D (${dateLabels.last7d})`, sortable: true, render: (v: unknown, r: Record<string, unknown>) => (
+    { key: "last_7d", header: `Last 7D (${dateLabels.last7d})`, render: (v: unknown, r: Record<string, unknown>) => (
       <span className={r.provider === "TOTAL" ? "font-bold" : ""}>{formatCurrency(Number(v))}</span>
     )},
-    { key: "mtd", header: `MTD (${dateLabels.mtd})`, sortable: true, render: (v: unknown, r: Record<string, unknown>) => (
+    { key: "mtd", header: `MTD (${dateLabels.mtd})`, render: (v: unknown, r: Record<string, unknown>) => (
       <span className={r.provider === "TOTAL" ? "font-bold" : ""}>{formatCurrency(Number(v))}</span>
     )},
-    { key: "prev_mtd", header: `Prev MTD (${dateLabels.prevMtd})`, sortable: true, render: (v: unknown, r: Record<string, unknown>) => (
+    { key: "prev_mtd", header: `Prev MTD (${dateLabels.prevMtd})`, render: (v: unknown, r: Record<string, unknown>) => (
       <span className={r.provider === "TOTAL" ? "font-bold" : ""}>{formatCurrency(Number(v))}</span>
     )},
   ]
 
   const serviceColumns = [
-    { key: "service", header: "Service", sortable: true },
-    { key: "today", header: `Today (${dateLabels.today})`, sortable: true, render: (v: unknown) => formatCurrency(Number(v)) },
-    { key: "yesterday", header: `Yesterday (${dateLabels.yesterday})`, sortable: true, render: (v: unknown) => formatCurrency(Number(v)) },
-    { key: "last_7d", header: `Last 7D (${dateLabels.last7d})`, sortable: true, render: (v: unknown) => formatCurrency(Number(v)) },
-    { key: "mtd", header: `MTD (${dateLabels.mtd})`, sortable: true, render: (v: unknown) => formatCurrency(Number(v)) },
-    { key: "prev_mtd", header: `Prev MTD (${dateLabels.prevMtd})`, sortable: true, render: (v: unknown) => formatCurrency(Number(v)) },
+    { key: "service", header: "Service" },
+    { key: "today", header: `Today (${dateLabels.today})`, render: (v: unknown) => formatCurrency(Number(v)) },
+    { key: "yesterday", header: `Yesterday (${dateLabels.yesterday})`, render: (v: unknown) => formatCurrency(Number(v)) },
+    { key: "last_7d", header: `Last 7D (${dateLabels.last7d})`, render: (v: unknown) => formatCurrency(Number(v)) },
+    { key: "mtd", header: `MTD (${dateLabels.mtd})`, render: (v: unknown) => formatCurrency(Number(v)) },
+    { key: "prev_mtd", header: `Prev MTD (${dateLabels.prevMtd})`, render: (v: unknown) => formatCurrency(Number(v)) },
   ]
 
   return (
