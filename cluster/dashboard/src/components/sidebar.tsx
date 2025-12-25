@@ -45,7 +45,7 @@ const navigation: NavSection[] = [
   {
     section: "Tools",
     items: [
-      { name: "GreptimeDB", href: "/greptimedb", icon: Database },
+      { name: "GreptimeDB", href: "https://greptimedeb.cloudcosts.in/dashboard", icon: Database, external: true },
       { name: "Grafana", href: "https://grafana.cloudcosts.in", icon: Grid, external: true },
     ]
   },
