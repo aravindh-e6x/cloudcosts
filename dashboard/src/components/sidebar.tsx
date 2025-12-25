@@ -35,13 +35,13 @@ const navigation: NavSection[] = [
       { name: "E6 Clusters", href: "/e6", icon: Boxes },
     ]
   },
-  {
-    section: "Cloud Providers",
-    items: [
-      { name: "AWS", href: "/aws", icon: Cloud },
-      { name: "CloudWatch", href: "/cloudwatch", icon: Cloud },
-    ]
-  },
+  // {
+  //   section: "Cloud Providers",
+  //   items: [
+  //     { name: "AWS", href: "/aws", icon: Cloud },
+  //     { name: "CloudWatch", href: "/cloudwatch", icon: Cloud },
+  //   ]
+  // },
   {
     section: "Tools",
     items: [

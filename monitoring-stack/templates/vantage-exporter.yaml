@@ -32,6 +32,8 @@ spec:
       securityContext:
         runAsNonRoot: true
         runAsUser: 65534
+      imagePullSecrets:
+        - name: ecr-pull-secret
       containers:
         - name: vantage-exporter
           image: "{{ .Values.vantageExporter.image.repository }}:{{ .Values.vantageExporter.image.tag }}"

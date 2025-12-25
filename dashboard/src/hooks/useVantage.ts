@@ -1,13 +1,13 @@
 "use client"
 
-import { useQuery as useTanstackQuery } from "@tanstack/react-query"
+import { useQuery } from "./useQuery"
+import { useMemo } from "react"
 
-// Types matching the Vantage API responses
+// Types matching the data from GreptimeDB tables
 export interface VantageTag {
-  token: string
   key: string
-  values: string[]
-  created_at: string
+  providers: string[]
+  hidden: boolean
 }
 
 export interface VantageResource {
@@ -15,26 +15,18 @@ export interface VantageResource {
   uuid: string
   type: string
   label: string
-  metadata: Record<string, unknown>
-  account_id: string
-  billing_account_id: string
   provider: string
+  account_id: string
   region: string
-  cost?: number
-  created_at: string
-  tags?: Array<{ key: string; value: string }>
+  cost: number
 }
 
-export interface VantageCost {
-  amount: number
-  currency: string
+export interface VantageCostByTag {
   provider: string
-  account_id: string
   service: string
-  region?: string
-  resource_id?: string
-  accrued_at: string
-  tags?: Record<string, string>
+  tag_key: string
+  tag_value: string
+  cost: number
 }
 
 interface VantageQueryOptions {
@@ -43,268 +35,324 @@ interface VantageQueryOptions {
   staleTime?: number
 }
 
-// Generic fetch function for Vantage API proxy
-async function fetchVantage<T>(
-  endpoint: string,
-  params?: Record<string, string | boolean | number | string[]>
-): Promise<T> {
-  const searchParams = new URLSearchParams()
-
-  if (params) {
-    Object.entries(params).forEach(([key, value]) => {
-      if (value !== undefined && value !== null) {
-        if (Array.isArray(value)) {
-          value.forEach((v) => searchParams.append(`${key}[]`, v))
-        } else {
-          searchParams.set(key, String(value))
-        }
-      }
-    })
-  }
-
-  const query = searchParams.toString()
-  const url = `/api/vantage/${endpoint}${query ? `?${query}` : ""}`
-
-  const response = await fetch(url)
-
-  if (!response.ok) {
-    const error = await response.json()
-    throw new Error(error.error || `Vantage API error: ${response.status}`)
-  }
-
-  return response.json()
+interface DateRange {
+  startTimestamp: string
+  endTimestamp: string
 }
 
-// Hook to fetch all tags
+// Hook to fetch all tags from vantage_tags table
 export function useVantageTags(options?: VantageQueryOptions) {
-  const { data, isLoading, error, refetch } = useTanstackQuery({
-    queryKey: ["vantage", "tags"],
-    queryFn: () => fetchVantage<{ tags: VantageTag[] }>("tags"),
-    enabled: options?.enabled ?? true,
-    refetchInterval: options?.refetchInterval,
-    staleTime: options?.staleTime ?? 5 * 60 * 1000,
-    gcTime: 10 * 60 * 1000,
-  })
-
-  return {
-    data: data?.tags ?? [],
-    loading: isLoading,
-    error: error?.message ?? null,
-    refetch,
-  }
-}
-
-// Hook to fetch resources with optional cost inclusion
-export function useVantageResources(
-  params?: {
-    resource_report_token?: string
-    filter?: string
-    include_costs?: boolean
-    limit?: number
-  },
-  options?: VantageQueryOptions
-) {
-  const { data, isLoading, error, refetch } = useTanstackQuery({
-    queryKey: ["vantage", "resources", params],
-    queryFn: () =>
-      fetchVantage<{ resources: VantageResource[] }>("resources", {
-        resource_report_token: params?.resource_report_token,
-        filter: params?.filter,
-        include_costs: params?.include_costs,
-        limit: params?.limit,
-      } as Record<string, string | boolean | number>),
-    enabled: options?.enabled ?? true,
-    refetchInterval: options?.refetchInterval,
-    staleTime: options?.staleTime ?? 5 * 60 * 1000,
-    gcTime: 10 * 60 * 1000,
-  })
-
-  return {
-    data: data?.resources ?? [],
-    loading: isLoading,
-    error: error?.message ?? null,
-    refetch,
-  }
-}
-
-// Hook to fetch costs with VQL filtering
-export function useVantageCosts(
-  params?: {
-    cost_report_token?: string
-    filter?: string
-    start_date?: string
-    end_date?: string
-    groupings?: string[]
-    limit?: number
-  },
-  options?: VantageQueryOptions
-) {
-  const { data, isLoading, error, refetch } = useTanstackQuery({
-    queryKey: ["vantage", "costs", params],
-    queryFn: () =>
-      fetchVantage<{ costs: VantageCost[] }>("costs", {
-        cost_report_token: params?.cost_report_token,
-        filter: params?.filter,
-        start_date: params?.start_date,
-        end_date: params?.end_date,
-        groupings: params?.groupings,
-        limit: params?.limit,
-      } as Record<string, string | boolean | number | string[]>),
-    enabled: options?.enabled ?? true,
-    refetchInterval: options?.refetchInterval,
-    staleTime: options?.staleTime ?? 5 * 60 * 1000,
-    gcTime: 10 * 60 * 1000,
-  })
-
-  return {
-    data: data?.costs ?? [],
-    loading: isLoading,
-    error: error?.message ?? null,
-    refetch,
-  }
-}
-
-// Hook to get tag coverage statistics
-export function useTagCoverage(
-  requiredTags: string[],
-  options?: VantageQueryOptions
-) {
-  const { data: allResources, loading: resourcesLoading, error: resourcesError } =
-    useVantageResources({ include_costs: true }, options)
-
-  const { data: tags, loading: tagsLoading, error: tagsError } =
-    useVantageTags(options)
-
-  // Calculate coverage for each required tag
-  const coverage = requiredTags.map((tagKey) => {
-    const taggedCount = allResources.filter((r) =>
-      r.tags?.some((t) => t.key === tagKey)
-    ).length
-    const totalCount = allResources.length
-    const taggedCost = allResources
-      .filter((r) => r.tags?.some((t) => t.key === tagKey))
-      .reduce((sum, r) => sum + (r.cost || 0), 0)
-    const untaggedCost = allResources
-      .filter((r) => !r.tags?.some((t) => t.key === tagKey))
-      .reduce((sum, r) => sum + (r.cost || 0), 0)
-
-    return {
-      tagKey,
-      taggedCount,
-      untaggedCount: totalCount - taggedCount,
-      totalCount,
-      coveragePercent: totalCount > 0 ? (taggedCount / totalCount) * 100 : 0,
-      taggedCost,
-      untaggedCost,
-    }
-  })
-
-  // Calculate overall stats
-  const totalResources = allResources.length
-  const totalCost = allResources.reduce((sum, r) => sum + (r.cost || 0), 0)
-
-  // A resource is "fully tagged" if it has all required tags
-  const fullyTaggedResources = allResources.filter((r) =>
-    requiredTags.every((tagKey) => r.tags?.some((t) => t.key === tagKey))
-  )
-  const fullyTaggedCount = fullyTaggedResources.length
-  const fullyTaggedCost = fullyTaggedResources.reduce(
-    (sum, r) => sum + (r.cost || 0),
-    0
-  )
-
-  // Resources missing at least one required tag
-  const partiallyTaggedResources = allResources.filter(
-    (r) =>
-      !requiredTags.every((tagKey) => r.tags?.some((t) => t.key === tagKey)) &&
-      requiredTags.some((tagKey) => r.tags?.some((t) => t.key === tagKey))
-  )
-
-  // Resources with no required tags at all
-  const untaggedResources = allResources.filter(
-    (r) => !requiredTags.some((tagKey) => r.tags?.some((t) => t.key === tagKey))
-  )
-
-  return {
-    coverage,
-    summary: {
-      totalResources,
-      totalCost,
-      fullyTaggedCount,
-      fullyTaggedPercent: totalResources > 0 ? (fullyTaggedCount / totalResources) * 100 : 0,
-      fullyTaggedCost,
-      partiallyTaggedCount: partiallyTaggedResources.length,
-      untaggedCount: untaggedResources.length,
-      untaggedCost: totalCost - fullyTaggedCost,
-    },
-    resources: {
-      all: allResources,
-      fullyTagged: fullyTaggedResources,
-      partiallyTagged: partiallyTaggedResources,
-      untagged: untaggedResources,
-    },
-    tags,
-    loading: resourcesLoading || tagsLoading,
-    error: resourcesError || tagsError,
-  }
-}
-
-// Hook to get resources grouped by missing tags
-export function useUntaggedByService(
-  requiredTags: string[],
-  options?: VantageQueryOptions
-) {
-  const { data: allResources, loading, error } = useVantageResources(
-    { include_costs: true },
+  const { data, loading, error, refetch } = useQuery<{
+    tag_key: string
+    providers: string
+    hidden: string
+  }>(
+    "vantage",
+    `SELECT DISTINCT tag_key, providers, hidden
+     FROM vantage_tags
+     ORDER BY tag_key`,
     options
   )
 
-  // Group untagged resources by service/type
-  const byService = allResources.reduce(
-    (acc, resource) => {
-      const missingTags = requiredTags.filter(
-        (tagKey) => !resource.tags?.some((t) => t.key === tagKey)
-      )
+  const tags: VantageTag[] = useMemo(() => {
+    if (!data) return []
+    return data.map((row) => ({
+      key: row.tag_key,
+      providers: row.providers?.split(",") || [],
+      hidden: row.hidden === "true",
+    }))
+  }, [data])
 
-      if (missingTags.length === 0) return acc
+  return {
+    data: tags,
+    loading,
+    error,
+    refetch,
+  }
+}
 
-      const service = resource.type || "Unknown"
-      if (!acc[service]) {
-        acc[service] = {
-          service,
-          count: 0,
-          cost: 0,
-          missingTags: new Set<string>(),
-          resources: [],
-        }
-      }
+// Hook to fetch resources from vantage_resources table
+export function useVantageResources(
+  params?: {
+    limit?: number
+  },
+  options?: VantageQueryOptions
+) {
+  const limit = params?.limit || 1000
 
-      acc[service].count++
-      acc[service].cost += resource.cost || 0
-      missingTags.forEach((tag) => acc[service].missingTags.add(tag))
-      acc[service].resources.push(resource)
-
-      return acc
-    },
-    {} as Record<
-      string,
-      {
-        service: string
-        count: number
-        cost: number
-        missingTags: Set<string>
-        resources: VantageResource[]
-      }
-    >
+  const { data, loading, error, refetch } = useQuery<{
+    token: string
+    uuid: string
+    type: string
+    label: string
+    provider: string
+    account_id: string
+    region: string
+    greptime_value: number
+  }>(
+    "vantage",
+    `SELECT token, uuid, type, label, provider, account_id, region, greptime_value
+     FROM vantage_resources
+     ORDER BY greptime_value DESC
+     LIMIT ${limit}`,
+    options
   )
 
-  // Convert to array and sort by cost
-  const services = Object.values(byService)
-    .map((s) => ({
-      ...s,
-      missingTags: Array.from(s.missingTags),
+  const resources: VantageResource[] = useMemo(() => {
+    if (!data) return []
+    return data.map((row) => ({
+      token: row.token,
+      uuid: row.uuid,
+      type: row.type,
+      label: row.label,
+      provider: row.provider,
+      account_id: row.account_id,
+      region: row.region,
+      cost: row.greptime_value || 0,
     }))
-    .sort((a, b) => b.cost - a.cost)
+  }, [data])
+
+  return {
+    data: resources,
+    loading,
+    error,
+    refetch,
+  }
+}
+
+// Hook to fetch cost by tag data - aggregated totals for a specific date
+export function useVantageCostByTag(
+  tagKey?: string,
+  dateRange?: DateRange,
+  options?: VantageQueryOptions
+) {
+  const whereConditions: string[] = []
+  if (tagKey) {
+    whereConditions.push(`tag_key = '${tagKey}'`)
+  }
+  if (dateRange) {
+    whereConditions.push(`greptime_timestamp >= '${dateRange.startTimestamp}'`)
+    whereConditions.push(`greptime_timestamp < '${dateRange.endTimestamp}'`)
+  }
+  const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : ""
+
+  const { data, loading, error, refetch } = useQuery<{
+    provider: string
+    service: string
+    tag_key: string
+    tag_value: string
+    total_cost: number
+  }>(
+    "vantage",
+    `SELECT provider, service, tag_key, tag_value,
+            SUM(greptime_value) as total_cost
+     FROM vantage_cost_by_tag
+     ${whereClause}
+     GROUP BY provider, service, tag_key, tag_value
+     ORDER BY total_cost DESC`,
+    options
+  )
+
+  const costs: VantageCostByTag[] = useMemo(() => {
+    if (!data) return []
+    return data.map((row) => ({
+      provider: row.provider,
+      service: row.service,
+      tag_key: row.tag_key,
+      tag_value: row.tag_value === "__untagged__" ? "" : row.tag_value,
+      cost: row.total_cost || 0,
+    }))
+  }, [data])
+
+  return {
+    data: costs,
+    loading,
+    error,
+    refetch,
+  }
+}
+
+// Hook to get tag coverage statistics based on cost_by_tag data for a specific date
+export function useTagCoverage(
+  requiredTags: string[],
+  dateRange?: DateRange,
+  options?: VantageQueryOptions
+) {
+  // Build date filter clause
+  const dateFilter = dateRange
+    ? `AND greptime_timestamp >= '${dateRange.startTimestamp}' AND greptime_timestamp < '${dateRange.endTimestamp}'`
+    : ""
+
+  // Fetch cost by tag data for all required tags
+  const { data: costByTagData, loading: costLoading, error: costError } = useQuery<{
+    tag_key: string
+    tag_value: string
+    total_cost: number
+  }>(
+    "vantage",
+    `SELECT tag_key, tag_value, SUM(greptime_value) as total_cost
+     FROM vantage_cost_by_tag
+     WHERE tag_key IN (${requiredTags.map(t => `'${t}'`).join(', ')})
+     ${dateFilter}
+     GROUP BY tag_key, tag_value
+     ORDER BY total_cost DESC`,
+    options
+  )
+
+  // Fetch total cost for context (for the selected date)
+  const { data: totalCostData, loading: totalLoading, error: totalError } = useQuery<{
+    total_cost: number
+  }>(
+    "vantage",
+    `SELECT SUM(greptime_value) as total_cost
+     FROM vantage_daily_cost_by_provider
+     ${dateRange ? `WHERE greptime_timestamp >= '${dateRange.startTimestamp}' AND greptime_timestamp < '${dateRange.endTimestamp}'` : ""}`,
+    options
+  )
+
+  // Fetch tags inventory (not date-filtered, it's a snapshot)
+  const { data: tags, loading: tagsLoading, error: tagsError } = useVantageTags(options)
+
+  // Fetch resources for resource count (not date-filtered, it's a snapshot)
+  const { data: resources, loading: resourcesLoading, error: resourcesError } = useVantageResources(
+    { limit: 10000 },
+    options
+  )
+
+  // Calculate coverage for each required tag based on cost
+  const coverage = useMemo(() => {
+    if (!costByTagData) return []
+
+    return requiredTags.map((tagKey) => {
+      const tagData = costByTagData.filter(d => d.tag_key.toLowerCase() === tagKey.toLowerCase())
+      const taggedCost = tagData
+        .filter(d => d.tag_value !== "__untagged__" && d.tag_value !== "")
+        .reduce((sum, d) => sum + d.total_cost, 0)
+      const untaggedCost = tagData
+        .filter(d => d.tag_value === "__untagged__" || d.tag_value === "")
+        .reduce((sum, d) => sum + d.total_cost, 0)
+      const totalCost = taggedCost + untaggedCost
+
+      return {
+        tagKey,
+        taggedCost,
+        untaggedCost,
+        totalCost,
+        coveragePercent: totalCost > 0 ? (taggedCost / totalCost) * 100 : 0,
+        taggedCount: tagData.filter(d => d.tag_value !== "__untagged__" && d.tag_value !== "").length,
+        untaggedCount: tagData.filter(d => d.tag_value === "__untagged__" || d.tag_value === "").length,
+        totalCount: tagData.length,
+      }
+    })
+  }, [costByTagData, requiredTags])
+
+  // Calculate overall summary
+  const summary = useMemo(() => {
+    const totalResources = resources.length
+    const totalCost = totalCostData?.[0]?.total_cost || 0
+
+    // Calculate tagged vs untagged based on cost data
+    let fullyTaggedCost = 0
+    let untaggedCost = 0
+
+    if (costByTagData) {
+      // Use first required tag as proxy for "tagged" status
+      const firstTagData = costByTagData.filter(d =>
+        d.tag_key.toLowerCase() === requiredTags[0]?.toLowerCase()
+      )
+      fullyTaggedCost = firstTagData
+        .filter(d => d.tag_value !== "__untagged__" && d.tag_value !== "")
+        .reduce((sum, d) => sum + d.total_cost, 0)
+      untaggedCost = firstTagData
+        .filter(d => d.tag_value === "__untagged__" || d.tag_value === "")
+        .reduce((sum, d) => sum + d.total_cost, 0)
+    }
+
+    const coveragePercent = (fullyTaggedCost + untaggedCost) > 0
+      ? (fullyTaggedCost / (fullyTaggedCost + untaggedCost)) * 100
+      : 0
+
+    return {
+      totalResources,
+      totalCost,
+      fullyTaggedCost,
+      fullyTaggedPercent: coveragePercent,
+      fullyTaggedCount: Math.round(totalResources * coveragePercent / 100),
+      partiallyTaggedCount: 0, // Can't determine from cost data
+      untaggedCount: Math.round(totalResources * (100 - coveragePercent) / 100),
+      untaggedCost,
+    }
+  }, [costByTagData, totalCostData, resources, requiredTags])
+
+  return {
+    coverage,
+    summary,
+    resources: {
+      all: resources,
+      fullyTagged: [],
+      partiallyTagged: [],
+      untagged: [],
+    },
+    tags,
+    loading: costLoading || totalLoading || tagsLoading || resourcesLoading,
+    error: costError || totalError || tagsError || resourcesError,
+  }
+}
+
+// Hook to get untagged cost by service for a specific date
+export function useUntaggedByService(
+  requiredTags: string[],
+  dateRange?: DateRange,
+  options?: VantageQueryOptions
+) {
+  // Build date filter clause
+  const dateFilter = dateRange
+    ? `AND greptime_timestamp >= '${dateRange.startTimestamp}' AND greptime_timestamp < '${dateRange.endTimestamp}'`
+    : ""
+
+  const { data, loading, error } = useQuery<{
+    service: string
+    tag_key: string
+    total_cost: number
+  }>(
+    "vantage",
+    `SELECT service, tag_key, SUM(greptime_value) as total_cost
+     FROM vantage_cost_by_tag
+     WHERE tag_value = '__untagged__'
+       AND tag_key IN (${requiredTags.map(t => `'${t}'`).join(', ')})
+     ${dateFilter}
+     GROUP BY service, tag_key
+     ORDER BY total_cost DESC`,
+    options
+  )
+
+  const services = useMemo(() => {
+    if (!data) return []
+
+    // Group by service
+    const byService: Record<string, { service: string; cost: number; missingTags: Set<string> }> = {}
+
+    data.forEach((row) => {
+      if (!byService[row.service]) {
+        byService[row.service] = {
+          service: row.service,
+          cost: 0,
+          missingTags: new Set(),
+        }
+      }
+      byService[row.service].cost += row.total_cost
+      byService[row.service].missingTags.add(row.tag_key)
+    })
+
+    return Object.values(byService)
+      .map((s) => ({
+        service: s.service,
+        cost: s.cost,
+        count: 0, // Can't determine resource count from cost data
+        missingTags: Array.from(s.missingTags),
+      }))
+      .sort((a, b) => b.cost - a.cost)
+  }, [data])
 
   return {
     data: services,
@@ -313,44 +361,44 @@ export function useUntaggedByService(
   }
 }
 
-// Hook to get tag value distribution for a specific tag
+// Hook to get tag value distribution for a specific tag and date
 export function useTagValueDistribution(
   tagKey: string,
+  dateRange?: DateRange,
   options?: VantageQueryOptions
 ) {
-  const { data: allResources, loading, error } = useVantageResources(
-    { include_costs: true },
+  // Build date filter clause
+  const dateFilter = dateRange
+    ? `AND greptime_timestamp >= '${dateRange.startTimestamp}' AND greptime_timestamp < '${dateRange.endTimestamp}'`
+    : ""
+
+  const { data, loading, error, refetch } = useQuery<{
+    tag_value: string
+    total_cost: number
+  }>(
+    "vantage",
+    `SELECT tag_value, SUM(greptime_value) as total_cost
+     FROM vantage_cost_by_tag
+     WHERE tag_key = '${tagKey}'
+     ${dateFilter}
+     GROUP BY tag_value
+     ORDER BY total_cost DESC`,
     options
   )
 
-  // Group by tag value
-  const distribution = allResources.reduce(
-    (acc, resource) => {
-      const tag = resource.tags?.find((t) => t.key === tagKey)
-      const value = tag?.value || "(untagged)"
-
-      if (!acc[value]) {
-        acc[value] = {
-          value,
-          count: 0,
-          cost: 0,
-        }
-      }
-
-      acc[value].count++
-      acc[value].cost += resource.cost || 0
-
-      return acc
-    },
-    {} as Record<string, { value: string; count: number; cost: number }>
-  )
-
-  // Convert to array and sort by cost
-  const values = Object.values(distribution).sort((a, b) => b.cost - a.cost)
+  const distribution = useMemo(() => {
+    if (!data) return []
+    return data.map((row) => ({
+      value: row.tag_value === "__untagged__" ? "(untagged)" : row.tag_value,
+      cost: row.total_cost || 0,
+      count: 0, // Can't determine from cost data
+    }))
+  }, [data])
 
   return {
-    data: values,
+    data: distribution,
     loading,
     error,
+    refetch,
   }
 }

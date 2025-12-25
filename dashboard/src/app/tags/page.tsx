@@ -8,21 +8,12 @@ import {
   CardTitle,
   CardDescription,
   DataTable,
-  BarChart,
   PieChart,
   Badge,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
+  Button,
 } from "laminar-ui"
+import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react"
 import {
-  ComparisonCard,
   InfoPopover,
   ComparisonCardSkeleton,
   TableSkeleton,
@@ -31,20 +22,135 @@ import {
   EmptyState,
   DateBanner,
 } from "@/components/shared"
+import { useDate } from "@/components/providers"
 import { formatCurrency } from "@/hooks/useQuery"
 import {
   useTagCoverage,
   useUntaggedByService,
   useTagValueDistribution,
-  useVantageTags,
-  VantageResource,
+  useVantageResources,
 } from "@/hooks/useVantage"
-import { Tag, AlertTriangle, CheckCircle, XCircle, Package } from "lucide-react"
+import { Tag, Package } from "lucide-react"
 
 // Default required tags - these can be made configurable
 const DEFAULT_REQUIRED_TAGS = ["Environment", "Team", "CostCenter", "Project"]
 
-function TagCoverageBar({ label, percent }: { label: string; percent: number }) {
+// Pagination component
+function Pagination({
+  currentPage,
+  totalPages,
+  totalItems,
+  pageSize,
+  onPageChange,
+}: {
+  currentPage: number
+  totalPages: number
+  totalItems: number
+  pageSize: number
+  onPageChange: (page: number) => void
+}) {
+  const startItem = (currentPage - 1) * pageSize + 1
+  const endItem = Math.min(currentPage * pageSize, totalItems)
+
+  return (
+    <div className="flex items-center justify-between px-2 py-3 border-t">
+      <div className="text-sm text-muted-foreground">
+        Showing {startItem} to {endItem} of {totalItems.toLocaleString()} items
+      </div>
+      <div className="flex items-center gap-1">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onPageChange(1)}
+          disabled={currentPage === 1}
+        >
+          <ChevronsLeft className="h-4 w-4" />
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onPageChange(currentPage - 1)}
+          disabled={currentPage === 1}
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </Button>
+        <span className="px-3 text-sm">
+          Page {currentPage} of {totalPages}
+        </span>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onPageChange(currentPage + 1)}
+          disabled={currentPage === totalPages}
+        >
+          <ChevronRight className="h-4 w-4" />
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onPageChange(totalPages)}
+          disabled={currentPage === totalPages}
+        >
+          <ChevronsRight className="h-4 w-4" />
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+// Paginated DataTable wrapper
+function PaginatedDataTable<T extends Record<string, unknown>>({
+  data,
+  columns,
+  pageSize = 10,
+  hoverable,
+}: {
+  data: T[]
+  columns: { key: string; header: string; sortable?: boolean; render?: (value: unknown, row: T) => React.ReactNode }[]
+  pageSize?: number
+  hoverable?: boolean
+}) {
+  const [currentPage, setCurrentPage] = useState(1)
+
+  const totalPages = Math.ceil(data.length / pageSize)
+  const paginatedData = useMemo(() => {
+    const start = (currentPage - 1) * pageSize
+    return data.slice(start, start + pageSize)
+  }, [data, currentPage, pageSize])
+
+  // Reset to page 1 when data changes
+  useMemo(() => {
+    if (currentPage > totalPages && totalPages > 0) {
+      setCurrentPage(1)
+    }
+  }, [data.length, totalPages, currentPage])
+
+  if (data.length === 0) {
+    return null
+  }
+
+  return (
+    <div>
+      <DataTable data={paginatedData} columns={columns} hoverable={hoverable} />
+      {totalPages > 1 && (
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalItems={data.length}
+          pageSize={pageSize}
+          onPageChange={setCurrentPage}
+        />
+      )}
+    </div>
+  )
+}
+
+function TagCoverageBar({ label, percent, taggedCost, untaggedCost }: {
+  label: string
+  percent: number
+  taggedCost: number
+  untaggedCost: number
+}) {
   const getColor = (pct: number) => {
     if (pct >= 80) return "bg-green-500"
     if (pct >= 60) return "bg-yellow-500"
@@ -55,7 +161,9 @@ function TagCoverageBar({ label, percent }: { label: string; percent: number }) 
     <div className="space-y-1">
       <div className="flex justify-between text-sm">
         <span className="font-medium">{label}</span>
-        <span className="text-muted-foreground">{percent.toFixed(0)}%</span>
+        <span className="text-muted-foreground">
+          {percent.toFixed(0)}% ({formatCurrency(taggedCost)} tagged)
+        </span>
       </div>
       <div className="h-2 bg-muted rounded-full overflow-hidden">
         <div
@@ -67,43 +175,17 @@ function TagCoverageBar({ label, percent }: { label: string; percent: number }) 
   )
 }
 
-function ResourceStatusBadge({ resource, requiredTags }: { resource: VantageResource; requiredTags: string[] }) {
-  const missingTags = requiredTags.filter(
-    (tagKey) => !resource.tags?.some((t) => t.key === tagKey)
-  )
-
-  if (missingTags.length === 0) {
-    return (
-      <Badge variant="outline" className="text-green-600 border-green-600">
-        <CheckCircle className="h-3 w-3 mr-1" />
-        Complete
-      </Badge>
-    )
-  }
-
-  if (missingTags.length === requiredTags.length) {
-    return (
-      <Badge variant="outline" className="text-red-600 border-red-600">
-        <XCircle className="h-3 w-3 mr-1" />
-        Untagged
-      </Badge>
-    )
-  }
-
-  return (
-    <Badge variant="outline" className="text-yellow-600 border-yellow-600">
-      <AlertTriangle className="h-3 w-3 mr-1" />
-      Partial ({requiredTags.length - missingTags.length}/{requiredTags.length})
-    </Badge>
-  )
-}
-
 export default function TagsPage() {
   const [requiredTags] = useState(DEFAULT_REQUIRED_TAGS)
-  const [selectedTagFilter, setSelectedTagFilter] = useState<string>("all")
-  const [selectedStatusFilter, setSelectedStatusFilter] = useState<string>("all")
+  const { startTimestamp, endTimestamp } = useDate()
 
-  // Fetch tag coverage data
+  // Create date range for filtering
+  const dateRange = useMemo(() => ({
+    startTimestamp,
+    endTimestamp,
+  }), [startTimestamp, endTimestamp])
+
+  // Fetch tag coverage data for selected date
   const {
     coverage,
     summary,
@@ -111,58 +193,26 @@ export default function TagsPage() {
     tags,
     loading: coverageLoading,
     error: coverageError,
-  } = useTagCoverage(requiredTags, { refetchInterval: 300000 })
+  } = useTagCoverage(requiredTags, dateRange, { refetchInterval: 300000 })
 
-  // Fetch untagged resources by service
+  // Fetch untagged cost by service for selected date
   const {
     data: untaggedByService,
     loading: untaggedLoading,
     error: untaggedError,
-  } = useUntaggedByService(requiredTags, { refetchInterval: 300000 })
+  } = useUntaggedByService(requiredTags, dateRange, { refetchInterval: 300000 })
 
-  // Fetch tag value distribution for Environment tag (example)
+  // Fetch tag value distribution for Environment tag for selected date
   const {
     data: envDistribution,
     loading: envLoading,
     error: envError,
-  } = useTagValueDistribution("Environment", { refetchInterval: 300000 })
-
-  // Filter resources based on selections
-  const filteredResources = useMemo(() => {
-    let result = resources.all
-
-    // Filter by status
-    if (selectedStatusFilter === "tagged") {
-      result = resources.fullyTagged
-    } else if (selectedStatusFilter === "partial") {
-      result = resources.partiallyTagged
-    } else if (selectedStatusFilter === "untagged") {
-      result = resources.untagged
-    }
-
-    // Filter by specific tag
-    if (selectedTagFilter !== "all") {
-      result = result.filter((r) =>
-        r.tags?.some((t) => t.key === selectedTagFilter)
-      )
-    }
-
-    return result
-  }, [resources, selectedStatusFilter, selectedTagFilter])
-
-  // Prepare chart data for coverage
-  const coverageChartData = coverage.map((c) => ({
-    tag: c.tagKey,
-    coverage: c.coveragePercent,
-    tagged: c.taggedCount,
-    untagged: c.untaggedCount,
-  }))
+  } = useTagValueDistribution("Environment", dateRange, { refetchInterval: 300000 })
 
   // Prepare pie chart data for environment distribution
-  const pieChartData = envDistribution.slice(0, 6).map((item, index) => ({
+  const pieChartData = envDistribution.slice(0, 8).map((item, index) => ({
     name: item.value,
     value: item.cost,
-    count: item.count,
     fill: `var(--chart-${(index % 5) + 1})`,
   }))
 
@@ -175,7 +225,7 @@ export default function TagsPage() {
       render: (v: unknown) => (
         <div className="flex items-center gap-2">
           <Package className="h-4 w-4 text-muted-foreground" />
-          <span className="font-medium">{String(v)}</span>
+          <span className="font-medium truncate max-w-[300px]">{String(v)}</span>
         </div>
       ),
     },
@@ -204,40 +254,6 @@ export default function TagsPage() {
       sortable: true,
       render: (v: unknown) => formatCurrency(Number(v) || 0),
     },
-    {
-      key: "status",
-      header: "Tag Status",
-      render: (_: unknown, r: Record<string, unknown>) => (
-        <ResourceStatusBadge
-          resource={r as unknown as VantageResource}
-          requiredTags={requiredTags}
-        />
-      ),
-    },
-    {
-      key: "tags",
-      header: "Tags",
-      render: (_: unknown, r: Record<string, unknown>) => {
-        const res = r as unknown as VantageResource
-        if (!res.tags || res.tags.length === 0) {
-          return <span className="text-muted-foreground">No tags</span>
-        }
-        return (
-          <div className="flex flex-wrap gap-1">
-            {res.tags.slice(0, 3).map((t) => (
-              <Badge key={t.key} variant="outline" className="text-xs">
-                {t.key}: {t.value}
-              </Badge>
-            ))}
-            {res.tags.length > 3 && (
-              <Badge variant="secondary" className="text-xs">
-                +{res.tags.length - 3} more
-              </Badge>
-            )}
-          </div>
-        )
-      },
-    },
   ]
 
   // Table columns for untagged by service
@@ -247,11 +263,6 @@ export default function TagsPage() {
       header: "Service",
       sortable: true,
       render: (v: unknown) => <Badge variant="outline">{String(v)}</Badge>,
-    },
-    {
-      key: "count",
-      header: "Resources",
-      sortable: true,
     },
     {
       key: "cost",
@@ -292,33 +303,20 @@ export default function TagsPage() {
       ),
     },
     {
-      key: "values",
-      header: "Unique Values",
+      key: "providers",
+      header: "Providers",
       render: (v: unknown) => {
-        const values = v as string[]
+        const providers = v as string[]
         return (
-          <div className="flex items-center gap-2">
-            <span>{values.length}</span>
-            {values.length > 0 && (
-              <span className="text-xs text-muted-foreground">
-                ({values.slice(0, 3).join(", ")}
-                {values.length > 3 ? "..." : ""})
-              </span>
-            )}
+          <div className="flex flex-wrap gap-1">
+            {providers.map((p) => (
+              <Badge key={p} variant="secondary" className="text-xs">
+                {p.toUpperCase()}
+              </Badge>
+            ))}
           </div>
         )
       },
-    },
-    {
-      key: "created_at",
-      header: "Created",
-      sortable: true,
-      render: (v: unknown) =>
-        new Date(String(v)).toLocaleDateString("en-US", {
-          month: "short",
-          day: "numeric",
-          year: "numeric",
-        }),
     },
   ]
 
@@ -334,7 +332,7 @@ export default function TagsPage() {
         <div>
           <h1 className="text-3xl font-bold">Tags Compliance</h1>
           <p className="text-muted-foreground mt-1">
-            Monitor tagging coverage and identify untagged resources
+            Monitor tagging coverage and identify untagged costs
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -374,29 +372,14 @@ export default function TagsPage() {
 
             <Card>
               <CardHeader className="pb-2">
-                <CardDescription>Fully Tagged</CardDescription>
+                <CardDescription>Tagged Cost</CardDescription>
                 <CardTitle className="text-3xl text-green-600">
-                  {summary.fullyTaggedCount.toLocaleString()}
-                  <span className="text-lg ml-2">({summary.fullyTaggedPercent.toFixed(0)}%)</span>
+                  {formatCurrency(summary.fullyTaggedCost)}
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <p className="text-sm text-muted-foreground">
-                  {formatCurrency(summary.fullyTaggedCost)} tagged cost
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="pb-2">
-                <CardDescription>Partially Tagged</CardDescription>
-                <CardTitle className="text-3xl text-yellow-600">
-                  {summary.partiallyTaggedCount.toLocaleString()}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground">
-                  Missing some required tags
+                  {summary.fullyTaggedPercent.toFixed(0)}% coverage
                 </p>
               </CardContent>
             </Card>
@@ -410,7 +393,19 @@ export default function TagsPage() {
               </CardHeader>
               <CardContent>
                 <p className="text-sm text-muted-foreground">
-                  {summary.untaggedCount.toLocaleString()} resources without required tags
+                  {(100 - summary.fullyTaggedPercent).toFixed(0)}% needs tagging
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardDescription>Tag Keys</CardDescription>
+                <CardTitle className="text-3xl">{tags.length}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground">
+                  Unique tag keys in use
                 </p>
               </CardContent>
             </Card>
@@ -419,7 +414,7 @@ export default function TagsPage() {
       </div>
 
       {/* Coverage and Distribution Charts */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
         {/* Tag Coverage by Required Tag */}
         <Card>
           <CardHeader>
@@ -427,11 +422,11 @@ export default function TagsPage() {
               <CardTitle>Tag Coverage by Required Tag</CardTitle>
               <InfoPopover
                 title="Tag Coverage"
-                description="Shows the percentage of resources that have each required tag. Green indicates good coverage (80%+), yellow is moderate (60-80%), and red needs attention (below 60%)."
+                description="Shows the percentage of cost that is tagged for each required tag. Green indicates good coverage (80%+), yellow is moderate (60-80%), and red needs attention (below 60%)."
               />
             </div>
             <CardDescription>
-              Percentage of resources with each required tag
+              Percentage of cost with each required tag
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -446,6 +441,8 @@ export default function TagsPage() {
                     key={c.tagKey}
                     label={c.tagKey}
                     percent={c.coveragePercent}
+                    taggedCost={c.taggedCost}
+                    untaggedCost={c.untaggedCost}
                   />
                 ))}
               </div>
@@ -489,18 +486,18 @@ export default function TagsPage() {
         </Card>
       </div>
 
-      {/* Untagged Resources by Service */}
+      {/* Untagged Cost by Service */}
       <Card>
         <CardHeader>
           <div className="flex items-center gap-2">
-            <CardTitle>Untagged Resources by Service</CardTitle>
+            <CardTitle>Untagged Cost by Service</CardTitle>
             <InfoPopover
               title="Untagged by Service"
-              description="Shows which services have the most untagged resources and the associated costs. Prioritize services with higher untagged costs for tagging efforts."
+              description="Shows which services have the most untagged cost. Prioritize services with higher untagged costs for tagging efforts."
             />
           </div>
           <CardDescription>
-            Services with resources missing required tags, sorted by cost impact
+            Services with untagged costs, sorted by cost impact
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -509,9 +506,10 @@ export default function TagsPage() {
           ) : untaggedError ? (
             <QueryError message={untaggedError} onRetry={() => window.location.reload()} />
           ) : untaggedByService.length > 0 ? (
-            <DataTable
+            <PaginatedDataTable
               data={untaggedByService}
               columns={serviceColumns}
+              pageSize={10}
               hoverable
             />
           ) : (
@@ -527,7 +525,7 @@ export default function TagsPage() {
             <CardTitle>Tags Inventory</CardTitle>
             <InfoPopover
               title="Tags Inventory"
-              description="All tags currently in use across your cloud resources. Shows unique values for each tag key."
+              description="All tags currently in use across your cloud resources from Vantage."
             />
           </div>
           <CardDescription>
@@ -540,74 +538,42 @@ export default function TagsPage() {
           ) : coverageError ? (
             <QueryError message={coverageError} onRetry={() => window.location.reload()} />
           ) : tags.length > 0 ? (
-            <DataTable data={tags as unknown as Record<string, unknown>[]} columns={tagsInventoryColumns} hoverable />
+            <PaginatedDataTable
+              data={tags as unknown as Record<string, unknown>[]}
+              columns={tagsInventoryColumns}
+              pageSize={15}
+              hoverable
+            />
           ) : (
             <EmptyState />
           )}
         </CardContent>
       </Card>
 
-      {/* Resources Detail with Filters */}
+      {/* Resources Inventory */}
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="flex items-center gap-2">
-                <CardTitle>Resources Detail</CardTitle>
-                <InfoPopover
-                  title="Resources Detail"
-                  description="Detailed list of all resources with their tag status. Use filters to find resources that need tagging."
-                />
-              </div>
-              <CardDescription>
-                {filteredResources.length.toLocaleString()} resources
-                {selectedStatusFilter !== "all" && ` (${selectedStatusFilter})`}
-              </CardDescription>
-            </div>
-            <div className="flex items-center gap-3">
-              <Select
-                value={selectedStatusFilter}
-                onValueChange={setSelectedStatusFilter}
-              >
-                <SelectTrigger className="w-[150px]">
-                  <SelectValue placeholder="Status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Resources</SelectItem>
-                  <SelectItem value="tagged">Fully Tagged</SelectItem>
-                  <SelectItem value="partial">Partially Tagged</SelectItem>
-                  <SelectItem value="untagged">Untagged</SelectItem>
-                </SelectContent>
-              </Select>
-
-              <Select
-                value={selectedTagFilter}
-                onValueChange={setSelectedTagFilter}
-              >
-                <SelectTrigger className="w-[150px]">
-                  <SelectValue placeholder="Filter by tag" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Tags</SelectItem>
-                  {requiredTags.map((tag) => (
-                    <SelectItem key={tag} value={tag}>
-                      Has: {tag}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+          <div className="flex items-center gap-2">
+            <CardTitle>Resources Inventory</CardTitle>
+            <InfoPopover
+              title="Resources"
+              description="Cloud resources tracked in Vantage, sorted by cost."
+            />
           </div>
+          <CardDescription>
+            {resources.all.length.toLocaleString()} resources from Vantage
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {coverageLoading ? (
             <TableSkeleton rows={10} />
           ) : coverageError ? (
             <QueryError message={coverageError} onRetry={() => window.location.reload()} />
-          ) : filteredResources.length > 0 ? (
-            <DataTable
-              data={filteredResources as unknown as Record<string, unknown>[]}
+          ) : resources.all.length > 0 ? (
+            <PaginatedDataTable
+              data={resources.all as unknown as Record<string, unknown>[]}
               columns={resourceColumns}
+              pageSize={20}
               hoverable
             />
           ) : (
@@ -618,7 +584,7 @@ export default function TagsPage() {
 
       {/* Footer */}
       <p className="text-center text-sm text-muted-foreground">
-        Data refreshed: {new Date().toLocaleString()}
+        Data source: GreptimeDB (vantage schema)
       </p>
     </div>
   )

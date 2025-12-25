@@ -389,11 +389,17 @@ data:
     prometheus.relabel "heartbeat" {
       forward_to = [prometheus.remote_write.greptimedb_system.receiver]
 
-      // Keep only up metric and rename it
+      // Keep only up metric and rename it to exporter_heartbeat
       rule {
         source_labels = ["__name__"]
         regex = "up"
         action = "keep"
+      }
+      rule {
+        source_labels = ["__name__"]
+        regex = "up"
+        replacement = "exporter_heartbeat"
+        target_label = "__name__"
       }
       rule {
         target_label = "exporter"

@@ -389,9 +389,11 @@ class GreptimeDBClient:
 class VantageExporter:
     """Main exporter that collects from Vantage and pushes to GreptimeDB."""
 
-    def __init__(self, vantage_client: VantageClient, greptimedb_client: GreptimeDBClient = None):
+    def __init__(self, vantage_client: VantageClient, greptimedb_client: GreptimeDBClient = None,
+                 system_db_client: GreptimeDBClient = None):
         self.vantage = vantage_client
         self.greptimedb = greptimedb_client
+        self.system_db = system_db_client  # For heartbeat metrics
 
     def collect_all_data(self, historical_days: int = None) -> Dict[str, Any]:
         """
@@ -630,15 +632,17 @@ class VantageExporter:
             self._push_heartbeat(status, records_collected, duration, error_message)
 
     def _push_heartbeat(self, status: str, records_collected: int, duration: float, error_message: str = ''):
-        """Push exporter heartbeat metric."""
-        if not self.greptimedb:
+        """Push exporter heartbeat metric to system database."""
+        # Use system_db client if available, fallback to greptimedb
+        db_client = self.system_db or self.greptimedb
+        if not db_client:
             return
 
         timestamp_ms = int(datetime.now().timestamp() * 1000)
 
         heartbeat_metrics = [
             {
-                'name': 'exporter_last_run_timestamp',
+                'name': 'exporter_heartbeat',
                 'labels': {
                     'exporter': 'vantage-exporter',
                     'status': status,
@@ -647,7 +651,7 @@ class VantageExporter:
                 'timestamp_ms': timestamp_ms
             },
             {
-                'name': 'exporter_last_run_duration_seconds',
+                'name': 'exporter_heartbeat_duration_seconds',
                 'labels': {
                     'exporter': 'vantage-exporter',
                 },
@@ -655,7 +659,7 @@ class VantageExporter:
                 'timestamp_ms': timestamp_ms
             },
             {
-                'name': 'exporter_last_run_records',
+                'name': 'exporter_heartbeat_records',
                 'labels': {
                     'exporter': 'vantage-exporter',
                 },
@@ -665,8 +669,8 @@ class VantageExporter:
         ]
 
         try:
-            self.greptimedb.push_metrics(heartbeat_metrics)
-            logger.info(f"Pushed heartbeat: status={status}, records={records_collected}, duration={duration:.2f}s")
+            db_client.push_metrics(heartbeat_metrics)
+            logger.info(f"Pushed heartbeat to system db: status={status}, records={records_collected}, duration={duration:.2f}s")
         except Exception as e:
             logger.warning(f"Failed to push heartbeat metric: {e}")
 
@@ -921,9 +925,18 @@ def main():
         database=GREPTIMEDB_DATABASE
     )
 
+    # System database client for heartbeat metrics
+    system_db_client = GreptimeDBClient(
+        greptimedb_url=GREPTIMEDB_URL,
+        username=GREPTIMEDB_USERNAME,
+        password=GREPTIMEDB_PASSWORD,
+        database='system'
+    )
+
     exporter = VantageExporter(
         vantage_client=vantage_client,
-        greptimedb_client=greptimedb_client
+        greptimedb_client=greptimedb_client,
+        system_db_client=system_db_client
     )
 
     # Main loop

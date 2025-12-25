@@ -130,22 +130,25 @@ export default function GreptimeDBPage() {
     return []
   }, [])
 
+  // Load schema function - reusable for initial load and refresh
+  const loadSchema = useCallback(async () => {
+    setSchemaLoading(true)
+    setTables({})
+    const dbList = await fetchDatabases()
+    // Auto-expand all allowed schemas
+    setExpandedIds(dbList)
+
+    // Fetch tables for all schemas
+    for (const db of dbList) {
+      await fetchTables(db)
+    }
+    setSchemaLoading(false)
+  }, [fetchDatabases, fetchTables])
+
   // Load schema on mount
   useEffect(() => {
-    const loadSchema = async () => {
-      setSchemaLoading(true)
-      const dbList = await fetchDatabases()
-      // Auto-expand all allowed schemas
-      setExpandedIds(dbList)
-
-      // Fetch tables for all schemas
-      for (const db of dbList) {
-        await fetchTables(db)
-      }
-      setSchemaLoading(false)
-    }
     loadSchema()
-  }, [fetchDatabases, fetchTables])
+  }, [loadSchema])
 
   // Build tree data for TreeView
   const treeData: TreeNode[] = useMemo(() => {
@@ -336,11 +339,7 @@ export default function GreptimeDBPage() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => {
-              setSchemaLoading(true)
-              setTables({})
-              fetchDatabases().then(() => setSchemaLoading(false))
-            }}
+            onClick={loadSchema}
           >
             <RefreshCw className="h-4 w-4 mr-2" />
             Refresh Schema

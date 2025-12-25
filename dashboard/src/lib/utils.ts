@@ -33,7 +33,7 @@ export function formatTime(date: string | Date): string {
 
 // Constants
 // Static schemas + any e6_* databases are allowed
-export const STATIC_SCHEMAS = ["kubernetes", "vantage"]
+export const STATIC_SCHEMAS = ["kubernetes", "vantage", "system"]
 export const E6_SCHEMA_PREFIX = "e6_"
 
 // Helper to check if a schema is allowed
