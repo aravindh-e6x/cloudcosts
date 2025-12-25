@@ -47,7 +47,7 @@ interface NodeMetricData {
 // ============================================
 
 const nodeMetricsData: Record<string, NodeMetricData> = {
-  "aws": {
+  "aws-account-1": {
     title: "AWS CloudWatch",
     description: "Metrics collected from AWS CloudWatch across multiple accounts",
     metrics: [
@@ -135,62 +135,6 @@ const nodeMetricsData: Record<string, NodeMetricData> = {
           { name: "greptime_value", type: "float", description: "Cost in USD for that day" },
         ],
         usage: "Used for account-level cost attribution and chargeback",
-      },
-    ],
-  },
-  "poc-grafana": {
-    title: "POC Grafana (Mimir)",
-    description: "E6 cluster metrics from existing Mimir/Grafana setup",
-    metrics: [
-      {
-        name: "e6_engine_metrics",
-        description: "E6 Engine performance metrics (uptime, threads, memory)",
-        fields: [
-          { name: "ts", type: "timestamp", description: "When the metric was recorded" },
-          { name: "cluster_name", type: "string", description: "E6 cluster name" },
-          { name: "metric_name", type: "string", description: "Metric name (e.g., io_e6x_E6Engine_Uptime)" },
-          { name: "metric_value", type: "float", description: "Metric value" },
-        ],
-        usage: "Used to monitor E6 engine health, uptime, and performance across clusters",
-      },
-      {
-        name: "e6_gateway_metrics",
-        description: "E6 Gateway metrics by workspace",
-        fields: [
-          { name: "ts", type: "timestamp", description: "When the metric was recorded" },
-          { name: "cluster_name", type: "string", description: "E6 cluster name" },
-          { name: "workspace", type: "string", description: "Workspace name" },
-          { name: "metric_name", type: "string", description: "Metric name" },
-          { name: "metric_value", type: "float", description: "Metric value" },
-        ],
-        usage: "Used to track gateway performance per workspace",
-      },
-      {
-        name: "e6_executor_metrics",
-        description: "E6 Executor metrics per pod/component",
-        fields: [
-          { name: "ts", type: "timestamp", description: "When the metric was recorded" },
-          { name: "cluster_name", type: "string", description: "E6 cluster name" },
-          { name: "component", type: "string", description: "Component type (executor)" },
-          { name: "pod", type: "string", description: "Pod name" },
-          { name: "metric_name", type: "string", description: "Metric name" },
-          { name: "metric_value", type: "float", description: "Metric value" },
-        ],
-        usage: "Used to track executor performance and identify slow/failing pods",
-      },
-      {
-        name: "e6_container_metrics",
-        description: "E6 container-level resource metrics (CPU, memory per container)",
-        fields: [
-          { name: "ts", type: "timestamp", description: "When the metric was recorded" },
-          { name: "cluster_name", type: "string", description: "E6 cluster name" },
-          { name: "component", type: "string", description: "Component type" },
-          { name: "pod", type: "string", description: "Pod name" },
-          { name: "container", type: "string", description: "Container name" },
-          { name: "resource_type", type: "string", description: "Resource type (cpu, memory)" },
-          { name: "metric_value", type: "float", description: "Metric value" },
-        ],
-        usage: "Used to track resource consumption at the container level for cost allocation",
       },
     ],
   },
@@ -306,6 +250,78 @@ const nodeMetricsData: Record<string, NodeMetricData> = {
         usage: "Primary interface for cost analysis and reporting",
       },
     ],
+  },
+  "e6-cluster-1": {
+    title: "E6 Cluster Metrics",
+    description: "Metrics collected from E6 customer clusters via Mimir",
+    database: "e6 (per customer)",
+    interval: "5 minutes",
+    metrics: [
+      {
+        name: "e6_engine_metrics",
+        description: "E6 Engine performance metrics (uptime, threads, memory)",
+        fields: [
+          { name: "ts", type: "timestamp", description: "When the metric was recorded" },
+          { name: "cluster_name", type: "string", description: "E6 cluster name" },
+          { name: "metric_name", type: "string", description: "Metric name (e.g., io_e6x_E6Engine_Uptime)" },
+          { name: "metric_value", type: "float", description: "Metric value" },
+        ],
+        usage: "Used to monitor E6 engine health, uptime, and performance across clusters",
+      },
+      {
+        name: "e6_gateway_metrics",
+        description: "E6 Gateway metrics by workspace",
+        fields: [
+          { name: "ts", type: "timestamp", description: "When the metric was recorded" },
+          { name: "cluster_name", type: "string", description: "E6 cluster name" },
+          { name: "workspace", type: "string", description: "Workspace name" },
+          { name: "metric_name", type: "string", description: "Metric name" },
+          { name: "metric_value", type: "float", description: "Metric value" },
+        ],
+        usage: "Used to track gateway performance per workspace",
+      },
+      {
+        name: "e6_executor_metrics",
+        description: "E6 Executor metrics per pod/component",
+        fields: [
+          { name: "ts", type: "timestamp", description: "When the metric was recorded" },
+          { name: "cluster_name", type: "string", description: "E6 cluster name" },
+          { name: "component", type: "string", description: "Component type (executor)" },
+          { name: "pod", type: "string", description: "Pod name" },
+          { name: "metric_name", type: "string", description: "Metric name" },
+          { name: "metric_value", type: "float", description: "Metric value" },
+        ],
+        usage: "Used to track executor performance and identify slow/failing pods",
+      },
+      {
+        name: "e6_container_metrics",
+        description: "E6 container-level resource metrics (CPU, memory per container)",
+        fields: [
+          { name: "ts", type: "timestamp", description: "When the metric was recorded" },
+          { name: "cluster_name", type: "string", description: "E6 cluster name" },
+          { name: "component", type: "string", description: "Component type" },
+          { name: "pod", type: "string", description: "Pod name" },
+          { name: "container", type: "string", description: "Container name" },
+          { name: "resource_type", type: "string", description: "Resource type (cpu, memory)" },
+          { name: "metric_value", type: "float", description: "Metric value" },
+        ],
+        usage: "Used to track resource consumption at the container level for cost allocation",
+      },
+    ],
+  },
+  "e6-cluster-2": {
+    title: "E6 Cluster Metrics",
+    description: "Same metrics as other E6 clusters",
+    database: "e6 (per customer)",
+    interval: "5 minutes",
+    metrics: [],
+  },
+  "e6-cluster-more": {
+    title: "Additional E6 Clusters",
+    description: "Same metrics collected across all E6 customer clusters",
+    database: "e6 (per customer)",
+    interval: "5 minutes",
+    metrics: [],
   },
   "grafana": {
     title: "Grafana",
@@ -548,18 +564,28 @@ function MetricsModal({
 // CUSTOM NODE COMPONENTS
 // ============================================
 
-function SourceNode({ data }: { data: { label: string; subtitle?: string } }) {
+function SourceNode({ data }: { data: { label: string } }) {
   return (
-    <div className="bg-white rounded-xl border-2 border-purple-500 shadow-sm px-4 py-3 min-w-[180px] cursor-pointer hover:shadow-md transition-shadow">
-      <Handle type="source" position={Position.Right} className="!bg-purple-500" />
+    <div className="bg-white rounded-xl border-2 border-orange-500 shadow-sm px-4 py-3 min-w-[180px] cursor-pointer hover:shadow-md transition-shadow">
+      <Handle type="source" position={Position.Right} className="!bg-orange-500" />
       <div className="flex items-center gap-2 mb-1">
-        <div className="w-2 h-2 rounded-full bg-purple-500" />
+        <div className="w-2 h-2 rounded-full bg-orange-500" />
+        <span className="text-xs text-zinc-500">AWS Account</span>
+      </div>
+      <div className="font-medium text-sm text-zinc-900">{data.label}</div>
+    </div>
+  )
+}
+
+function VantageSourceNode({ data }: { data: { label: string } }) {
+  return (
+    <div className="bg-white rounded-xl border-2 border-blue-500 shadow-sm px-4 py-3 min-w-[180px] cursor-pointer hover:shadow-md transition-shadow">
+      <Handle type="source" position={Position.Right} className="!bg-blue-500" />
+      <div className="flex items-center gap-2 mb-1">
+        <div className="w-2 h-2 rounded-full bg-blue-500" />
         <span className="text-xs text-zinc-500">External Source</span>
       </div>
       <div className="font-medium text-sm text-zinc-900">{data.label}</div>
-      {data.subtitle && (
-        <div className="text-xs text-zinc-400 mt-0.5">{data.subtitle}</div>
-      )}
     </div>
   )
 }
@@ -568,6 +594,7 @@ function ExporterNode({ data }: { data: { label: string; interval?: string } }) 
   return (
     <div className="bg-white rounded-xl border-2 border-emerald-500 shadow-sm px-4 py-3 min-w-[180px] cursor-pointer hover:shadow-md transition-shadow">
       <Handle type="target" position={Position.Left} className="!bg-emerald-500" />
+      <Handle type="target" position={Position.Bottom} id="bottom" className="!bg-emerald-500" />
       <Handle type="source" position={Position.Right} className="!bg-emerald-500" />
       <div className="flex items-center gap-2 mb-1">
         <div className="w-2 h-2 rounded-full bg-emerald-500" />
@@ -621,27 +648,31 @@ function ConsumerNode({ data }: { data: { label: string; url?: string } }) {
   )
 }
 
-function ClusterNode({ data }: { data: { label: string; components?: string[] } }) {
+function ClusterNode({ data }: { data: { label: string } }) {
   return (
-    <div className="bg-white rounded-xl border-2 border-orange-500 shadow-sm px-4 py-3 w-[220px] cursor-pointer hover:shadow-md transition-shadow">
-      <Handle type="source" position={Position.Bottom} className="!bg-orange-500" />
-      <div className="flex items-center gap-2 mb-1">
-        <div className="w-2 h-2 rounded-full bg-orange-500" />
+    <div className="bg-white rounded-xl border-2 border-blue-500 shadow-sm px-4 py-3 w-[200px] cursor-pointer hover:shadow-md transition-shadow">
+      <Handle type="source" position={Position.Bottom} className="!bg-blue-500" />
+      <div className="flex items-center gap-2 mb-2">
+        <div className="w-2 h-2 rounded-full bg-blue-500" />
         <span className="text-xs text-zinc-500">EKS Cluster</span>
       </div>
-      <div className="font-medium text-sm text-zinc-900 mb-2">{data.label}</div>
-      <div className="border-t border-zinc-100 pt-2">
-        <div className="text-xs text-zinc-400 mb-1.5">monitoring-agent</div>
-        {data.components && (
-          <div className="flex flex-wrap gap-1">
-            {data.components.map((comp) => (
-              <span key={comp} className="text-xs bg-orange-50 text-orange-600 px-1.5 py-0.5 rounded">
-                {comp}
-              </span>
-            ))}
-          </div>
-        )}
+      <div className="font-medium text-sm text-zinc-900 mb-3">{data.label}</div>
+      <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+        <div className="text-xs font-medium text-blue-700">cloudcosts-agent</div>
       </div>
+    </div>
+  )
+}
+
+function E6ClusterNode({ data }: { data: { label: string } }) {
+  return (
+    <div className="bg-white rounded-xl border-2 border-[#673ab7] shadow-sm px-4 py-3 w-[180px] cursor-pointer hover:shadow-md transition-shadow">
+      <Handle type="source" position={Position.Top} className="!bg-[#673ab7]" />
+      <div className="flex items-center gap-2 mb-1">
+        <div className="w-2 h-2 rounded-full bg-[#673ab7]" />
+        <span className="text-xs text-zinc-500">E6 Cluster</span>
+      </div>
+      <div className="font-medium text-sm text-zinc-900">{data.label}</div>
     </div>
   )
 }
@@ -660,7 +691,7 @@ function AnimatedEdge({
   data,
   markerEnd,
 }: EdgeProps) {
-  const [edgePath] = getBezierPath({
+  const [edgePath, labelX, labelY] = getBezierPath({
     sourceX,
     sourceY,
     sourcePosition,
@@ -671,6 +702,7 @@ function AnimatedEdge({
 
   const animationDuration = data?.speed === "fast" ? "1.5s" : data?.speed === "slow" ? "4s" : "2.5s"
   const strokeColor = (data?.color as string) || "#a1a1aa"
+  const label = data?.label as string | undefined
 
   return (
     <>
@@ -687,6 +719,30 @@ function AnimatedEdge({
       <circle r="4" fill={strokeColor}>
         <animateMotion dur={animationDuration} repeatCount="indefinite" path={edgePath} begin={`-${parseFloat(animationDuration) / 2}s`} />
       </circle>
+      {label && (
+        <g transform={`translate(${labelX}, ${labelY})`}>
+          <rect
+            x={-20}
+            y={-10}
+            width={40}
+            height={20}
+            rx={4}
+            fill="white"
+            stroke={strokeColor}
+            strokeWidth={1}
+          />
+          <text
+            x={0}
+            y={4}
+            textAnchor="middle"
+            fontSize={10}
+            fontWeight={500}
+            fill={strokeColor}
+          >
+            {label}
+          </text>
+        </g>
+      )}
     </>
   )
 }
@@ -707,10 +763,12 @@ function GroupNode({ data }: { data: { label: string } }) {
 
 const nodeTypes = {
   source: SourceNode,
+  vantageSource: VantageSourceNode,
   exporter: ExporterNode,
   database: DatabaseNode,
   consumer: ConsumerNode,
   cluster: ClusterNode,
+  e6cluster: E6ClusterNode,
   group: GroupNode,
 }
 
@@ -727,20 +785,17 @@ const initialNodes: Node[] = [
   {
     id: "cluster-group",
     type: "group",
-    position: { x: 250, y: 200 },
+    position: { x: 270, y: 200 },
     data: { label: "CloudCosts Cluster" },
-    style: { width: 820, height: 320, zIndex: -1 },
+    style: { width: 780, height: 320, zIndex: -1 },
   },
 
-  // EKS Clusters (top row) - with proper gaps (220px width + 30px gap = 250px spacing)
+  // EKS Clusters (top row) - 250px spacing between nodes
   {
     id: "eks-customer-1",
     type: "cluster",
     position: { x: 0, y: 0 },
-    data: {
-      label: "customer-1",
-      components: ["Alloy", "OpenCost", "kube-state-metrics", "node-exporter"]
-    },
+    data: { label: "eks-cluster-1" },
     sourcePosition: Position.Bottom,
     targetPosition: Position.Top,
   },
@@ -748,10 +803,7 @@ const initialNodes: Node[] = [
     id: "eks-customer-2",
     type: "cluster",
     position: { x: 250, y: 0 },
-    data: {
-      label: "customer-2",
-      components: ["Alloy", "OpenCost", "kube-state-metrics", "node-exporter"]
-    },
+    data: { label: "eks-cluster-2" },
     sourcePosition: Position.Bottom,
     targetPosition: Position.Top,
   },
@@ -759,45 +811,76 @@ const initialNodes: Node[] = [
     id: "eks-more",
     type: "cluster",
     position: { x: 500, y: 0 },
-    data: {
-      label: "+ more clusters",
-      components: ["Alloy", "OpenCost", "kube-state-metrics", "node-exporter"]
-    },
+    data: { label: "+ more clusters" },
     sourcePosition: Position.Bottom,
     targetPosition: Position.Top,
   },
 
-  // External Sources (left column)
+  // AWS Accounts (left column) - 70px vertical spacing
   {
-    id: "aws",
+    id: "aws-account-1",
     type: "source",
-    position: { x: 0, y: 240 },
-    data: { label: "AWS CloudWatch", subtitle: "Multiple accounts" },
+    position: { x: 0, y: 230 },
+    data: { label: "Account 1" },
+    sourcePosition: Position.Right,
+    targetPosition: Position.Left,
+  },
+  {
+    id: "aws-account-2",
+    type: "source",
+    position: { x: 0, y: 300 },
+    data: { label: "Account 2" },
+    sourcePosition: Position.Right,
+    targetPosition: Position.Left,
+  },
+  {
+    id: "aws-account-more",
+    type: "source",
+    position: { x: 0, y: 370 },
+    data: { label: "+ more accounts" },
     sourcePosition: Position.Right,
     targetPosition: Position.Left,
   },
   {
     id: "vantage",
-    type: "source",
-    position: { x: 0, y: 340 },
-    data: { label: "Vantage API", subtitle: "Multi-cloud costs" },
-    sourcePosition: Position.Right,
-    targetPosition: Position.Left,
-  },
-  {
-    id: "poc-grafana",
-    type: "source",
+    type: "vantageSource",
     position: { x: 0, y: 440 },
-    data: { label: "POC Grafana", subtitle: "Mimir metrics" },
+    data: { label: "Vantage API" },
     sourcePosition: Position.Right,
     targetPosition: Position.Left,
   },
 
-  // Exporters (center-left column)
+  // E6 Clusters (bottom row) - 200px spacing to match width
+  {
+    id: "e6-cluster-1",
+    type: "e6cluster",
+    position: { x: 0, y: 560 },
+    data: { label: "e6-cluster-1" },
+    sourcePosition: Position.Bottom,
+    targetPosition: Position.Top,
+  },
+  {
+    id: "e6-cluster-2",
+    type: "e6cluster",
+    position: { x: 200, y: 560 },
+    data: { label: "e6-cluster-2" },
+    sourcePosition: Position.Bottom,
+    targetPosition: Position.Top,
+  },
+  {
+    id: "e6-cluster-more",
+    type: "e6cluster",
+    position: { x: 400, y: 560 },
+    data: { label: "+ more clusters" },
+    sourcePosition: Position.Bottom,
+    targetPosition: Position.Top,
+  },
+
+  // Exporters (center-left column) - 80px vertical spacing
   {
     id: "alloy-cloudwatch",
     type: "exporter",
-    position: { x: 280, y: 240 },
+    position: { x: 300, y: 260 },
     data: { label: "alloy-cloudwatch", interval: "5m" },
     sourcePosition: Position.Right,
     targetPosition: Position.Left,
@@ -805,7 +888,7 @@ const initialNodes: Node[] = [
   {
     id: "vantage-exporter",
     type: "exporter",
-    position: { x: 280, y: 340 },
+    position: { x: 300, y: 340 },
     data: { label: "vantage-exporter", interval: "24h" },
     sourcePosition: Position.Right,
     targetPosition: Position.Left,
@@ -813,7 +896,7 @@ const initialNodes: Node[] = [
   {
     id: "e6metrics-exporter",
     type: "exporter",
-    position: { x: 280, y: 440 },
+    position: { x: 300, y: 420 },
     data: { label: "e6metrics-exporter", interval: "5m" },
     sourcePosition: Position.Right,
     targetPosition: Position.Left,
@@ -823,7 +906,7 @@ const initialNodes: Node[] = [
   {
     id: "greptimedb",
     type: "database",
-    position: { x: 540, y: 320 },
+    position: { x: 560, y: 320 },
     data: {
       label: "GreptimeDB",
       databases: ["kubernetes", "aws", "vantage", "e6"]
@@ -832,19 +915,19 @@ const initialNodes: Node[] = [
     targetPosition: Position.Left,
   },
 
-  // Consumers (right column) - more gap from GreptimeDB
+  // Consumers (right column)
   {
     id: "dashboard",
     type: "consumer",
-    position: { x: 880, y: 290 },
-    data: { label: "Dashboard", url: "cloudcosts.in" },
+    position: { x: 860, y: 280 },
+    data: { label: "Dashboard", url: "dashboard.cloudcosts.in" },
     sourcePosition: Position.Right,
     targetPosition: Position.Left,
   },
   {
     id: "grafana",
     type: "consumer",
-    position: { x: 880, y: 390 },
+    position: { x: 860, y: 400 },
     data: { label: "Grafana", url: "grafana.cloudcosts.in" },
     sourcePosition: Position.Right,
     targetPosition: Position.Left,
@@ -852,30 +935,68 @@ const initialNodes: Node[] = [
 ]
 
 const initialEdges: Edge[] = [
-  // External sources to exporters
+  // AWS accounts to alloy-cloudwatch (PULL - exporter pulls from AWS)
   {
-    id: "aws-to-exporter",
-    source: "aws",
+    id: "aws-1-to-exporter",
+    source: "aws-account-1",
     target: "alloy-cloudwatch",
     type: "animated",
-    data: { color: "#a855f7", speed: "normal" },
-    markerEnd: { type: MarkerType.ArrowClosed, color: "#a855f7", width: 20, height: 20 },
+    data: { color: "#f97316", speed: "normal", label: "pull" },
+    markerEnd: { type: MarkerType.ArrowClosed, color: "#f97316", width: 20, height: 20 },
   },
+  {
+    id: "aws-2-to-exporter",
+    source: "aws-account-2",
+    target: "alloy-cloudwatch",
+    type: "animated",
+    data: { color: "#f97316", speed: "normal" },
+    markerEnd: { type: MarkerType.ArrowClosed, color: "#f97316", width: 20, height: 20 },
+  },
+  {
+    id: "aws-more-to-exporter",
+    source: "aws-account-more",
+    target: "alloy-cloudwatch",
+    type: "animated",
+    data: { color: "#f97316", speed: "normal" },
+    markerEnd: { type: MarkerType.ArrowClosed, color: "#f97316", width: 20, height: 20 },
+  },
+  // Vantage to exporter (PULL - exporter pulls from Vantage API)
   {
     id: "vantage-to-exporter",
     source: "vantage",
     target: "vantage-exporter",
     type: "animated",
-    data: { color: "#a855f7", speed: "slow" },
-    markerEnd: { type: MarkerType.ArrowClosed, color: "#a855f7", width: 20, height: 20 },
+    data: { color: "#3b82f6", speed: "slow", label: "pull" },
+    markerEnd: { type: MarkerType.ArrowClosed, color: "#3b82f6", width: 20, height: 20 },
+  },
+
+  // E6 clusters to e6metrics-exporter (PULL - exporter pulls from E6 clusters)
+  {
+    id: "e6-1-to-exporter",
+    source: "e6-cluster-1",
+    target: "e6metrics-exporter",
+    targetHandle: "bottom",
+    type: "animated",
+    data: { color: "#673ab7", speed: "normal", label: "pull" },
+    markerEnd: { type: MarkerType.ArrowClosed, color: "#673ab7", width: 20, height: 20 },
   },
   {
-    id: "poc-to-exporter",
-    source: "poc-grafana",
+    id: "e6-2-to-exporter",
+    source: "e6-cluster-2",
     target: "e6metrics-exporter",
+    targetHandle: "bottom",
     type: "animated",
-    data: { color: "#a855f7", speed: "normal" },
-    markerEnd: { type: MarkerType.ArrowClosed, color: "#a855f7", width: 20, height: 20 },
+    data: { color: "#673ab7", speed: "normal" },
+    markerEnd: { type: MarkerType.ArrowClosed, color: "#673ab7", width: 20, height: 20 },
+  },
+  {
+    id: "e6-more-to-exporter",
+    source: "e6-cluster-more",
+    target: "e6metrics-exporter",
+    targetHandle: "bottom",
+    type: "animated",
+    data: { color: "#673ab7", speed: "normal" },
+    markerEnd: { type: MarkerType.ArrowClosed, color: "#673ab7", width: 20, height: 20 },
   },
 
   // Exporters to GreptimeDB
@@ -922,15 +1043,15 @@ const initialEdges: Edge[] = [
     markerEnd: { type: MarkerType.ArrowClosed, color: "#10b981", width: 20, height: 20 },
   },
 
-  // EKS clusters to GreptimeDB
+  // EKS clusters to GreptimeDB (PUSH - cloudcosts-agent pushes to GreptimeDB)
   {
     id: "eks-1-to-db",
     source: "eks-customer-1",
     target: "greptimedb",
     targetHandle: "top",
     type: "animated",
-    data: { color: "#f97316", speed: "fast" },
-    markerEnd: { type: MarkerType.ArrowClosed, color: "#f97316", width: 20, height: 20 },
+    data: { color: "#3b82f6", speed: "fast", label: "push" },
+    markerEnd: { type: MarkerType.ArrowClosed, color: "#3b82f6", width: 20, height: 20 },
   },
   {
     id: "eks-2-to-db",
@@ -938,8 +1059,8 @@ const initialEdges: Edge[] = [
     target: "greptimedb",
     targetHandle: "top",
     type: "animated",
-    data: { color: "#f97316", speed: "fast" },
-    markerEnd: { type: MarkerType.ArrowClosed, color: "#f97316", width: 20, height: 20 },
+    data: { color: "#3b82f6", speed: "fast" },
+    markerEnd: { type: MarkerType.ArrowClosed, color: "#3b82f6", width: 20, height: 20 },
   },
   {
     id: "eks-more-to-db",
@@ -947,8 +1068,8 @@ const initialEdges: Edge[] = [
     target: "greptimedb",
     targetHandle: "top",
     type: "animated",
-    data: { color: "#f97316", speed: "fast" },
-    markerEnd: { type: MarkerType.ArrowClosed, color: "#f97316", width: 20, height: 20 },
+    data: { color: "#3b82f6", speed: "fast" },
+    markerEnd: { type: MarkerType.ArrowClosed, color: "#3b82f6", width: 20, height: 20 },
   },
 ]
 
@@ -958,7 +1079,7 @@ const initialEdges: Edge[] = [
 
 function ArchitectureDiagram({ onNodeClick }: { onNodeClick: (nodeId: string) => void }) {
   return (
-    <div className="h-[650px] w-full overflow-hidden">
+    <div className="h-[750px] w-full overflow-hidden">
       <ReactFlow
         nodes={initialNodes}
         edges={initialEdges}
@@ -988,9 +1109,10 @@ function ArchitectureDiagram({ onNodeClick }: { onNodeClick: (nodeId: string) =>
 
 function Legend() {
   const items = [
-    { color: "bg-purple-500", label: "External Source" },
+    { color: "bg-orange-500", label: "AWS Account" },
+    { color: "bg-blue-500", label: "EKS Cluster" },
     { color: "bg-emerald-500", label: "CloudCosts Cluster" },
-    { color: "bg-orange-500", label: "Customer EKS Cluster" },
+    { color: "bg-[#673ab7]", label: "E6 Cluster" },
   ]
 
   return (
@@ -998,7 +1120,7 @@ function Legend() {
       {items.map((item) => (
         <div key={item.label} className="flex items-center gap-2">
           <div className={`w-2.5 h-2.5 rounded-full ${item.color}`} />
-          <span className="text-sm text-zinc-500 dark:text-zinc-400">{item.label}</span>
+          <span className="text-sm text-zinc-500">{item.label}</span>
         </div>
       ))}
     </div>
@@ -1008,6 +1130,33 @@ function Legend() {
 // ============================================
 // MAIN PAGE COMPONENT
 // ============================================
+
+// ============================================
+// AGENT COMPONENTS DATA
+// ============================================
+
+const agentComponents = [
+  {
+    name: "Alloy",
+    description: "Grafana Alloy is the metrics collection agent that scrapes Prometheus metrics from various sources and remote writes to GreptimeDB.",
+    role: "Metrics collection and forwarding",
+  },
+  {
+    name: "OpenCost",
+    description: "OpenCost provides real-time cost monitoring for Kubernetes workloads. It calculates costs based on node pricing and resource allocation.",
+    role: "Cost calculation and allocation",
+  },
+  {
+    name: "kube-state-metrics",
+    description: "Generates metrics about the state of Kubernetes objects like deployments, nodes, and pods. Provides information about resource requests, limits, and labels.",
+    role: "Kubernetes state metrics",
+  },
+  {
+    name: "node-exporter",
+    description: "Prometheus exporter for hardware and OS metrics. Collects CPU, memory, disk, and network statistics from each node.",
+    role: "Node-level metrics",
+  },
+]
 
 export default function ArchitecturePage() {
   const [selectedNode, setSelectedNode] = useState<string | null>(null)
@@ -1021,7 +1170,8 @@ export default function ArchitecturePage() {
         </p>
       </div>
 
-      <div>
+      {/* System Overview Card */}
+      <div className="border border-zinc-200 rounded-xl p-6 bg-white shadow-sm">
         <h2 className="text-xl font-semibold mb-4">System Overview</h2>
         <p className="text-muted-foreground mb-6">
           Data flows from external sources and EKS clusters through exporters into GreptimeDB,
@@ -1031,7 +1181,30 @@ export default function ArchitecturePage() {
         <ReactFlowProvider>
           <ArchitectureDiagram onNodeClick={setSelectedNode} />
         </ReactFlowProvider>
-        <Legend />
+      </div>
+
+      {/* CloudCosts Agent Card */}
+      <div className="border border-zinc-200 rounded-xl p-6 bg-white shadow-sm">
+        <h2 className="text-xl font-semibold mb-4">CloudCosts Agent</h2>
+        <p className="text-muted-foreground mb-6">
+          The cloudcosts-agent is deployed in each customer EKS cluster and pushes metrics directly to GreptimeDB.
+          It consists of the following components:
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {agentComponents.map((component) => (
+            <div
+              key={component.name}
+              className="border border-zinc-200 rounded-lg p-4 hover:border-blue-300 transition-colors bg-zinc-50"
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-2 h-2 rounded-full bg-blue-500" />
+                <h3 className="font-semibold text-zinc-900">{component.name}</h3>
+              </div>
+              <p className="text-sm text-zinc-600 mb-2">{component.description}</p>
+              <div className="text-xs text-blue-600 font-medium">{component.role}</div>
+            </div>
+          ))}
+        </div>
       </div>
 
       <MetricsModal nodeId={selectedNode} onClose={() => setSelectedNode(null)} />
