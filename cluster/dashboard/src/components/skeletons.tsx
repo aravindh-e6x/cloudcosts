@@ -24,23 +24,6 @@ export function StatCardSkeleton() {
   )
 }
 
-export function ComparisonCardSkeleton() {
-  return (
-    <Card>
-      <CardHeader className="pb-2">
-        <Skeleton className="h-4 w-32" />
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="flex justify-between">
-          <Skeleton className="h-8 w-24" />
-          <Skeleton className="h-6 w-16" />
-        </div>
-        <Skeleton className="h-4 w-full" />
-      </CardContent>
-    </Card>
-  )
-}
-
 export function TableSkeleton({ rows = 5 }: { rows?: number }) {
   return (
     <div className="space-y-2">

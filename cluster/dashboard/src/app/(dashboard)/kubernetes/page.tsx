@@ -11,7 +11,7 @@ import {
   CardDescription,
   Skeleton,
 } from "laminar-ui"
-import { InfoPopover, DateBanner, DataHealthIndicator } from "@/components/shared"
+import { InfoPopover, DateBanner, DataHealthIndicator } from "@/components"
 import { useDate } from "@/components/providers"
 import { useQuery, formatBytes, formatCurrency } from "@/hooks/useQuery"
 import { Server, Cpu, HardDrive, Box, Layers, DollarSign, ArrowRight } from "lucide-react"

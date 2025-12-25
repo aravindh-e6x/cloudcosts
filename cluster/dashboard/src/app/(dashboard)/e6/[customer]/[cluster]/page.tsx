@@ -31,7 +31,7 @@ import {
   Layers,
   Box,
 } from "lucide-react"
-import { DateBanner, DataHealthIndicator } from "@/components/shared"
+import { DateBanner, DataHealthIndicator } from "@/components"
 import { useDate } from "@/components/providers"
 import { E6_SCHEMA_PREFIX } from "@/lib/utils"
 

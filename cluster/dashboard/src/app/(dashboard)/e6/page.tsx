@@ -13,7 +13,7 @@ import {
   Skeleton,
 } from "laminar-ui"
 import { Building2, Server, ChevronRight, Database, HardDrive } from "lucide-react"
-import { DateBanner } from "@/components/shared"
+import { DateBanner } from "@/components"
 import { useDate } from "@/components/providers"
 import { isAllowedSchema, E6_SCHEMA_PREFIX } from "@/lib/utils"
 

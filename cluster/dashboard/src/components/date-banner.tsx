@@ -24,25 +24,16 @@ export function DateBanner() {
   })
 
   const checkConnectivity = useCallback(async () => {
-    const startTime = Date.now()
     try {
-      const response = await fetch("/api/query", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          database: "public",
-          sql: "SELECT 1 as health"
-        })
-      })
-
-      const latency = Date.now() - startTime
+      const response = await fetch("/api/health")
 
       if (response.ok) {
+        const data = await response.json()
         setStatus({
           isConnected: true,
           lastSuccessTime: new Date(),
           isStale: false,
-          latencyMs: latency
+          latencyMs: data.latencyMs
         })
       } else {
         setStatus(prev => ({

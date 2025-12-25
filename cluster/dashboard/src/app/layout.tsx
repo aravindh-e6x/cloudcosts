@@ -3,7 +3,6 @@ import { Geist, Geist_Mono } from "next/font/google"
 import "./globals.css"
 import { Providers } from "@/components/providers"
 import { SessionProvider } from "next-auth/react"
-import { AppShell } from "@/components/app-shell"
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -17,7 +16,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "CloudCosts Dashboard",
-  description: "Cloud cost monitoring and Kubernetes resource tracking",
+  description: "Cloud cost monitoring",
 }
 
 export default function RootLayout({
@@ -30,7 +29,7 @@ export default function RootLayout({
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <SessionProvider>
           <Providers>
-            <AppShell>{children}</AppShell>
+            {children}
           </Providers>
         </SessionProvider>
       </body>

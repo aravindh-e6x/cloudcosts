@@ -68,12 +68,3 @@ export function QueryError({ message, onRetry }: { message: string; onRetry?: ()
     </div>
   )
 }
-
-// Empty state display
-export function EmptyState({ message = "No data available" }: { message?: string }) {
-  return (
-    <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
-      {message}
-    </div>
-  )
-}

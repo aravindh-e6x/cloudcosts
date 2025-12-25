@@ -10,8 +10,12 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
-        const username = process.env.AUTH_USERNAME || "e6data"
-        const password = process.env.AUTH_PASSWORD || "cloudcosts"
+        const username = process.env.AUTH_USERNAME
+        const password = process.env.AUTH_PASSWORD
+
+        if (!username || !password) {
+          throw new Error("AUTH_USERNAME and AUTH_PASSWORD must be set")
+        }
 
         if (
           credentials?.username === username &&

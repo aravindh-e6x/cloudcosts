@@ -13,24 +13,15 @@ import {
   Badge,
 } from "laminar-ui"
 import {
-  ComparisonCard,
-  ChangeBadge,
   InfoPopover,
-  ComparisonCardSkeleton,
   TableSkeleton,
   ChartSkeleton,
   QueryError,
   EmptyState,
   DateBanner,
-} from "@/components/shared"
+} from "@/components"
 import { useDate } from "@/components/providers"
 import { useQuery, formatCurrency, formatDate } from "@/hooks/useQuery"
-
-function ChangeCell({ current, previous }: { current: number; previous: number }) {
-  if (previous === 0) return <span className="text-muted-foreground">-</span>
-  const change = ((current - previous) / previous) * 100
-  return <ChangeBadge value={change} />
-}
 
 export default function OverviewPage() {
   const { timeRange, selectedDate } = useDate()
@@ -66,12 +57,9 @@ export default function OverviewPage() {
     }
   }, [timeRange])
 
-  const { data: execSummaryData, loading: execLoading, error: execError, refetch: refetchExec } = useQuery("vantage", "getExecutiveSummary", [selectedDate], { refetchInterval: 300000 })
   const { data: providerCostData, loading: providerLoading, error: providerError, refetch: refetchProvider } = useQuery("vantage", "getCostByProvider", [selectedDate], { refetchInterval: 300000 })
   const { data: topServicesData, loading: servicesLoading, error: servicesError, refetch: refetchServices } = useQuery("vantage", "getTopServices", [selectedDate, 10], { refetchInterval: 300000 })
   const { data: dailyCostTrend, loading: trendLoading, error: trendError, refetch: refetchTrend } = useQuery("vantage", "getDailyCostTrend", [selectedDate], { refetchInterval: 300000 })
-
-  const execSummary = execSummaryData?.[0] as Record<string, number> | undefined
 
   const providerCostWithTotals = useMemo(() => {
     if (!providerCostData?.length) return []
@@ -105,9 +93,6 @@ export default function OverviewPage() {
     { key: "yesterday", header: `Yesterday (${dateLabels.yesterday})`, sortable: true, render: (v: unknown, r: Record<string, unknown>) => (
       <span className={r.provider === "TOTAL" ? "font-bold" : ""}>{formatCurrency(Number(v))}</span>
     )},
-    { key: "day_change", header: "DoD", render: (_: unknown, r: Record<string, unknown>) => (
-      <ChangeCell current={Number(r.today)} previous={Number(r.yesterday)} />
-    )},
     { key: "last_7d", header: `Last 7D (${dateLabels.last7d})`, sortable: true, render: (v: unknown, r: Record<string, unknown>) => (
       <span className={r.provider === "TOTAL" ? "font-bold" : ""}>{formatCurrency(Number(v))}</span>
     )},
@@ -117,24 +102,15 @@ export default function OverviewPage() {
     { key: "prev_mtd", header: `Prev MTD (${dateLabels.prevMtd})`, sortable: true, render: (v: unknown, r: Record<string, unknown>) => (
       <span className={r.provider === "TOTAL" ? "font-bold" : ""}>{formatCurrency(Number(v))}</span>
     )},
-    { key: "mom", header: "MoM", render: (_: unknown, r: Record<string, unknown>) => (
-      <ChangeCell current={Number(r.mtd)} previous={Number(r.prev_mtd)} />
-    )},
   ]
 
   const serviceColumns = [
     { key: "service", header: "Service", sortable: true },
     { key: "today", header: `Today (${dateLabels.today})`, sortable: true, render: (v: unknown) => formatCurrency(Number(v)) },
     { key: "yesterday", header: `Yesterday (${dateLabels.yesterday})`, sortable: true, render: (v: unknown) => formatCurrency(Number(v)) },
-    { key: "day_change", header: "DoD", render: (_: unknown, r: Record<string, unknown>) => (
-      <ChangeCell current={Number(r.today)} previous={Number(r.yesterday)} />
-    )},
     { key: "last_7d", header: `Last 7D (${dateLabels.last7d})`, sortable: true, render: (v: unknown) => formatCurrency(Number(v)) },
     { key: "mtd", header: `MTD (${dateLabels.mtd})`, sortable: true, render: (v: unknown) => formatCurrency(Number(v)) },
     { key: "prev_mtd", header: `Prev MTD (${dateLabels.prevMtd})`, sortable: true, render: (v: unknown) => formatCurrency(Number(v)) },
-    { key: "mom", header: "MoM", render: (_: unknown, r: Record<string, unknown>) => (
-      <ChangeCell current={Number(r.mtd)} previous={Number(r.prev_mtd)} />
-    )},
   ]
 
   return (
@@ -146,56 +122,6 @@ export default function OverviewPage() {
         <div>
           <h1 className="text-3xl font-bold">Cloud Cost Report</h1>
         </div>
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
-        {execLoading ? (
-          <>
-            <ComparisonCardSkeleton />
-            <ComparisonCardSkeleton />
-            <ComparisonCardSkeleton />
-            <ComparisonCardSkeleton />
-          </>
-        ) : execError ? (
-          <Card className="col-span-4">
-            <QueryError message={execError} onRetry={refetchExec} />
-          </Card>
-        ) : (
-          <>
-            <ComparisonCard
-              title="Today vs Yesterday"
-              current={execSummary?.today || 0}
-              previous={execSummary?.yesterday || 0}
-              currentLabel={dateLabels.today}
-              previousLabel={dateLabels.yesterday}
-              description="Compares total cloud spend for the selected date against the previous day."
-            />
-            <ComparisonCard
-              title="This Week vs Last Week"
-              current={execSummary?.this_week || 0}
-              previous={execSummary?.last_week || 0}
-              currentLabel={dateLabels.thisWeek}
-              previousLabel={dateLabels.lastWeek}
-              description="Compares week-to-date spend (from start of current week) against the full previous week."
-            />
-            <ComparisonCard
-              title="This Week vs Same Week Last Month"
-              current={execSummary?.this_week || 0}
-              previous={execSummary?.same_week_last_month || 0}
-              currentLabel={dateLabels.thisWeek}
-              previousLabel={dateLabels.sameWeekLastMonth}
-              description="Compares week-to-date spend against the same week (approximately 4 weeks ago) from last month."
-            />
-            <ComparisonCard
-              title="MTD vs Same Period Last Month"
-              current={execSummary?.mtd || 0}
-              previous={execSummary?.same_period_last_month || 0}
-              currentLabel={dateLabels.mtd}
-              previousLabel={dateLabels.prevMtd}
-              description="Compares month-to-date spend against the same number of days in the previous month."
-            />
-          </>
-        )}
       </div>
 
       {/* Costs by Cloud Provider */}
@@ -218,7 +144,7 @@ export default function OverviewPage() {
           ) : providerCostWithTotals.length > 0 ? (
             <DataTable data={providerCostWithTotals} columns={providerColumns} hoverable />
           ) : (
-            <EmptyState />
+            <EmptyState title="No data available" size="sm" />
           )}
         </CardContent>
       </Card>
@@ -250,7 +176,7 @@ export default function OverviewPage() {
               tooltipFormatter={(value) => formatCurrency(Number(value))}
             />
           ) : (
-            <EmptyState />
+            <EmptyState title="No data available" size="sm" />
           )}
         </CardContent>
       </Card>
@@ -275,7 +201,7 @@ export default function OverviewPage() {
           ) : topServicesData && topServicesData.length > 0 ? (
             <DataTable data={topServicesData} columns={serviceColumns} hoverable />
           ) : (
-            <EmptyState />
+            <EmptyState title="No data available" size="sm" />
           )}
         </CardContent>
       </Card>

@@ -28,9 +28,13 @@ import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from "laminar-ui"
 import {
-  NamespaceSelector,
   InfoPopover,
   TableSkeleton,
   ChartSkeleton,
@@ -38,7 +42,7 @@ import {
   EmptyState,
   DateBanner,
   DataHealthIndicator,
-} from "@/components/shared"
+} from "@/components"
 import { useDate } from "@/components/providers"
 import { useQuery, formatBytes, formatCpu, formatCurrency, formatTime } from "@/hooks/useQuery"
 import { CHART_COLORS } from "@/lib/utils"
@@ -232,11 +236,17 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
             warningThresholdMinutes={5}
             criticalThresholdMinutes={15}
           />
-          <NamespaceSelector
-            namespaces={namespaceList}
-            value={selectedNamespace}
-            onChange={setSelectedNamespace}
-          />
+          <Select value={selectedNamespace} onValueChange={setSelectedNamespace}>
+            <SelectTrigger className="w-[200px]">
+              <SelectValue placeholder="Select namespace" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Namespaces</SelectItem>
+              {[...new Set(namespaceList)].map((ns) => (
+                <SelectItem key={ns} value={ns}>{ns}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </div>
 
@@ -524,7 +534,7 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
                 className="border-0"
               />
             ) : (
-              <EmptyState />
+              <EmptyState title="No data available" size="sm" />
             )}
           </CardContent>
         </Card>
@@ -552,7 +562,7 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
                 className="border-0"
               />
             ) : (
-              <EmptyState />
+              <EmptyState title="No data available" size="sm" />
             )}
           </CardContent>
         </Card>
@@ -585,7 +595,7 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
                 className="border-0"
               />
             ) : (
-              <EmptyState />
+              <EmptyState title="No data available" size="sm" />
             )}
           </CardContent>
         </Card>
@@ -616,7 +626,7 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
                 className="border-0"
               />
             ) : (
-              <EmptyState />
+              <EmptyState title="No data available" size="sm" />
             )}
           </CardContent>
         </Card>
@@ -692,7 +702,7 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
               ) : filteredPods.length > 0 ? (
                 <DataTable data={filteredPods} columns={podColumns} hoverable striped />
               ) : (
-                <EmptyState message="No pods found" />
+                <EmptyState title="No pods found" size="sm" />
               )}
             </CardContent>
           </Card>
@@ -726,7 +736,7 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
                     showLegend
                   />
                 ) : (
-                  <EmptyState />
+                  <EmptyState title="No data available" size="sm" />
                 )}
               </CardContent>
             </Card>
@@ -759,7 +769,7 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
                     showLegend
                   />
                 ) : (
-                  <EmptyState />
+                  <EmptyState title="No data available" size="sm" />
                 )}
               </CardContent>
             </Card>
@@ -827,7 +837,7 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
               ) : filteredNodes.length > 0 ? (
                 <DataTable data={filteredNodes} columns={nodeColumns} hoverable striped />
               ) : (
-                <EmptyState message="No nodes found" />
+                <EmptyState title="No nodes found" size="sm" />
               )}
             </CardContent>
           </Card>
@@ -860,7 +870,7 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
                   showLegend
                 />
               ) : (
-                <EmptyState />
+                <EmptyState title="No data available" size="sm" />
               )}
             </CardContent>
           </Card>
@@ -893,7 +903,7 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
                   striped
                 />
               ) : (
-                <EmptyState />
+                <EmptyState title="No data available" size="sm" />
               )}
             </CardContent>
           </Card>

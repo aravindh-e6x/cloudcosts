@@ -1,7 +1,7 @@
 "use client"
 
 import { createContext, useContext, useState, useMemo, ReactNode } from "react"
-import type { DateRange } from "@/components/shared"
+import type { DateRange } from "@/components"
 
 interface DateContextValue {
   timeRange: DateRange | undefined

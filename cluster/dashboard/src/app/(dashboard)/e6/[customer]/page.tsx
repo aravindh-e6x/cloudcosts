@@ -14,7 +14,7 @@ import {
   Skeleton,
   Button,
 } from "laminar-ui"
-import { DateBanner } from "@/components/shared"
+import { DateBanner } from "@/components"
 import { useDate } from "@/components/providers"
 import {
   Building2,
