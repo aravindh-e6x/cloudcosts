@@ -384,7 +384,7 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
       </div>
 
       {/* Time Series Modals */}
-      <Dialog open={openModal === 'cpu'} onOpenChange={(open) => !open && setOpenModal(null)}>
+      <Dialog open={openModal === 'cpu'} onOpenChange={(open: boolean) => !open && setOpenModal(null)}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle>CPU Allocation Trend</DialogTitle>
@@ -409,7 +409,7 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={openModal === 'memory'} onOpenChange={(open) => !open && setOpenModal(null)}>
+      <Dialog open={openModal === 'memory'} onOpenChange={(open: boolean) => !open && setOpenModal(null)}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle>Memory Allocation Trend</DialogTitle>
@@ -434,7 +434,7 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={openModal === 'pod'} onOpenChange={(open) => !open && setOpenModal(null)}>
+      <Dialog open={openModal === 'pod'} onOpenChange={(open: boolean) => !open && setOpenModal(null)}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle>Pod Count Trend</DialogTitle>
@@ -459,7 +459,7 @@ function ClusterDetailContent({ cluster }: { cluster: string }) {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={openModal === 'efficiency'} onOpenChange={(open) => !open && setOpenModal(null)}>
+      <Dialog open={openModal === 'efficiency'} onOpenChange={(open: boolean) => !open && setOpenModal(null)}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle>Resource Efficiency Trend</DialogTitle>

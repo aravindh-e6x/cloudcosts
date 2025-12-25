@@ -675,8 +675,9 @@ class VantageExporter:
             logger.warning(f"Failed to push heartbeat metric: {e}")
 
     def _date_to_timestamp_ms(self, date_str: str) -> int:
-        """Convert date string to millisecond timestamp."""
-        dt = datetime.strptime(date_str, '%Y-%m-%d')
+        """Convert date string to millisecond timestamp (UTC midnight)."""
+        from datetime import timezone
+        dt = datetime.strptime(date_str, '%Y-%m-%d').replace(tzinfo=timezone.utc)
         return int(dt.timestamp() * 1000)
 
     def _sanitize_label(self, value: str) -> str:

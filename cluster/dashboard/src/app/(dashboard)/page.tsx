@@ -11,6 +11,7 @@ import {
   DataTable,
   BarChart,
   Badge,
+  Skeleton,
 } from "laminar-ui"
 import {
   InfoPopover,
@@ -20,14 +21,24 @@ import {
   EmptyState,
   DateBanner,
 } from "@/components"
+import { DollarSign, Calendar, CalendarDays, CalendarRange } from "lucide-react"
 import { useDate } from "@/components/providers"
 import { useQuery, formatCurrency, formatDate } from "@/hooks/useQuery"
 
 export default function OverviewPage() {
   const { timeRange, selectedDate } = useDate()
 
-  const dateLabels = useMemo(() => {
+  // Vantage data is 1 day delayed, so we use yesterday's date for queries
+  const vantageDate = useMemo(() => {
     const selected = timeRange?.from || new Date()
+    const yesterday = new Date(selected)
+    yesterday.setDate(yesterday.getDate() - 1)
+    return yesterday.toISOString().split('T')[0]
+  }, [timeRange])
+
+  const dateLabels = useMemo(() => {
+    // Use the vantage date (1 day before selected) as the base for labels
+    const selected = new Date(vantageDate)
     const fmt = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
     const addDays = (d: Date, n: number) => { const r = new Date(d); r.setDate(r.getDate() + n); return r }
 
@@ -55,11 +66,14 @@ export default function OverviewPage() {
       last7d: `${fmt(last7dStart)} - ${fmt(selected)}`,
       prev7d: `${fmt(prev7dStart)} - ${fmt(prev7dEnd)}`,
     }
-  }, [timeRange])
+  }, [vantageDate])
 
-  const { data: providerCostData, loading: providerLoading, error: providerError, refetch: refetchProvider } = useQuery("vantage", "getCostByProvider", [selectedDate], { refetchInterval: 300000 })
-  const { data: topServicesData, loading: servicesLoading, error: servicesError, refetch: refetchServices } = useQuery("vantage", "getTopServices", [selectedDate, 10], { refetchInterval: 300000 })
-  const { data: dailyCostTrend, loading: trendLoading, error: trendError, refetch: refetchTrend } = useQuery("vantage", "getDailyCostTrend", [selectedDate], { refetchInterval: 300000 })
+  const { data: execSummaryData, loading: execLoading, error: execError } = useQuery("vantage", "getExecutiveSummary", [vantageDate], { refetchInterval: 300000 })
+  const { data: providerCostData, loading: providerLoading, error: providerError, refetch: refetchProvider } = useQuery("vantage", "getCostByProvider", [vantageDate], { refetchInterval: 300000 })
+  const { data: topServicesData, loading: servicesLoading, error: servicesError, refetch: refetchServices } = useQuery("vantage", "getTopServices", [vantageDate, 10], { refetchInterval: 300000 })
+  const { data: dailyCostTrend, loading: trendLoading, error: trendError, refetch: refetchTrend } = useQuery("vantage", "getDailyCostTrend", [vantageDate], { refetchInterval: 300000 })
+
+  const execSummary = execSummaryData?.[0] as Record<string, number> | undefined
 
   const providerCostWithTotals = useMemo(() => {
     if (!providerCostData?.length) return []
@@ -122,6 +136,83 @@ export default function OverviewPage() {
         <div>
           <h1 className="text-3xl font-bold">Cloud Cost Report</h1>
         </div>
+      </div>
+
+      {/* Summary Stats */}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+        {execLoading ? (
+          <>
+            {[1, 2, 3, 4].map((i) => (
+              <Card key={i}>
+                <CardContent className="pt-6">
+                  <Skeleton className="h-8 w-24 mb-2" />
+                  <Skeleton className="h-4 w-16" />
+                </CardContent>
+              </Card>
+            ))}
+          </>
+        ) : execError ? (
+          <Card className="col-span-4">
+            <CardContent className="pt-6 text-center text-muted-foreground">
+              Failed to load summary stats
+            </CardContent>
+          </Card>
+        ) : (
+          <>
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-primary/10 rounded-lg">
+                    <DollarSign className="h-5 w-5 text-primary" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold">{formatCurrency(execSummary?.today || 0)}</p>
+                    <p className="text-sm text-muted-foreground">Today ({dateLabels.today})</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-emerald-500/10 rounded-lg">
+                    <Calendar className="h-5 w-5 text-emerald-500" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold">{formatCurrency(execSummary?.yesterday || 0)}</p>
+                    <p className="text-sm text-muted-foreground">Yesterday ({dateLabels.yesterday})</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-purple-500/10 rounded-lg">
+                    <CalendarDays className="h-5 w-5 text-purple-500" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold">{formatCurrency(execSummary?.this_week || 0)}</p>
+                    <p className="text-sm text-muted-foreground">Last 7D ({dateLabels.last7d})</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-orange-500/10 rounded-lg">
+                    <CalendarRange className="h-5 w-5 text-orange-500" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold">{formatCurrency(execSummary?.mtd || 0)}</p>
+                    <p className="text-sm text-muted-foreground">MTD ({dateLabels.mtd})</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </>
+        )}
       </div>
 
       {/* Costs by Cloud Provider */}

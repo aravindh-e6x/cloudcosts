@@ -105,7 +105,8 @@ export declare const AlertDialogTitle: React_2.ForwardRefExoticComponent<Omit<Al
 
 export declare const AlertDialogTrigger: React_2.ForwardRefExoticComponent<AlertDialogPrimitive.AlertDialogTriggerProps & React_2.RefAttributes<HTMLButtonElement>>;
 
-export declare interface AlertProps extends React_2.HTMLAttributes<HTMLDivElement>, VariantProps<typeof alertVariants> {
+export declare interface AlertProps extends React_2.HTMLAttributes<HTMLDivElement> {
+    variant?: "default" | "info" | "success" | "warning" | "destructive" | null;
     /** Icon to display. If not provided, uses the default icon for the variant */
     icon?: React_2.ReactNode;
     /** Whether to show the default icon for the variant */
@@ -164,7 +165,8 @@ export declare const AvatarImage: React_2.ForwardRefExoticComponent<Omit<AvatarP
 
 export declare function Badge({ className, variant, ...props }: BadgeProps): JSX.Element;
 
-export declare interface BadgeProps extends React_2.HTMLAttributes<HTMLDivElement>, VariantProps<typeof badgeVariants> {
+export declare interface BadgeProps extends React_2.HTMLAttributes<HTMLDivElement> {
+    variant?: "default" | "secondary" | "destructive" | "outline" | "success" | "warning" | "info" | null;
 }
 
 export declare const badgeVariants: (props?: ({
@@ -239,8 +241,10 @@ export declare interface BreadcrumbProps extends React_2.HTMLAttributes<HTMLElem
 
 export declare const Button: React_2.ForwardRefExoticComponent<ButtonProps & React_2.RefAttributes<HTMLButtonElement>>;
 
-export declare interface ButtonProps extends React_2.ButtonHTMLAttributes<HTMLButtonElement>, VariantProps<typeof buttonVariants> {
+export declare interface ButtonProps extends React_2.ButtonHTMLAttributes<HTMLButtonElement> {
     asChild?: boolean;
+    variant?: "default" | "destructive" | "outline" | "secondary" | "ghost" | "link" | null;
+    size?: "default" | "sm" | "lg" | "icon" | null;
 }
 
 export declare const buttonVariants: (props?: ({
@@ -726,8 +730,10 @@ export declare interface FormFieldProps {
 
 export declare const IconButton: React_2.ForwardRefExoticComponent<IconButtonProps & React_2.RefAttributes<HTMLButtonElement>>;
 
-export declare interface IconButtonProps extends React_2.ButtonHTMLAttributes<HTMLButtonElement>, VariantProps<typeof iconButtonVariants> {
+export declare interface IconButtonProps extends React_2.ButtonHTMLAttributes<HTMLButtonElement> {
     asChild?: boolean;
+    variant?: "default" | "destructive" | "outline" | "secondary" | "ghost" | "link" | null;
+    size?: "default" | "sm" | "lg" | "xs" | null;
 }
 
 export declare const iconButtonVariants: (props?: ({
@@ -740,7 +746,7 @@ export declare const Input: React_2.ForwardRefExoticComponent<InputProps & React
 export declare interface InputProps extends React_2.InputHTMLAttributes<HTMLInputElement> {
 }
 
-export declare const Label: React_2.ForwardRefExoticComponent<Omit<LabelPrimitive.LabelProps & React_2.RefAttributes<HTMLLabelElement>, "ref"> & VariantProps<(props?: ClassProp | undefined) => string> & React_2.RefAttributes<HTMLLabelElement>>;
+export declare const Label: React_2.ForwardRefExoticComponent<Omit<LabelPrimitive.LabelProps & React_2.RefAttributes<HTMLLabelElement>, "ref"> & React_2.RefAttributes<HTMLLabelElement>>;
 
 export { Legend }
 
@@ -1130,7 +1136,8 @@ export declare interface StatCardProps extends React_2.HTMLAttributes<HTMLDivEle
 
 export declare const StatusBadge: React_2.ForwardRefExoticComponent<StatusBadgeProps & React_2.RefAttributes<HTMLSpanElement>>;
 
-export declare interface StatusBadgeProps extends React_2.HTMLAttributes<HTMLSpanElement>, VariantProps<typeof statusBadgeVariants> {
+export declare interface StatusBadgeProps extends React_2.HTMLAttributes<HTMLSpanElement> {
+    status?: "active" | "disabled" | "accepted" | "pending" | "suspended" | "error" | "warning" | null;
     showDot?: boolean;
 }
 
@@ -1202,9 +1209,9 @@ export declare const Textarea: React_2.ForwardRefExoticComponent<TextareaProps &
 export declare interface TextareaProps extends React_2.TextareaHTMLAttributes<HTMLTextAreaElement> {
 }
 
-export declare const Toast: React_2.ForwardRefExoticComponent<Omit<ToastPrimitives.ToastProps & React_2.RefAttributes<HTMLLIElement>, "ref"> & VariantProps<(props?: ({
-    variant?: "default" | "destructive" | "success" | null | undefined;
-} & ClassProp) | undefined) => string> & React_2.RefAttributes<HTMLLIElement>>;
+export declare const Toast: React_2.ForwardRefExoticComponent<Omit<ToastPrimitives.ToastProps & React_2.RefAttributes<HTMLLIElement>, "ref"> & {
+    variant?: "default" | "destructive" | "success" | null;
+} & React_2.RefAttributes<HTMLLIElement>>;
 
 export declare function toast({ ...props }: Toast_2): {
     id: string;

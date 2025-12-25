@@ -16810,13 +16810,13 @@ SELECT * FROM table_name`,
               onClick: X,
               disabled: P || S || !I.trim(),
               className: T(
-                "flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded transition-colors",
-                "bg-brand-primary text-white hover:bg-brand-primary/90",
+                "flex items-center gap-1.5 px-4 py-1.5 text-xs font-semibold rounded transition-colors",
+                "bg-brand-primary text-brand-primary-foreground hover:bg-brand-primary/90",
                 "disabled:opacity-50 disabled:cursor-not-allowed"
               ),
               title: "Run Query (Ctrl+Enter)",
               children: [
-                /* @__PURE__ */ y(oB, { className: "w-3 h-3" }),
+                /* @__PURE__ */ y(oB, { className: "w-3.5 h-3.5" }),
                 "Run"
               ]
             }

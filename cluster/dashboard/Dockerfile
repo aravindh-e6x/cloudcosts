@@ -20,6 +20,10 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/laminar-ui ./laminar-ui
 COPY . .
+# Restore the modified package.json (sed'd version points to ./laminar-ui)
+COPY --from=deps /app/package.json ./package.json
+# Copy laminar-ui to node_modules (symlinks don't work well with TypeScript)
+RUN rm -rf node_modules/laminar-ui && cp -r laminar-ui node_modules/laminar-ui
 
 ENV NEXT_TELEMETRY_DISABLED=1
 
