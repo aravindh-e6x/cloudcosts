@@ -7,7 +7,7 @@ import {
   SidebarSection,
   SidebarNestedItem,
 } from "laminar-ui"
-import { LayoutDashboard, Server, Boxes, ExternalLink, CloudCog, Database, Grid, Network } from "lucide-react"
+import { LayoutDashboard, Server, Boxes, ExternalLink, CloudCog, Database, Grid, Network, Cloud } from "lucide-react"
 import { TimeRangePicker } from "@/components"
 import { useDate } from "@/components/providers"
 
@@ -35,6 +35,7 @@ const navigation: NavSection[] = [
     items: [
       { name: "Kubernetes", href: "/kubernetes", icon: <Server className="h-4 w-4" /> },
       { name: "E6 Clusters", href: "/e6", icon: <Boxes className="h-4 w-4" /> },
+      { name: "AWS", href: "/aws", icon: <Cloud className="h-4 w-4" /> },
     ]
   },
   {
