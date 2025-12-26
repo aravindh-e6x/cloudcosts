@@ -15,6 +15,8 @@ spec:
       app.kubernetes.io/component: dashboard
   template:
     metadata:
+      annotations:
+        rollme: {{ randAlphaNum 5 | quote }}
       labels:
         {{- include "monitoring-stack.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: dashboard
@@ -30,8 +32,8 @@ spec:
       {{- end }}
       containers:
         - name: dashboard
-          image: "{{ .Values.global.imageRegistry }}/dashboard:{{ .Values.dashboard.image.tag }}"
-          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          image: "{{ .Values.dashboard.image.repository }}:{{ .Values.dashboard.image.tag }}"
+          imagePullPolicy: {{ .Values.dashboard.image.pullPolicy | default "Always" }}
           ports:
             - name: http
               containerPort: 3000
@@ -51,6 +53,10 @@ spec:
               value: {{ .Values.dashboard.auth.password | quote }}
             - name: AUTH_TRUST_HOST
               value: "true"
+            {{- if .Values.dashboard.ingress.enabled }}
+            - name: AUTH_URL
+              value: "http{{ if .Values.dashboard.ingress.tls.enabled }}s{{ end }}://{{ .Values.dashboard.ingress.host }}"
+            {{- end }}
           livenessProbe:
             httpGet:
               path: /

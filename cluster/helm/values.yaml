@@ -1,33 +1,21 @@
-# Monitoring Stack Values
-
-# Global Configuration
 global:
   clusterName: k3s-cloudcosts
-  awsRegion: ${AWS_REGION}
-  awsAccountId: ${AWS_PRIMARY_ACCOUNT_ID}
-
-  # ECR registry prefix for custom images
-  imageRegistry: "${AWS_PRIMARY_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/cloudcosts"
-  imagePullPolicy: Always
   imagePullSecrets:
     - name: ecr-pull-secret
-
-  # GreptimeDB connection (shared across exporters)
   greptimedb:
     url: "http://monitoring-stack-greptimedb-standalone.monitoring.svc:4000"
     username: "${GREPTIMEDB_USERNAME}"
     password: "${GREPTIMEDB_PASSWORD}"
 
-# cert-manager Configuration
 certManager:
   email: ${LETSENCRYPT_EMAIL}
   clusterIssuer:
     enabled: true
 
 cert-manager:
+  enabled: true
   installCRDs: true
 
-# Nginx Ingress Controller
 ingress-nginx:
   controller:
     hostPort:
@@ -35,7 +23,6 @@ ingress-nginx:
     service:
       type: ClusterIP
 
-# GreptimeDB Standalone
 greptimedb-standalone:
   image:
     tag: "v1.0.0-beta.2"
@@ -65,7 +52,6 @@ greptimedb-standalone:
       cpu: 1500m
       memory: 4Gi
 
-# Grafana
 grafana:
   adminUser: ${GRAFANA_ADMIN_USERNAME}
   adminPassword: ${GRAFANA_ADMIN_PASSWORD}
@@ -74,8 +60,6 @@ grafana:
     size: 5Gi
   serviceAccount:
     create: true
-    annotations:
-      eks.amazonaws.com/role-arn: arn:aws:iam::${AWS_PRIMARY_ACCOUNT_ID}:role/grafana-cloudwatch-role
   datasources:
     datasources.yaml:
       apiVersion: 1
@@ -105,12 +89,6 @@ grafana:
           jsonData:
             timeInterval: "1h"
             httpHeaderName1: x-greptime-db-name
-        - name: CloudWatch
-          uid: cloudwatch
-          type: cloudwatch
-          jsonData:
-            authType: default
-            defaultRegion: ${AWS_REGION}
   sidecar:
     dashboards:
       enabled: true
@@ -126,7 +104,6 @@ grafana:
       cpu: 1000m
       memory: 1Gi
 
-# Grafana Ingress
 grafanaIngress:
   enabled: true
   host: ${GRAFANA_INGRESS_HOST}
@@ -134,7 +111,6 @@ grafanaIngress:
     enabled: true
     secretName: grafana-tls
 
-# GreptimeDB Ingress
 greptimeIngress:
   enabled: true
   host: ${GREPTIMEDB_INGRESS_HOST}
@@ -142,43 +118,10 @@ greptimeIngress:
     enabled: true
     secretName: greptimedb-tls
 
-# CloudWatch Exporter (Alloy)
-cloudwatchExporter:
-  enabled: true
-  serviceAccount:
-    roleArn: "arn:aws:iam::${AWS_PRIMARY_ACCOUNT_ID}:role/alloy-cloudwatch-role"
-  accounts:
-    - name: "primary"
-      accountId: "${AWS_PRIMARY_ACCOUNT_ID}"
-      regions: ["${AWS_REGION}"]
-    - name: "perfadmin"
-      accountId: "${CLOUDWATCH_ACCOUNT_PERFADMIN}"
-      regions: ["${AWS_REGION}"]
-      roleArn: "arn:aws:iam::${CLOUDWATCH_ACCOUNT_PERFADMIN}:role/cloudwatch-exporter-role"
-    - name: "preprod"
-      accountId: "${CLOUDWATCH_ACCOUNT_PREPROD}"
-      regions: ["${AWS_REGION}"]
-      roleArn: "arn:aws:iam::${CLOUDWATCH_ACCOUNT_PREPROD}:role/cloudwatch-exporter-role"
-    - name: "serverless_prod"
-      accountId: "${CLOUDWATCH_ACCOUNT_SERVERLESS_PROD}"
-      regions: ["${AWS_REGION}"]
-      roleArn: "arn:aws:iam::${CLOUDWATCH_ACCOUNT_SERVERLESS_PROD}:role/cloudwatch-exporter-role"
-    - name: "serverless_beta"
-      accountId: "${CLOUDWATCH_ACCOUNT_SERVERLESS_BETA}"
-      regions: ["${AWS_REGION}"]
-      roleArn: "arn:aws:iam::${CLOUDWATCH_ACCOUNT_SERVERLESS_BETA}:role/cloudwatch-exporter-role"
-  resources:
-    requests:
-      cpu: 100m
-      memory: 256Mi
-    limits:
-      cpu: 500m
-      memory: 512Mi
-
-# Vantage Exporter
 vantageExporter:
   enabled: true
   image:
+    repository: "${AWS_PRIMARY_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/cloudcosts/vantage-exporter"
     tag: "latest"
   apiToken: "${VANTAGE_API_TOKEN}"
   database: "vantage"
@@ -192,10 +135,10 @@ vantageExporter:
       cpu: 200m
       memory: 256Mi
 
-# E6 Metrics Exporter
 e6metricsExporter:
   enabled: true
   image:
+    repository: "${AWS_PRIMARY_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/cloudcosts/e6metrics-exporter"
     tag: "latest"
   grafana:
     url: "${E6METRICS_GRAFANA_URL}"
@@ -234,13 +177,13 @@ e6metricsExporter:
       cpu: 200m
       memory: 256Mi
 
-# E6 Mock Exporter
 e6mockExporter:
-  enabled: false
+  enabled: true
   image:
+    repository: "${AWS_PRIMARY_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/cloudcosts/e6mock-exporter"
     tag: "latest"
   database: "e6_mock"
-  scrapeInterval: "60"
+  scrapeInterval: 300
   resources:
     requests:
       cpu: 50m
@@ -249,10 +192,10 @@ e6mockExporter:
       cpu: 200m
       memory: 256Mi
 
-# Dashboard
 dashboard:
   enabled: true
   image:
+    repository: "${AWS_PRIMARY_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/cloudcosts/dashboard"
     tag: "latest"
   auth:
     secret: "${DASHBOARD_AUTH_SECRET}"
@@ -272,7 +215,6 @@ dashboard:
       cpu: 500m
       memory: 512Mi
 
-# Grafana Dashboards (ConfigMaps)
 grafanaDashboards:
   vantage:
     enabled: true

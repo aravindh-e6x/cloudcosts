@@ -1,0 +1,54 @@
+version: '3'
+
+dotenv: ['.env']
+
+vars:
+  CLUSTER_NAME: cloudcosts
+  NAMESPACE: monitoring
+  RELEASE_NAME: monitoring-stack
+
+tasks:
+  up:
+    desc: Create k3d cluster, build images, and install helm chart
+    cmds:
+      - k3d cluster create --config k3d.yaml
+      - task: kubeconfig
+      - docker build -t cloudcosts/dashboard:latest ../dashboard
+      - docker build -t cloudcosts/e6mock-exporter:latest ../e6mock-exporter
+      - docker build -t cloudcosts/vantage-exporter:latest ../vantage-exporter
+      - k3d image import cloudcosts/dashboard:latest cloudcosts/e6mock-exporter:latest cloudcosts/vantage-exporter:latest -c {{.CLUSTER_NAME}}
+      - helm dependency update
+      - kubectl create namespace {{.NAMESPACE}} --dry-run=client -o yaml | kubectl apply -f -
+      - envsubst < values-k3d.yaml | helm install {{.RELEASE_NAME}} . -n {{.NAMESPACE}} -f -
+
+  down:
+    desc: Delete k3d cluster
+    cmds:
+      - k3d cluster delete {{.CLUSTER_NAME}}
+
+  upgrade:
+    desc: Build images and upgrade helm chart
+    cmds:
+      - task: build
+      - helm dependency update
+      - envsubst < values-k3d.yaml | helm upgrade {{.RELEASE_NAME}} . -n {{.NAMESPACE}} -f -
+
+  kubeconfig:
+    desc: Set kubectl context to this cluster
+    cmds:
+      - kubectl config use-context k3d-{{.CLUSTER_NAME}}
+
+  build:
+    desc: Build and load images into k3d
+    cmds:
+      - docker build -t cloudcosts/dashboard:latest ../dashboard
+      - docker build -t cloudcosts/e6mock-exporter:latest ../e6mock-exporter
+      - docker build -t cloudcosts/vantage-exporter:latest ../vantage-exporter
+      - k3d image import cloudcosts/dashboard:latest cloudcosts/e6mock-exporter:latest cloudcosts/vantage-exporter:latest -c {{.CLUSTER_NAME}}
+
+  reset-db:
+    desc: Reset GreptimeDB (delete data and recreate)
+    cmds:
+      - kubectl delete statefulset {{.RELEASE_NAME}}-greptimedb-standalone -n {{.NAMESPACE}} --ignore-not-found
+      - kubectl delete pvc -l app.kubernetes.io/name=greptimedb-standalone -n {{.NAMESPACE}} --ignore-not-found
+      - task: upgrade

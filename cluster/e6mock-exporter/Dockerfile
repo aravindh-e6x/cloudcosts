@@ -5,7 +5,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY exporter.py .
+COPY --chmod=644 exporter.py .
 
 ENV GREPTIMEDB_URL=https://greptimedb.cloudcosts.in
 ENV GREPTIMEDB_USERNAME=e6data

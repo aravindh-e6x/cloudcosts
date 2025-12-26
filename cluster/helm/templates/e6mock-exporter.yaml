@@ -15,6 +15,8 @@ spec:
       app.kubernetes.io/component: e6mock-exporter
   template:
     metadata:
+      annotations:
+        rollme: {{ randAlphaNum 5 | quote }}
       labels:
         {{- include "monitoring-stack.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: e6mock-exporter
@@ -28,8 +30,8 @@ spec:
       {{- end }}
       containers:
         - name: e6mock-exporter
-          image: "{{ .Values.global.imageRegistry }}/e6mock-exporter:{{ .Values.e6mockExporter.image.tag }}"
-          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          image: "{{ .Values.e6mockExporter.image.repository }}:{{ .Values.e6mockExporter.image.tag }}"
+          imagePullPolicy: {{ .Values.e6mockExporter.image.pullPolicy | default "Always" }}
           env:
             - name: GREPTIMEDB_URL
               value: {{ .Values.global.greptimedb.url | quote }}

@@ -102,7 +102,7 @@ CLUSTER_METRICS = [
     'e6data_component_replicas_desired',
 ]
 
-COMPONENTS = ['engine', 'executor', 'gateway', 'schema', 'storage', 'queue']
+COMPONENTS = ['executor', 'gateway', 'schema', 'storage', 'queue', 'planner']
 NODES = ['node-1', 'node-2', 'node-3']
 
 
@@ -121,11 +121,16 @@ class GreptimeDBClient:
         resp = self.session.post(url, data={'sql': sql}, timeout=30)
         return resp.json()
 
-    def create_database(self, database: str):
+    def create_database(self, database: str) -> bool:
         """Create database if not exists."""
-        self.execute_sql("public", f"CREATE DATABASE IF NOT EXISTS {database}")
+        result = self.execute_sql("public", f"CREATE DATABASE IF NOT EXISTS {database}")
+        if result.get('error'):
+            logger.error(f"Failed to create database '{database}': {result.get('error')}")
+            return False
+        logger.info(f"Database '{database}' created or already exists")
+        return True
 
-    def create_metrics_tables(self, database: str):
+    def create_metrics_tables(self, database: str) -> bool:
         """Create required tables for e6 metrics."""
         tables = [
             """
@@ -220,11 +225,19 @@ class GreptimeDBClient:
             """
         ]
 
-        self.create_database(database)
+        if not self.create_database(database):
+            return False
+
+        success = True
         for table_sql in tables:
             result = self.execute_sql(database, table_sql)
             if result.get('error'):
-                logger.warning(f"Table creation warning: {result.get('error')}")
+                logger.error(f"Table creation failed: {result.get('error')}")
+                success = False
+            else:
+                table_name = table_sql.split('IF NOT EXISTS')[1].split('(')[0].strip()
+                logger.info(f"Table '{table_name}' created or already exists")
+        return success
 
     def insert_rows(self, database: str, table: str, columns: list, rows: list) -> bool:
         """Insert multiple rows into a table."""
@@ -259,7 +272,21 @@ class GreptimeDBClient:
 def generate_metric_value(metric_name: str, base_value: float = None) -> float:
     """Generate a realistic metric value based on metric type."""
     if base_value is None:
-        if 'Uptime' in metric_name:
+        if metric_name == 'e6data_container_spec_cpu_quota':
+            base_value = random.choice([200000, 400000, 800000, 1600000])  # 2, 4, 8, 16 cores
+        elif metric_name == 'e6data_container_spec_cpu_period':
+            base_value = 100000  # Always 100ms (standard)
+        elif metric_name == 'e6data_container_requests':
+            base_value = random.uniform(2e9, 16e9)  # 2GB - 16GB memory request
+        elif metric_name == 'e6data_container_memory_usage_bytes':
+            base_value = random.uniform(1e9, 12e9)  # 1GB - 12GB memory usage
+        elif metric_name == 'e6data_container_memory_working_set_bytes':
+            base_value = random.uniform(0.5e9, 10e9)  # 0.5GB - 10GB working set
+        elif metric_name == 'e6data_container_cpu_usage_seconds_total':
+            base_value = random.uniform(1000, 100000)  # CPU seconds
+        elif metric_name == 'e6data_container_restart_count':
+            base_value = random.choice([0, 0, 0, 0, 1, 2])  # Mostly 0, sometimes restarts
+        elif 'Uptime' in metric_name:
             base_value = random.uniform(86400, 864000)  # 1-10 days in seconds
         elif 'Percent' in metric_name or 'Ratio' in metric_name:
             base_value = random.uniform(0, 100)
@@ -274,7 +301,9 @@ def generate_metric_value(metric_name: str, base_value: float = None) -> float:
         else:
             base_value = random.uniform(0, 1000)
 
-    # Add some random variation (±10%)
+    # Add some random variation (±10%) - but not for period which should be fixed
+    if metric_name == 'e6data_container_spec_cpu_period':
+        return base_value
     variation = base_value * random.uniform(-0.1, 0.1)
     return round(max(0, base_value + variation), 4)
 
@@ -496,14 +525,29 @@ def main():
         password=greptimedb_password
     )
 
-    # Create database and tables
-    logger.info(f"Creating database '{database}' and tables...")
-    greptimedb.create_metrics_tables(database)
-
     logger.info(f"Configured {len(MOCK_CLUSTERS)} mock cluster(s): {[c['name'] for c in MOCK_CLUSTERS]}")
     logger.info(f"Scrape interval: {scrape_interval}s")
 
+    tables_created = False
+    retry_count = 0
+    max_retries = 10
+
     while True:
+        # Ensure tables exist before inserting
+        if not tables_created:
+            logger.info(f"Creating database '{database}' and tables (attempt {retry_count + 1}/{max_retries})...")
+            tables_created = greptimedb.create_metrics_tables(database)
+            if not tables_created:
+                retry_count += 1
+                if retry_count >= max_retries:
+                    logger.error(f"Failed to create tables after {max_retries} attempts. Will keep retrying...")
+                    retry_count = 0
+                wait_time = min(30, 5 * retry_count)
+                logger.info(f"Waiting {wait_time}s before retrying...")
+                time.sleep(wait_time)
+                continue
+            logger.info("Tables created successfully")
+
         try:
             start_time = time.time()
             total_records = generate_all_metrics(greptimedb, database)
@@ -511,6 +555,8 @@ def main():
             logger.info(f"Mock metrics generation complete. Records: {total_records}, Duration: {duration:.2f}s")
         except Exception as e:
             logger.error(f"Error generating mock metrics: {e}")
+            # Reset tables_created flag to retry table creation
+            tables_created = False
 
         logger.info(f"Sleeping for {scrape_interval}s...")
         time.sleep(scrape_interval)

@@ -48,8 +48,8 @@ spec:
       {{- end }}
       containers:
         - name: e6metrics-exporter
-          image: "{{ .Values.global.imageRegistry }}/e6metrics-exporter:{{ .Values.e6metricsExporter.image.tag }}"
-          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          image: "{{ .Values.e6metricsExporter.image.repository }}:{{ .Values.e6metricsExporter.image.tag }}"
+          imagePullPolicy: {{ .Values.e6metricsExporter.image.pullPolicy | default "Always" }}
           env:
             - name: CONFIG_PATH
               value: /config/config.yaml

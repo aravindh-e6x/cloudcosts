@@ -38,8 +38,8 @@ spec:
       {{- end }}
       containers:
         - name: vantage-exporter
-          image: "{{ .Values.global.imageRegistry }}/vantage-exporter:{{ .Values.vantageExporter.image.tag }}"
-          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          image: "{{ .Values.vantageExporter.image.repository }}:{{ .Values.vantageExporter.image.tag }}"
+          imagePullPolicy: {{ .Values.vantageExporter.image.pullPolicy | default "Always" }}
           env:
             - name: VANTAGE_API_TOKEN
               valueFrom:
