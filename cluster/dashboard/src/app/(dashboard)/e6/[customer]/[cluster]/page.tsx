@@ -22,7 +22,7 @@ import {
   RechartsTooltip,
   Legend,
 } from "laminar-ui"
-import { Server, ChevronLeft, Box } from "lucide-react"
+import { Server, ChevronLeft, Box, DollarSign } from "lucide-react"
 import { DateBanner, DataHealthIndicator } from "@/components"
 import { useDate } from "@/components/providers"
 import { useQuery } from "@/hooks/useQuery"
@@ -64,11 +64,30 @@ interface ComponentSummary {
   memoryUsage: number
   restarts: number
   nodes: string[]
+  cost: number
   [key: string]: unknown
+}
+
+interface NodeCostRow {
+  node: string
+  cpu_cost: number
+  ram_cost: number
+  total_cost: number
 }
 
 interface DataHealthRow {
   last_data: string
+}
+
+interface CostSummaryRow {
+  node_count: number
+  hourly_cost: number
+  total_cost: number
+}
+
+interface CostTimeSeriesRow {
+  time: string
+  hourly_cost: number
 }
 
 function formatTime(ts: string): string {
@@ -183,6 +202,24 @@ function ComponentSummaryTable({ database, clusterName, dateRange }: ComponentSu
     { database, refetchInterval: 60000 }
   )
 
+  // Fetch node cost breakdown from kubernetes database
+  const { data: nodeCostData } = useQuery<NodeCostRow>(
+    "kubernetes",
+    "getNodeCostBreakdown",
+    [clusterName, dateRange],
+    { refetchInterval: 60000 }
+  )
+
+  // Create a map of node -> cost for easy lookup
+  const nodeCostMap = useMemo<Record<string, number>>(() => {
+    if (!nodeCostData) return {}
+    const map: Record<string, number> = {}
+    nodeCostData.forEach(row => {
+      map[row.node] = row.total_cost || 0
+    })
+    return map
+  }, [nodeCostData])
+
   const componentSummary = useMemo<ComponentSummary[]>(() => {
     if (!summaryData) return []
 
@@ -231,16 +268,36 @@ function ComponentSummaryTable({ database, clusterName, dateRange }: ComponentSu
       }
     }
 
-    return Object.entries(componentMap).map(([comp, data]) => ({
-      component: comp,
-      podCount: data.pods.size,
-      cpuCores: data.cpuPeriod > 0 ? data.cpuQuota / data.cpuPeriod : 0,
-      memoryRequest: data.memoryRequest,
-      memoryUsage: data.memoryUsage,
-      restarts: data.restarts,
-      nodes: Array.from(data.nodes),
-    }))
-  }, [summaryData])
+    // Calculate total CPU cores for cost allocation
+    const totalCpuCores = Object.values(componentMap).reduce((sum, data) => {
+      return sum + (data.cpuPeriod > 0 ? data.cpuQuota / data.cpuPeriod : 0)
+    }, 0)
+
+    return Object.entries(componentMap).map(([comp, data]) => {
+      const cpuCores = data.cpuPeriod > 0 ? data.cpuQuota / data.cpuPeriod : 0
+      // Calculate cost based on node assignment and CPU allocation ratio
+      let componentCost = 0
+      const nodes = Array.from(data.nodes)
+      if (nodes.length > 0 && totalCpuCores > 0) {
+        // Sum up costs from all nodes this component runs on, weighted by CPU ratio
+        nodes.forEach(node => {
+          const nodeCost = nodeCostMap[node] || 0
+          componentCost += nodeCost * (cpuCores / totalCpuCores)
+        })
+      }
+
+      return {
+        component: comp,
+        podCount: data.pods.size,
+        cpuCores,
+        memoryRequest: data.memoryRequest,
+        memoryUsage: data.memoryUsage,
+        restarts: data.restarts,
+        nodes,
+        cost: componentCost,
+      }
+    })
+  }, [summaryData, nodeCostMap])
 
   const columns = useMemo(() => [
     {
@@ -288,6 +345,18 @@ function ComponentSummaryTable({ database, clusterName, dateRange }: ComponentSu
       render: (value: unknown) => {
         const restarts = Number(value) || 0
         return <Badge variant={restarts > 0 ? "destructive" : "secondary"}>{restarts}</Badge>
+      },
+    },
+    {
+      key: "cost",
+      header: "Est. Cost",
+      render: (value: unknown) => {
+        const cost = Number(value) || 0
+        return (
+          <span className="font-mono text-sm text-green-600 font-medium">
+            ${cost.toFixed(2)}
+          </span>
+        )
       },
     },
     {
@@ -405,6 +474,57 @@ function QueryMetricsChart({ database, clusterName, dateRange }: QueryMetricsCha
   )
 }
 
+interface CostSummaryCardProps {
+  clusterName: string
+  dateRange: { startTs: string; endTs: string }
+}
+
+function CostSummaryCard({ clusterName, dateRange }: CostSummaryCardProps) {
+  const { data: costData } = useQuery<CostSummaryRow>(
+    "kubernetes",
+    "getClusterCostSummary",
+    [clusterName, dateRange],
+    { refetchInterval: 60000 }
+  )
+
+  const summary = costData?.[0]
+  const totalCost = summary?.total_cost ?? 0
+  const hourlyCost = summary?.hourly_cost ?? 0
+  const nodeCount = summary?.node_count ?? 0
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <div className="flex items-center gap-2">
+          <div className="p-2 bg-green-500/10 rounded-lg">
+            <DollarSign className="h-5 w-5 text-green-500" />
+          </div>
+          <div>
+            <CardTitle className="text-lg">Cluster Cost (OpenCost)</CardTitle>
+            <CardDescription>Real infrastructure cost from OpenCost</CardDescription>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-3 gap-4">
+          <div>
+            <p className="text-sm text-muted-foreground">Total Cost</p>
+            <p className="text-2xl font-bold text-green-600">${totalCost.toFixed(2)}</p>
+          </div>
+          <div>
+            <p className="text-sm text-muted-foreground">Hourly Rate</p>
+            <p className="text-2xl font-bold">${hourlyCost.toFixed(4)}/hr</p>
+          </div>
+          <div>
+            <p className="text-sm text-muted-foreground">Nodes</p>
+            <p className="text-2xl font-bold">{nodeCount}</p>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
 interface DualAxisChartProps {
   title: string
   data: ChartDataPoint[]
@@ -471,6 +591,7 @@ interface ContainerMetricsChartsProps {
 }
 
 function ContainerMetricsCharts({ database, clusterName, dateRange }: ContainerMetricsChartsProps) {
+  // Fetch E6 container metrics
   const { data: containerData } = useQuery<TimeSeriesPoint>(
     "e6",
     "getContainerMetrics",
@@ -478,27 +599,54 @@ function ContainerMetricsCharts({ database, clusterName, dateRange }: ContainerM
     { database, refetchInterval: 60000 }
   )
 
+  // Fetch actual cost time series from OpenCost (kubernetes database)
+  const { data: costData } = useQuery<CostTimeSeriesRow>(
+    "kubernetes",
+    "getClusterCostTimeSeries",
+    [clusterName, dateRange],
+    { refetchInterval: 60000 }
+  )
+
+  // Create a map of time -> cost for easy lookup
+  const costByTime = useMemo<Record<string, number>>(() => {
+    if (!costData) return {}
+    const map: Record<string, number> = {}
+    costData.forEach(row => {
+      const timeKey = formatTime(row.time)
+      map[timeKey] = row.hourly_cost || 0
+    })
+    return map
+  }, [costData])
+
   const cpuData = useMemo<ChartDataPoint[]>(() => {
     if (!containerData) return []
     const byTime: Record<string, ChartDataPoint> = {}
     containerData.forEach(point => {
-      if (!byTime[point.ts]) byTime[point.ts] = { time: formatTime(point.ts), cpu: 0, cost: 0 }
-      if (point.metric_name.includes('cpu')) byTime[point.ts].cpu = (byTime[point.ts].cpu || 0) + point.metric_value
+      const timeKey = formatTime(point.ts)
+      if (!byTime[timeKey]) byTime[timeKey] = { time: timeKey, cpu: 0, cost: 0 }
+      if (point.metric_name.includes('cpu')) byTime[timeKey].cpu = (byTime[timeKey].cpu || 0) + point.metric_value
     })
-    Object.values(byTime).forEach(p => { p.cost = (p.cpu || 0) * 0.00001 })
+    // Use real cost data from OpenCost
+    Object.keys(byTime).forEach(time => {
+      byTime[time].cost = costByTime[time] || 0
+    })
     return Object.values(byTime).sort((a, b) => a.time.localeCompare(b.time))
-  }, [containerData])
+  }, [containerData, costByTime])
 
   const memoryData = useMemo<ChartDataPoint[]>(() => {
     if (!containerData) return []
     const byTime: Record<string, ChartDataPoint> = {}
     containerData.forEach(point => {
-      if (!byTime[point.ts]) byTime[point.ts] = { time: formatTime(point.ts), memory: 0, cost: 0 }
-      if (point.metric_name.includes('memory')) byTime[point.ts].memory = (byTime[point.ts].memory || 0) + point.metric_value
+      const timeKey = formatTime(point.ts)
+      if (!byTime[timeKey]) byTime[timeKey] = { time: timeKey, memory: 0, cost: 0 }
+      if (point.metric_name.includes('memory')) byTime[timeKey].memory = (byTime[timeKey].memory || 0) + point.metric_value
     })
-    Object.values(byTime).forEach(p => { p.cost = (p.memory || 0) / (1024 * 1024 * 1024) * 0.01 })
+    // Use real cost data from OpenCost
+    Object.keys(byTime).forEach(time => {
+      byTime[time].cost = costByTime[time] || 0
+    })
     return Object.values(byTime).sort((a, b) => a.time.localeCompare(b.time))
-  }, [containerData])
+  }, [containerData, costByTime])
 
   return (
     <>
@@ -525,33 +673,60 @@ function GenericMetricsCharts({ database, clusterName, dateRange, queryName, com
     { database, refetchInterval: 60000 }
   )
 
+  // Fetch actual cost time series from OpenCost (kubernetes database)
+  const { data: costData } = useQuery<CostTimeSeriesRow>(
+    "kubernetes",
+    "getClusterCostTimeSeries",
+    [clusterName, dateRange],
+    { refetchInterval: 60000 }
+  )
+
+  // Create a map of time -> cost for easy lookup
+  const costByTime = useMemo<Record<string, number>>(() => {
+    if (!costData) return {}
+    const map: Record<string, number> = {}
+    costData.forEach(row => {
+      const timeKey = formatTime(row.time)
+      map[timeKey] = row.hourly_cost || 0
+    })
+    return map
+  }, [costData])
+
   const cpuData = useMemo<ChartDataPoint[]>(() => {
     if (!data) return []
     const byTime: Record<string, ChartDataPoint> = {}
     data.forEach(point => {
       if (componentFilter && !point.metric_name.toLowerCase().includes(componentFilter.toLowerCase())) return
-      if (!byTime[point.ts]) byTime[point.ts] = { time: formatTime(point.ts), cpu: 0, cost: 0 }
+      const timeKey = formatTime(point.ts)
+      if (!byTime[timeKey]) byTime[timeKey] = { time: timeKey, cpu: 0, cost: 0 }
       if (point.metric_name.includes('cpu') || point.metric_name.includes('CPU') || point.metric_name.includes('Thread') || point.metric_name.includes('Uptime')) {
-        byTime[point.ts].cpu = (byTime[point.ts].cpu || 0) + point.metric_value
+        byTime[timeKey].cpu = (byTime[timeKey].cpu || 0) + point.metric_value
       }
     })
-    Object.values(byTime).forEach(p => { p.cost = (p.cpu || 0) * 0.00001 })
+    // Use real cost data from OpenCost
+    Object.keys(byTime).forEach(time => {
+      byTime[time].cost = costByTime[time] || 0
+    })
     return Object.values(byTime).sort((a, b) => a.time.localeCompare(b.time))
-  }, [data, componentFilter])
+  }, [data, componentFilter, costByTime])
 
   const memoryData = useMemo<ChartDataPoint[]>(() => {
     if (!data) return []
     const byTime: Record<string, ChartDataPoint> = {}
     data.forEach(point => {
       if (componentFilter && !point.metric_name.toLowerCase().includes(componentFilter.toLowerCase())) return
-      if (!byTime[point.ts]) byTime[point.ts] = { time: formatTime(point.ts), memory: 0, cost: 0 }
+      const timeKey = formatTime(point.ts)
+      if (!byTime[timeKey]) byTime[timeKey] = { time: timeKey, memory: 0, cost: 0 }
       if (point.metric_name.includes('Memory') || point.metric_name.includes('memory') || point.metric_name.includes('Heap') || point.metric_name.includes('Cache') || point.metric_name.includes('Size')) {
-        byTime[point.ts].memory = (byTime[point.ts].memory || 0) + point.metric_value
+        byTime[timeKey].memory = (byTime[timeKey].memory || 0) + point.metric_value
       }
     })
-    Object.values(byTime).forEach(p => { p.cost = (p.memory || 0) * 0.00000001 })
+    // Use real cost data from OpenCost
+    Object.keys(byTime).forEach(time => {
+      byTime[time].cost = costByTime[time] || 0
+    })
     return Object.values(byTime).sort((a, b) => a.time.localeCompare(b.time))
-  }, [data, componentFilter])
+  }, [data, componentFilter, costByTime])
 
   return (
     <>
@@ -636,6 +811,7 @@ export default function ClusterDetailPage() {
               <div className="space-y-6">
                 <DateBanner />
                 <PageHeader database={database} clusterName={clusterName} lastDataTimestamp={lastDataTimestamp} />
+                <CostSummaryCard clusterName={clusterName} dateRange={dateRange} />
                 <ComponentSummaryTable database={database} clusterName={clusterName} dateRange={dateRange} />
                 <QueryMetricsChart database={database} clusterName={clusterName} dateRange={dateRange} />
                 <MetricsChartsGrid database={database} clusterName={clusterName} dateRange={dateRange} />

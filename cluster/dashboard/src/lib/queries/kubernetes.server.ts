@@ -574,3 +574,133 @@ export function getGlobalDataHealth(): string {
   logQuery('kubernetes', 'getGlobalDataHealth', {}, sql)
   return sql
 }
+
+/**
+ * Get cluster cost summary for E6 cluster page
+ * Returns total hourly cost and breakdown by node
+ */
+export function getClusterCostSummary(cluster: string, { startTs, endTs }: DateRange): string {
+  const sql = `
+    WITH hours_in_range AS (
+      SELECT EXTRACT(EPOCH FROM ('${endTs}'::timestamp - '${startTs}'::timestamp)) / 3600 as hours
+    ),
+    node_costs AS (
+      SELECT node, AVG(greptime_value) as avg_hourly_rate
+      FROM node_total_hourly_cost
+      WHERE cluster = '${cluster}'
+        AND greptime_timestamp >= '${startTs}'::timestamp
+        AND greptime_timestamp < '${endTs}'::timestamp
+      GROUP BY node
+    )
+    SELECT
+      COUNT(DISTINCT node) as node_count,
+      SUM(avg_hourly_rate) as hourly_cost,
+      SUM(avg_hourly_rate) * (SELECT hours FROM hours_in_range) as total_cost
+    FROM node_costs
+  `
+  logQuery('kubernetes', 'getClusterCostSummary', { cluster, startTs, endTs }, sql)
+  return sql
+}
+
+/**
+ * Get cost time series for a cluster (hourly)
+ */
+export function getClusterCostTimeSeries(cluster: string, { startTs, endTs }: DateRange): string {
+  const sql = `
+    SELECT
+      DATE_TRUNC('hour', greptime_timestamp) as time,
+      SUM(greptime_value) as hourly_cost
+    FROM node_total_hourly_cost
+    WHERE cluster = '${cluster}'
+      AND greptime_timestamp >= '${startTs}'::timestamp
+      AND greptime_timestamp < '${endTs}'::timestamp
+    GROUP BY 1
+    ORDER BY time
+  `
+  logQuery('kubernetes', 'getClusterCostTimeSeries', { cluster, startTs, endTs }, sql)
+  return sql
+}
+
+/**
+ * Get CPU cost time series for a cluster (from OpenCost container costs)
+ */
+export function getContainerCpuCostTimeSeries(cluster: string, { startTs, endTs }: DateRange): string {
+  const sql = `
+    SELECT
+      DATE_TRUNC('hour', greptime_timestamp) as time,
+      SUM(greptime_value) as cpu_cost
+    FROM opencost_pod_container_cpu_cost_hourly
+    WHERE cluster = '${cluster}'
+      AND greptime_timestamp >= '${startTs}'::timestamp
+      AND greptime_timestamp < '${endTs}'::timestamp
+    GROUP BY 1
+    ORDER BY time
+  `
+  logQuery('kubernetes', 'getContainerCpuCostTimeSeries', { cluster, startTs, endTs }, sql)
+  return sql
+}
+
+/**
+ * Get memory cost time series for a cluster (from OpenCost container costs)
+ */
+export function getContainerMemoryCostTimeSeries(cluster: string, { startTs, endTs }: DateRange): string {
+  const sql = `
+    SELECT
+      DATE_TRUNC('hour', greptime_timestamp) as time,
+      SUM(greptime_value) as memory_cost
+    FROM opencost_pod_container_memory_cost_hourly
+    WHERE cluster = '${cluster}'
+      AND greptime_timestamp >= '${startTs}'::timestamp
+      AND greptime_timestamp < '${endTs}'::timestamp
+    GROUP BY 1
+    ORDER BY time
+  `
+  logQuery('kubernetes', 'getContainerMemoryCostTimeSeries', { cluster, startTs, endTs }, sql)
+  return sql
+}
+
+/**
+ * Get node cost breakdown for a cluster
+ */
+export function getNodeCostBreakdown(cluster: string, { startTs, endTs }: DateRange): string {
+  const sql = `
+    WITH hours_in_range AS (
+      SELECT EXTRACT(EPOCH FROM ('${endTs}'::timestamp - '${startTs}'::timestamp)) / 3600 as hours
+    ),
+    cpu_costs AS (
+      SELECT node, AVG(greptime_value) as avg_cpu_hourly
+      FROM node_cpu_hourly_cost
+      WHERE cluster = '${cluster}'
+        AND greptime_timestamp >= '${startTs}'::timestamp
+        AND greptime_timestamp < '${endTs}'::timestamp
+      GROUP BY node
+    ),
+    ram_costs AS (
+      SELECT node, AVG(greptime_value) as avg_ram_hourly
+      FROM node_ram_hourly_cost
+      WHERE cluster = '${cluster}'
+        AND greptime_timestamp >= '${startTs}'::timestamp
+        AND greptime_timestamp < '${endTs}'::timestamp
+      GROUP BY node
+    ),
+    total_costs AS (
+      SELECT node, AVG(greptime_value) as avg_total_hourly
+      FROM node_total_hourly_cost
+      WHERE cluster = '${cluster}'
+        AND greptime_timestamp >= '${startTs}'::timestamp
+        AND greptime_timestamp < '${endTs}'::timestamp
+      GROUP BY node
+    )
+    SELECT
+      t.node,
+      COALESCE(c.avg_cpu_hourly, 0) * (SELECT hours FROM hours_in_range) as cpu_cost,
+      COALESCE(r.avg_ram_hourly, 0) * (SELECT hours FROM hours_in_range) as ram_cost,
+      t.avg_total_hourly * (SELECT hours FROM hours_in_range) as total_cost
+    FROM total_costs t
+    LEFT JOIN cpu_costs c ON t.node = c.node
+    LEFT JOIN ram_costs r ON t.node = r.node
+    ORDER BY total_cost DESC
+  `
+  logQuery('kubernetes', 'getNodeCostBreakdown', { cluster, startTs, endTs }, sql)
+  return sql
+}
