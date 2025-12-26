@@ -1,6 +1,6 @@
 "use client"
 
-import { Calendar, Button, Popover, PopoverTrigger, PopoverContent } from "laminar-ui"
+import { Calendar, Button, Popover, PopoverTrigger, PopoverContent } from "e6ds"
 import { Calendar as CalendarIcon, ChevronLeft, ChevronRight } from "lucide-react"
 import { format } from "date-fns"
 

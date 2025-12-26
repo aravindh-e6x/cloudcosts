@@ -1,7 +1,7 @@
 "use client"
 
 import { Component, ReactNode } from "react"
-import { Card, CardContent, Button } from "laminar-ui"
+import { Card, CardContent, Button } from "e6ds"
 import { AlertCircle, RefreshCw } from "lucide-react"
 
 interface Props {

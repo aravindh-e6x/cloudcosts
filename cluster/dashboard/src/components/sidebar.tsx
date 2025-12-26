@@ -6,7 +6,7 @@ import {
   Sidebar as LaminarSidebar,
   SidebarSection,
   SidebarNestedItem,
-} from "laminar-ui"
+} from "e6ds"
 import { LayoutDashboard, Server, Boxes, ExternalLink, CloudCog, Database, Grid, Network, Cloud } from "lucide-react"
 import { TimeRangePicker } from "@/components"
 import { useDate } from "@/components/providers"

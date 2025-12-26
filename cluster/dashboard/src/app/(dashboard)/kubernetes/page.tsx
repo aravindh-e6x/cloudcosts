@@ -10,7 +10,7 @@ import {
   CardTitle,
   CardDescription,
   Skeleton,
-} from "laminar-ui"
+} from "e6ds"
 import { InfoPopover, DateBanner, DataHealthIndicator } from "@/components"
 import { useDate } from "@/components/providers"
 import { useQuery, formatBytes, formatCurrency } from "@/hooks/useQuery"

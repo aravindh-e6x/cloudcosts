@@ -1,6 +1,6 @@
 "use client"
 
-import { Card, CardContent, CardHeader, Skeleton } from "laminar-ui"
+import { Card, CardContent, CardHeader, Skeleton } from "e6ds"
 
 export function CardSkeleton({ className = "" }: { className?: string }) {
   return (

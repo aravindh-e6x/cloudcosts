@@ -12,7 +12,7 @@ import {
   BarChart,
   Badge,
   Skeleton,
-} from "laminar-ui"
+} from "e6ds"
 import {
   InfoPopover,
   TableSkeleton,

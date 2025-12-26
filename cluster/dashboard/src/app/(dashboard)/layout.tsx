@@ -1,7 +1,7 @@
 "use client"
 
 import { Sidebar } from "@/components/sidebar"
-import { MainContent, PageContent } from "laminar-ui"
+import { MainContent, PageContent } from "e6ds"
 
 export default function DashboardLayout({
   children,

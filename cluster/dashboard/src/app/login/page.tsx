@@ -3,7 +3,7 @@
 import { useState } from "react"
 import { signIn } from "next-auth/react"
 import { useRouter } from "next/navigation"
-import { Card, CardContent, CardHeader, CardTitle, CardDescription, Button, Input, Label } from "laminar-ui"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, Button, Input, Label } from "e6ds"
 import { CloudCog, Loader2 } from "lucide-react"
 
 export default function LoginPage() {

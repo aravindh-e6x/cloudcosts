@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Badge, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "laminar-ui"
+import { Badge, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "e6ds"
 import { AlertTriangle, CheckCircle2, XCircle, Clock, RefreshCw } from "lucide-react"
 
 interface DataHealthIndicatorProps {

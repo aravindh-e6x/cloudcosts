@@ -11,7 +11,7 @@ import {
   DataTable,
   Badge,
   Skeleton,
-} from "laminar-ui"
+} from "e6ds"
 import { Building2, Server, ChevronRight, Database, HardDrive } from "lucide-react"
 import { DateBanner } from "@/components"
 import { useDate } from "@/components/providers"

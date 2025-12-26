@@ -7,7 +7,7 @@ import {
   PopoverContent,
   Button,
   ScrollArea,
-} from "laminar-ui"
+} from "e6ds"
 
 interface InfoPopoverProps {
   title: string

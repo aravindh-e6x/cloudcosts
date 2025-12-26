@@ -1,10 +1,10 @@
 "use client"
 
 import { useState } from "react"
-import { Card, CardContent, CardHeader, CardTitle, Badge } from "laminar-ui"
+import { Card, CardContent, CardHeader, CardTitle, Badge } from "e6ds"
 import { ChevronDown, ChevronRight } from "lucide-react"
 import { formatCurrency } from "@/hooks/useQuery"
-import { cn } from "laminar-ui"
+import { cn } from "e6ds"
 
 interface ExpandableSectionProps {
   title: string

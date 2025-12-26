@@ -5,25 +5,15 @@ FROM base AS deps
 RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
-# Copy laminar-ui first (it's a local dependency)
-COPY laminar-ui ./laminar-ui
-
 # Copy package files and install
 COPY package.json ./
-# Update the laminar-ui path to be local
-RUN sed -i 's|file:../../ingestion/laminar-frontend/component-library|file:./laminar-ui|g' package.json
 RUN npm install --legacy-peer-deps
 
 # Rebuild the source code only when needed
 FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/laminar-ui ./laminar-ui
 COPY . .
-# Restore the modified package.json (sed'd version points to ./laminar-ui)
-COPY --from=deps /app/package.json ./package.json
-# Copy laminar-ui to node_modules (symlinks don't work well with TypeScript)
-RUN rm -rf node_modules/laminar-ui && cp -r laminar-ui node_modules/laminar-ui
 
 ENV NEXT_TELEMETRY_DISABLED=1
 

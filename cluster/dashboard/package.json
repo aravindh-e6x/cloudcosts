@@ -13,7 +13,7 @@
     "@xyflow/react": "^12.10.0",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
-    "laminar-ui": "file:../../../ingestion/laminar-frontend/component-library",
+    "e6ds": "^0.1.0",
     "lodash-es": "^4.17.22",
     "lucide-react": "^0.561.0",
     "next": "16.0.10",

@@ -13,7 +13,7 @@ import {
   Badge,
   Skeleton,
   Button,
-} from "laminar-ui"
+} from "e6ds"
 import { DateBanner } from "@/components"
 import { useDate } from "@/components/providers"
 import { useQuery } from "@/hooks/useQuery"

@@ -246,6 +246,30 @@ export function getComponentMetricsTimeSeries(clusterName: string, { startTs, en
 }
 
 /**
+ * Get query metrics time series (active, queued, completed, failed queries over time)
+ */
+export function getQueryMetricsTimeSeries(clusterName: string, { startTs, endTs }: DateRange): string {
+  const sql = `
+    SELECT
+      ts,
+      metric_name,
+      metric_value
+    FROM e6_engine_metrics
+    WHERE cluster_name = '${clusterName}'
+      AND ts >= '${startTs}'::timestamp AND ts < '${endTs}'::timestamp
+      AND metric_name IN (
+        'io_e6x_E6Engine_NumActiveQueries',
+        'io_e6x_E6Engine_NumQueuedQueries',
+        'io_e6x_E6Engine_NumCompletedQueries',
+        'io_e6x_E6Engine_NumFailedQueries'
+      )
+    ORDER BY ts
+  `
+  logQuery('e6', 'getQueryMetricsTimeSeries', { clusterName, startTs, endTs }, sql)
+  return sql
+}
+
+/**
  * Get component summary (pod specs, nodes) for a cluster
  */
 export function getComponentSummary(clusterName: string, { startTs, endTs }: DateRange): string {

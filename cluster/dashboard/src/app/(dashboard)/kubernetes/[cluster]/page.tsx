@@ -33,7 +33,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "laminar-ui"
+} from "e6ds"
 import {
   InfoPopover,
   TableSkeleton,

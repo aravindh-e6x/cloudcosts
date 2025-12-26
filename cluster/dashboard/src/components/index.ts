@@ -4,7 +4,7 @@ export { DataHealthIndicator, MultiSourceDataHealth } from "./data-health-indica
 export { ExpandableSection } from "./expandable-section"
 export { InfoPopover } from "./info-popover"
 export { ErrorBoundary, QueryError } from "./error-boundary"
-export { EmptyState } from "laminar-ui"
+export { EmptyState } from "e6ds"
 export {
   CardSkeleton,
   StatCardSkeleton,
