@@ -14,9 +14,8 @@ tasks:
       - k3d cluster create --config k3d.yaml
       - task: kubeconfig
       - docker build -t cloudcosts/dashboard:latest ../dashboard
-      - docker build -t cloudcosts/e6mock-exporter:latest ../e6mock-exporter
-      - docker build -t cloudcosts/vantage-exporter:latest ../vantage-exporter
-      - k3d image import cloudcosts/dashboard:latest cloudcosts/e6mock-exporter:latest cloudcosts/vantage-exporter:latest -c {{.CLUSTER_NAME}}
+      - docker build -t cloudcosts/mock-exporter:latest ../mock-exporter
+      - k3d image import cloudcosts/dashboard:latest cloudcosts/mock-exporter:latest -c {{.CLUSTER_NAME}}
       - helm dependency update
       - kubectl create namespace {{.NAMESPACE}} --dry-run=client -o yaml | kubectl apply -f -
       - envsubst < values-k3d.yaml | helm install {{.RELEASE_NAME}} . -n {{.NAMESPACE}} -f -
@@ -42,9 +41,8 @@ tasks:
     desc: Build and load images into k3d
     cmds:
       - docker build -t cloudcosts/dashboard:latest ../dashboard
-      - docker build -t cloudcosts/e6mock-exporter:latest ../e6mock-exporter
-      - docker build -t cloudcosts/vantage-exporter:latest ../vantage-exporter
-      - k3d image import cloudcosts/dashboard:latest cloudcosts/e6mock-exporter:latest cloudcosts/vantage-exporter:latest -c {{.CLUSTER_NAME}}
+      - docker build -t cloudcosts/mock-exporter:latest ../mock-exporter
+      - k3d image import cloudcosts/dashboard:latest cloudcosts/mock-exporter:latest -c {{.CLUSTER_NAME}}
 
   reset-db:
     desc: Reset GreptimeDB (delete data and recreate)

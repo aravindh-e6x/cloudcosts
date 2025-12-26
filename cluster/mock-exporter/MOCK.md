@@ -20,7 +20,8 @@ All tables include `cluster` column to identify the EKS cluster (scales to 1000+
 - `eks_cluster` - EKS cluster name (for K8s/OpenCost metrics)
 - `e6_cluster` - E6 cluster name (for E6 metrics)
 - `e6_workspace` - Workspace name (links E6 to EKS)
-- `value` - Metric value
+- `metric_value` - Metric value (renamed from `value` to avoid SQL reserved keyword)
+- `resource_type` - Resource type (renamed from `resource` to avoid SQL reserved keyword)
 - `ts` - Timestamp
 
 ### OpenCost Metrics (OC)
@@ -35,7 +36,7 @@ All tables include `cluster` column to identify the EKS cluster (scales to 1000+
 | `node` | STRING | node label | `condenast-node-0` |
 | `instance_type` | STRING | instance_type label | `m5.2xlarge` |
 | `region` | STRING | region label | `us-east-1` |
-| `value` | FLOAT64 | metric value | `0.384` ($/hr) |
+| `metric_value` | FLOAT64 | metric value | `0.384` ($/hr) |
 | `ts` | TIMESTAMP | scrape time | `2024-12-26 10:00:00` |
 
 #### `node_cpu_hourly_cost`
@@ -46,7 +47,7 @@ All tables include `cluster` column to identify the EKS cluster (scales to 1000+
 |--------|------|-------------|------------|
 | `eks_cluster` | STRING | cluster label | `condenast-prod-eks` |
 | `node` | STRING | node label | `condenast-node-0` |
-| `value` | FLOAT64 | metric value | `0.192` ($/hr for CPU) |
+| `metric_value` | FLOAT64 | metric value | `0.192` ($/hr for CPU) |
 | `ts` | TIMESTAMP | scrape time | `2024-12-26 10:00:00` |
 
 #### `node_ram_hourly_cost`
@@ -57,7 +58,7 @@ All tables include `cluster` column to identify the EKS cluster (scales to 1000+
 |--------|------|-------------|------------|
 | `eks_cluster` | STRING | cluster label | `condenast-prod-eks` |
 | `node` | STRING | node label | `condenast-node-0` |
-| `value` | FLOAT64 | metric value | `0.192` ($/hr for RAM) |
+| `metric_value` | FLOAT64 | metric value | `0.192` ($/hr for RAM) |
 | `ts` | TIMESTAMP | scrape time | `2024-12-26 10:00:00` |
 
 #### `container_cpu_allocation`
@@ -71,7 +72,7 @@ All tables include `cluster` column to identify the EKS cluster (scales to 1000+
 | `pod` | STRING | pod label | `executor-analytics-0` |
 | `container` | STRING | container label | `executor` |
 | `node` | STRING | node label | `condenast-node-2` |
-| `value` | FLOAT64 | CPU cores allocated | `4.0` |
+| `metric_value` | FLOAT64 | CPU cores allocated | `4.0` |
 | `ts` | TIMESTAMP | scrape time | `2024-12-26 10:00:00` |
 
 #### `container_memory_allocation_bytes`
@@ -85,7 +86,7 @@ All tables include `cluster` column to identify the EKS cluster (scales to 1000+
 | `pod` | STRING | pod label | `executor-analytics-0` |
 | `container` | STRING | container label | `executor` |
 | `node` | STRING | node label | `condenast-node-2` |
-| `value` | FLOAT64 | memory bytes | `8589934592` (8 GB) |
+| `metric_value` | FLOAT64 | memory bytes | `8589934592` (8 GB) |
 | `ts` | TIMESTAMP | scrape time | `2024-12-26 10:00:00` |
 
 ---
@@ -103,7 +104,7 @@ All tables include `cluster` column to identify the EKS cluster (scales to 1000+
 | `kernel_version` | STRING | kernel_version label | `5.10.0-aws` |
 | `os_image` | STRING | os_image label | `Amazon Linux 2` |
 | `container_runtime_version` | STRING | container_runtime_version | `containerd://1.6.6` |
-| `value` | FLOAT64 | always 1 | `1` |
+| `metric_value` | FLOAT64 | always 1 | `1` |
 | `ts` | TIMESTAMP | scrape time | `2024-12-26 10:00:00` |
 
 #### `kube_node_labels`
@@ -117,7 +118,7 @@ All tables include `cluster` column to identify the EKS cluster (scales to 1000+
 | `label_node_kubernetes_io_instance_type` | STRING | instance type label | `m5.2xlarge` |
 | `label_topology_kubernetes_io_region` | STRING | region label | `us-east-1` |
 | `label_topology_kubernetes_io_zone` | STRING | zone label | `us-east-1a` |
-| `value` | FLOAT64 | always 1 | `1` |
+| `metric_value` | FLOAT64 | always 1 | `1` |
 | `ts` | TIMESTAMP | scrape time | `2024-12-26 10:00:00` |
 
 #### `kube_node_status_allocatable`
@@ -128,8 +129,8 @@ All tables include `cluster` column to identify the EKS cluster (scales to 1000+
 |--------|------|-------------|------------|
 | `eks_cluster` | STRING | added for multi-cluster | `condenast-prod-eks` |
 | `node` | STRING | node label | `condenast-node-0` |
-| `resource` | STRING | resource label | `cpu` or `memory` |
-| `value` | FLOAT64 | allocatable value | `8` (cores) or `34359738368` (32GB) |
+| `resource_type` | STRING | resource label | `cpu` or `memory` |
+| `metric_value` | FLOAT64 | allocatable value | `8` (cores) or `34359738368` (32GB) |
 | `ts` | TIMESTAMP | scrape time | `2024-12-26 10:00:00` |
 
 #### `kube_pod_info`
@@ -144,7 +145,7 @@ All tables include `cluster` column to identify the EKS cluster (scales to 1000+
 | `node` | STRING | node label | `condenast-node-2` |
 | `created_by_kind` | STRING | created_by_kind label | `StatefulSet` |
 | `created_by_name` | STRING | created_by_name label | `executor` |
-| `value` | FLOAT64 | always 1 | `1` |
+| `metric_value` | FLOAT64 | always 1 | `1` |
 | `ts` | TIMESTAMP | scrape time | `2024-12-26 10:00:00` |
 
 #### `kube_pod_labels`
@@ -158,7 +159,7 @@ All tables include `cluster` column to identify the EKS cluster (scales to 1000+
 | `pod` | STRING | pod label | `executor-analytics-0` |
 | `label_component` | STRING | component label | `executor` |
 | `label_app` | STRING | app label | `e6data` |
-| `value` | FLOAT64 | always 1 | `1` |
+| `metric_value` | FLOAT64 | always 1 | `1` |
 | `ts` | TIMESTAMP | scrape time | `2024-12-26 10:00:00` |
 
 #### `kube_pod_container_resource_requests`
@@ -171,9 +172,9 @@ All tables include `cluster` column to identify the EKS cluster (scales to 1000+
 | `namespace` | STRING | namespace label | `analytics` |
 | `pod` | STRING | pod label | `executor-analytics-0` |
 | `container` | STRING | container label | `executor` |
-| `resource` | STRING | resource label | `cpu` or `memory` |
+| `resource_type` | STRING | resource label | `cpu` or `memory` |
 | `unit` | STRING | unit label | `core` or `byte` |
-| `value` | FLOAT64 | request value | `4` (cores) or `8589934592` (8GB) |
+| `metric_value` | FLOAT64 | request value | `4` (cores) or `8589934592` (8GB) |
 | `ts` | TIMESTAMP | scrape time | `2024-12-26 10:00:00` |
 
 ---
@@ -191,7 +192,7 @@ All tables include `cluster` column to identify the EKS cluster (scales to 1000+
 | `pod` | STRING | pod label | `executor-analytics-0` |
 | `container` | STRING | container label | `executor` |
 | `node` | STRING | node label | `condenast-node-2` |
-| `value` | FLOAT64 | counter (seconds) | `12345.67` (cumulative) |
+| `metric_value` | FLOAT64 | counter (seconds) | `12345.67` (cumulative) |
 | `ts` | TIMESTAMP | scrape time | `2024-12-26 10:00:00` |
 
 **Note:** This is a counter that increases over time. Rate = (current - previous) / interval.
@@ -207,7 +208,7 @@ All tables include `cluster` column to identify the EKS cluster (scales to 1000+
 | `pod` | STRING | pod label | `executor-analytics-0` |
 | `container` | STRING | container label | `executor` |
 | `node` | STRING | node label | `condenast-node-2` |
-| `value` | FLOAT64 | bytes | `5368709120` (5 GB) |
+| `metric_value` | FLOAT64 | bytes | `5368709120` (5 GB) |
 | `ts` | TIMESTAMP | scrape time | `2024-12-26 10:00:00` |
 
 #### `container_network_receive_bytes_total`
@@ -219,7 +220,7 @@ All tables include `cluster` column to identify the EKS cluster (scales to 1000+
 | `eks_cluster` | STRING | added for multi-cluster | `condenast-prod-eks` |
 | `namespace` | STRING | namespace label | `analytics` |
 | `pod` | STRING | pod label | `executor-analytics-0` |
-| `value` | FLOAT64 | counter (bytes) | `1073741824` (1 GB cumulative) |
+| `metric_value` | FLOAT64 | counter (bytes) | `1073741824` (1 GB cumulative) |
 | `ts` | TIMESTAMP | scrape time | `2024-12-26 10:00:00` |
 
 #### `container_network_transmit_bytes_total`
@@ -231,7 +232,7 @@ All tables include `cluster` column to identify the EKS cluster (scales to 1000+
 | `eks_cluster` | STRING | added for multi-cluster | `condenast-prod-eks` |
 | `namespace` | STRING | namespace label | `analytics` |
 | `pod` | STRING | pod label | `executor-analytics-0` |
-| `value` | FLOAT64 | counter (bytes) | `536870912` (512 MB cumulative) |
+| `metric_value` | FLOAT64 | counter (bytes) | `536870912` (512 MB cumulative) |
 | `ts` | TIMESTAMP | scrape time | `2024-12-26 10:00:00` |
 
 ---
@@ -249,7 +250,7 @@ All tables include `cluster` column to identify the EKS cluster (scales to 1000+
 | `namespace` | STRING | namespace label | `workspace` |
 | `pod` | STRING | pod label | `gateway-workspace-0` |
 | `component` | STRING | component label | `gateway` |
-| `value` | FLOAT64 | counter | `12450` (cumulative) |
+| `metric_value` | FLOAT64 | counter | `12450` (cumulative) |
 | `ts` | TIMESTAMP | scrape time | `2024-12-26 10:00:00` |
 
 #### `io_e6x_E6Gateway_NumSucceededQueries`
@@ -263,7 +264,7 @@ All tables include `cluster` column to identify the EKS cluster (scales to 1000+
 | `namespace` | STRING | namespace label | `workspace` |
 | `pod` | STRING | pod label | `gateway-workspace-0` |
 | `component` | STRING | component label | `gateway` |
-| `value` | FLOAT64 | counter | `12180` |
+| `metric_value` | FLOAT64 | counter | `12180` |
 | `ts` | TIMESTAMP | scrape time | `2024-12-26 10:00:00` |
 
 #### `io_e6x_E6Gateway_TotalQueriesFailedCount`
@@ -277,7 +278,7 @@ All tables include `cluster` column to identify the EKS cluster (scales to 1000+
 | `namespace` | STRING | namespace label | `workspace` |
 | `pod` | STRING | pod label | `gateway-workspace-0` |
 | `component` | STRING | component label | `gateway` |
-| `value` | FLOAT64 | counter | `270` |
+| `metric_value` | FLOAT64 | counter | `270` |
 | `ts` | TIMESTAMP | scrape time | `2024-12-26 10:00:00` |
 
 #### `io_e6x_E6Gateway_CurrentQueriesRunningCount`
@@ -291,7 +292,7 @@ All tables include `cluster` column to identify the EKS cluster (scales to 1000+
 | `namespace` | STRING | namespace label | `workspace` |
 | `pod` | STRING | pod label | `gateway-workspace-0` |
 | `component` | STRING | component label | `gateway` |
-| `value` | FLOAT64 | gauge | `8` (current) |
+| `metric_value` | FLOAT64 | gauge | `8` (current) |
 | `ts` | TIMESTAMP | scrape time | `2024-12-26 10:00:00` |
 
 #### `io_e6x_E6Gateway_CurrentActiveConnections`
@@ -305,7 +306,7 @@ All tables include `cluster` column to identify the EKS cluster (scales to 1000+
 | `namespace` | STRING | namespace label | `workspace` |
 | `pod` | STRING | pod label | `gateway-workspace-0` |
 | `component` | STRING | component label | `gateway` |
-| `value` | FLOAT64 | gauge | `42` (current) |
+| `metric_value` | FLOAT64 | gauge | `42` (current) |
 | `ts` | TIMESTAMP | scrape time | `2024-12-26 10:00:00` |
 
 ---
@@ -323,7 +324,7 @@ All tables include `cluster` column to identify the EKS cluster (scales to 1000+
 | `namespace` | STRING | namespace label | `analytics` |
 | `pod` | STRING | pod label | `executor-analytics-0` |
 | `component` | STRING | component label | `executor` |
-| `value` | FLOAT64 | gauge | `24` (current) |
+| `metric_value` | FLOAT64 | gauge | `24` (current) |
 | `ts` | TIMESTAMP | scrape time | `2024-12-26 10:00:00` |
 
 #### `io_e6x_E6Engine_CurrentActiveTasksRunning`
@@ -337,7 +338,7 @@ All tables include `cluster` column to identify the EKS cluster (scales to 1000+
 | `namespace` | STRING | namespace label | `analytics` |
 | `pod` | STRING | pod label | `executor-analytics-0` |
 | `component` | STRING | component label | `executor` |
-| `value` | FLOAT64 | gauge | `18` (current) |
+| `metric_value` | FLOAT64 | gauge | `18` (current) |
 | `ts` | TIMESTAMP | scrape time | `2024-12-26 10:00:00` |
 
 #### `io_e6x_E6Engine_FilesReadFromS3Bytes`
@@ -351,7 +352,7 @@ All tables include `cluster` column to identify the EKS cluster (scales to 1000+
 | `namespace` | STRING | namespace label | `analytics` |
 | `pod` | STRING | pod label | `executor-analytics-0` |
 | `component` | STRING | component label | `executor` |
-| `value` | FLOAT64 | counter (bytes) | `1288490188800` (1.2 TB cumulative) |
+| `metric_value` | FLOAT64 | counter (bytes) | `1288490188800` (1.2 TB cumulative) |
 | `ts` | TIMESTAMP | scrape time | `2024-12-26 10:00:00` |
 
 #### `io_e6x_E6Engine_TotalBytesRead`
@@ -365,7 +366,7 @@ All tables include `cluster` column to identify the EKS cluster (scales to 1000+
 | `namespace` | STRING | namespace label | `analytics` |
 | `pod` | STRING | pod label | `executor-analytics-0` |
 | `component` | STRING | component label | `executor` |
-| `value` | FLOAT64 | counter (bytes) | `2306867225600` (2.1 TB cumulative) |
+| `metric_value` | FLOAT64 | counter (bytes) | `2306867225600` (2.1 TB cumulative) |
 | `ts` | TIMESTAMP | scrape time | `2024-12-26 10:00:00` |
 
 #### `io_e6x_E6Engine_NumRowsRead`
@@ -379,7 +380,7 @@ All tables include `cluster` column to identify the EKS cluster (scales to 1000+
 | `namespace` | STRING | namespace label | `analytics` |
 | `pod` | STRING | pod label | `executor-analytics-0` |
 | `component` | STRING | component label | `executor` |
-| `value` | FLOAT64 | counter | `48200000000` (48.2 billion rows) |
+| `metric_value` | FLOAT64 | counter | `48200000000` (48.2 billion rows) |
 | `ts` | TIMESTAMP | scrape time | `2024-12-26 10:00:00` |
 
 ---

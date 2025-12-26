@@ -180,17 +180,52 @@ e6metricsExporter:
 e6mockExporter:
   enabled: true
   image:
-    repository: "${AWS_PRIMARY_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/cloudcosts/e6mock-exporter"
+    repository: "${AWS_PRIMARY_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/cloudcosts/mock-exporter"
     tag: "latest"
-  database: "e6_mock"
-  scrapeInterval: 300
+  greptimedb:
+    host: monitoring-stack-greptimedb-standalone.monitoring.svc
+    port: 4002
+  databases:
+    kubernetes: kubernetes
+    e6Prefix: "e6_"
+  generation:
+    intervalMinutes: 5
+  workspaces:
+    - name: condenast
+      eks_cluster: condenast-prod-eks
+      region: us-east-1
+      account_id: "123456789012"
+      e6_clusters:
+        - analytics
+        - reporting
+    - name: cisco
+      eks_cluster: cisco-prod-eks
+      region: eu-west-1
+      account_id: "234567890123"
+      e6_clusters:
+        - emea
+        - apac
+    - name: freshworks
+      eks_cluster: freshworks-eks
+      region: us-west-2
+      account_id: "345678901234"
+      e6_clusters:
+        - prod
+    - name: swiggy
+      eks_cluster: swiggy-eks
+      region: ap-south-1
+      account_id: "456789012345"
+      e6_clusters:
+        - main
+        - batch
+        - realtime
   resources:
     requests:
-      cpu: 50m
-      memory: 64Mi
-    limits:
-      cpu: 200m
+      cpu: 100m
       memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
 
 dashboard:
   enabled: true

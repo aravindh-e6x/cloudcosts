@@ -146,13 +146,7 @@ cloudwatchExporter:
   enabled: false
 
 vantageExporter:
-  enabled: true
-  image:
-    repository: cloudcosts/vantage-exporter
-    tag: "latest"
-    pullPolicy: Never
-  apiToken: "${VANTAGE_API_TOKEN}"
-  database: "vantage"
+  enabled: false
 
 e6metricsExporter:
   enabled: false
@@ -176,6 +170,9 @@ dashboard:
 e6mockExporter:
   enabled: true
   image:
-    repository: cloudcosts/e6mock-exporter
+    repository: cloudcosts/mock-exporter
     tag: "latest"
-    pullPolicy: Never
+    pullPolicy: IfNotPresent
+  greptimedb:
+    host: monitoring-stack-greptimedb-standalone
+    port: 4002
