@@ -11,7 +11,7 @@ import time
 import random
 import logging
 import requests
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 # Configure logging
 logging.basicConfig(
@@ -121,6 +121,59 @@ E6_CLUSTER_METRICS = [
     'e6data_component_replicas_available',
     'e6data_component_replicas_desired',
 ]
+
+# =============================================================================
+# Vantage Mock Data Configuration
+# =============================================================================
+
+VANTAGE_PROVIDERS = ['aws', 'azure', 'gcp', 'databricks', 'snowflake']
+
+VANTAGE_ACCOUNTS = {
+    'aws': [
+        {'account_id': '123456789012', 'account_name': 'Production'},
+        {'account_id': '234567890123', 'account_name': 'Development'},
+        {'account_id': '345678901234', 'account_name': 'Staging'},
+    ],
+    'azure': [
+        {'account_id': 'sub-prod-001', 'account_name': 'Azure Production'},
+        {'account_id': 'sub-dev-001', 'account_name': 'Azure Development'},
+    ],
+    'gcp': [
+        {'account_id': 'e6data-prod', 'account_name': 'GCP Production'},
+        {'account_id': 'e6data-dev', 'account_name': 'GCP Development'},
+    ],
+    'databricks': [
+        {'account_id': 'db-workspace-1', 'account_name': 'Databricks Analytics'},
+    ],
+    'snowflake': [
+        {'account_id': 'sf-account-1', 'account_name': 'Snowflake DW'},
+    ],
+}
+
+VANTAGE_SERVICES = {
+    'aws': ['Amazon EC2', 'Amazon S3', 'Amazon RDS', 'AWS Lambda', 'Amazon EKS', 'Amazon CloudWatch', 'AWS Data Transfer'],
+    'azure': ['Virtual Machines', 'Storage', 'Azure SQL', 'Azure Functions', 'AKS'],
+    'gcp': ['Compute Engine', 'Cloud Storage', 'BigQuery', 'Cloud Functions', 'GKE'],
+    'databricks': ['All-Purpose Compute', 'Jobs Compute', 'SQL Compute', 'Serverless'],
+    'snowflake': ['Compute', 'Storage', 'Data Transfer'],
+}
+
+VANTAGE_TAGS = [
+    {'tag_key': 'Environment', 'values': ['production', 'staging', 'development', '__untagged__']},
+    {'tag_key': 'Team', 'values': ['platform', 'data-engineering', 'ml-ops', 'devops', '__untagged__']},
+    {'tag_key': 'App', 'values': ['e6data', 'analytics', 'ingestion', 'monitoring', '__untagged__']},
+    {'tag_key': 'Project', 'values': ['cloudcosts', 'laminar', 'core', '__untagged__']},
+    {'tag_key': 'CostCenter', 'values': ['engineering', 'infrastructure', 'research', '__untagged__']},
+]
+
+# Base daily costs by provider (will be varied)
+VANTAGE_BASE_COSTS = {
+    'aws': 15000,
+    'azure': 8000,
+    'gcp': 6000,
+    'databricks': 4000,
+    'snowflake': 3000,
+}
 
 
 class GreptimeDBClient:
@@ -804,6 +857,273 @@ def generate_k8s_metrics(cluster: dict, timestamp_ms: int) -> list:
 
 
 # =============================================================================
+# Vantage Metrics Generation
+# =============================================================================
+
+def date_to_timestamp_ms(date_str: str) -> int:
+    """Convert YYYY-MM-DD to milliseconds timestamp (UTC midnight)."""
+    dt = datetime.strptime(date_str, '%Y-%m-%d').replace(tzinfo=timezone.utc)
+    return int(dt.timestamp() * 1000)
+
+
+def generate_vantage_daily_cost_by_provider(historical_days: int = 90) -> list:
+    """Generate daily cost by provider metrics for historical period."""
+    metrics = []
+    end_date = datetime.now(timezone.utc).date()
+
+    for day_offset in range(historical_days):
+        date = end_date - timedelta(days=day_offset)
+        date_str = date.strftime('%Y-%m-%d')
+        timestamp_ms = date_to_timestamp_ms(date_str)
+
+        # Add weekday variation (less on weekends)
+        weekday_factor = 0.7 if date.weekday() >= 5 else 1.0
+        # Add monthly trend (costs grow slightly over time)
+        trend_factor = 1 + (historical_days - day_offset) * 0.001
+
+        for provider in VANTAGE_PROVIDERS:
+            base_cost = VANTAGE_BASE_COSTS.get(provider, 1000)
+            # Add random variation (±15%)
+            variation = random.uniform(-0.15, 0.15)
+            daily_cost = base_cost * weekday_factor * trend_factor * (1 + variation)
+
+            metrics.append({
+                'name': 'vantage_daily_cost_by_provider',
+                'labels': {'provider': provider},
+                'value': round(daily_cost, 2),
+                'timestamp_ms': timestamp_ms,
+            })
+
+    return metrics
+
+
+def generate_vantage_daily_cost_by_account(historical_days: int = 90) -> list:
+    """Generate daily cost by account metrics for historical period."""
+    metrics = []
+    end_date = datetime.now(timezone.utc).date()
+
+    for day_offset in range(historical_days):
+        date = end_date - timedelta(days=day_offset)
+        date_str = date.strftime('%Y-%m-%d')
+        timestamp_ms = date_to_timestamp_ms(date_str)
+
+        weekday_factor = 0.7 if date.weekday() >= 5 else 1.0
+        trend_factor = 1 + (historical_days - day_offset) * 0.001
+
+        for provider in VANTAGE_PROVIDERS:
+            accounts = VANTAGE_ACCOUNTS.get(provider, [])
+            base_cost = VANTAGE_BASE_COSTS.get(provider, 1000)
+
+            # Distribute cost across accounts (production gets more)
+            account_weights = []
+            for i, acc in enumerate(accounts):
+                if 'prod' in acc['account_name'].lower():
+                    account_weights.append(0.6)
+                elif 'dev' in acc['account_name'].lower():
+                    account_weights.append(0.25)
+                else:
+                    account_weights.append(0.15)
+
+            # Normalize weights
+            total_weight = sum(account_weights) or 1
+            account_weights = [w / total_weight for w in account_weights]
+
+            for i, account in enumerate(accounts):
+                weight = account_weights[i] if i < len(account_weights) else 1 / len(accounts)
+                variation = random.uniform(-0.1, 0.1)
+                daily_cost = base_cost * weight * weekday_factor * trend_factor * (1 + variation)
+
+                metrics.append({
+                    'name': 'vantage_daily_cost_by_account',
+                    'labels': {
+                        'provider': provider,
+                        'account_id': account['account_id'],
+                        'account_name': account['account_name'],
+                    },
+                    'value': round(daily_cost, 2),
+                    'timestamp_ms': timestamp_ms,
+                })
+
+    return metrics
+
+
+def generate_vantage_daily_cost_by_service(historical_days: int = 90) -> list:
+    """Generate daily cost by service metrics for historical period."""
+    metrics = []
+    end_date = datetime.now(timezone.utc).date()
+
+    # Service weights (compute is typically highest)
+    service_weights = {
+        'Amazon EC2': 0.35, 'Amazon S3': 0.15, 'Amazon RDS': 0.20, 'AWS Lambda': 0.05,
+        'Amazon EKS': 0.15, 'Amazon CloudWatch': 0.05, 'AWS Data Transfer': 0.05,
+        'Virtual Machines': 0.40, 'Storage': 0.15, 'Azure SQL': 0.25, 'Azure Functions': 0.10, 'AKS': 0.10,
+        'Compute Engine': 0.35, 'Cloud Storage': 0.15, 'BigQuery': 0.30, 'Cloud Functions': 0.10, 'GKE': 0.10,
+        'All-Purpose Compute': 0.40, 'Jobs Compute': 0.35, 'SQL Compute': 0.20, 'Serverless': 0.05,
+        'Compute': 0.70, 'Storage': 0.20, 'Data Transfer': 0.10,
+    }
+
+    for day_offset in range(historical_days):
+        date = end_date - timedelta(days=day_offset)
+        date_str = date.strftime('%Y-%m-%d')
+        timestamp_ms = date_to_timestamp_ms(date_str)
+
+        weekday_factor = 0.7 if date.weekday() >= 5 else 1.0
+        trend_factor = 1 + (historical_days - day_offset) * 0.001
+
+        for provider in VANTAGE_PROVIDERS:
+            accounts = VANTAGE_ACCOUNTS.get(provider, [])
+            services = VANTAGE_SERVICES.get(provider, [])
+            base_cost = VANTAGE_BASE_COSTS.get(provider, 1000)
+
+            for account in accounts:
+                # Get account's share of provider cost
+                if 'prod' in account['account_name'].lower():
+                    account_share = 0.6
+                elif 'dev' in account['account_name'].lower():
+                    account_share = 0.25
+                else:
+                    account_share = 0.15
+
+                for service in services:
+                    weight = service_weights.get(service, 1 / len(services))
+                    variation = random.uniform(-0.15, 0.15)
+                    daily_cost = base_cost * account_share * weight * weekday_factor * trend_factor * (1 + variation)
+
+                    # Skip very small costs
+                    if daily_cost < 1:
+                        continue
+
+                    metrics.append({
+                        'name': 'vantage_daily_cost_by_service',
+                        'labels': {
+                            'provider': provider,
+                            'account_id': account['account_id'],
+                            'account_name': account['account_name'],
+                            'service': service,
+                        },
+                        'value': round(daily_cost, 2),
+                        'timestamp_ms': timestamp_ms,
+                    })
+
+    return metrics
+
+
+def generate_vantage_cost_by_tag(historical_days: int = 90) -> list:
+    """Generate cost by tag metrics for historical period."""
+    metrics = []
+    end_date = datetime.now(timezone.utc).date()
+
+    for day_offset in range(historical_days):
+        date = end_date - timedelta(days=day_offset)
+        date_str = date.strftime('%Y-%m-%d')
+        timestamp_ms = date_to_timestamp_ms(date_str)
+
+        weekday_factor = 0.7 if date.weekday() >= 5 else 1.0
+
+        for provider in VANTAGE_PROVIDERS:
+            services = VANTAGE_SERVICES.get(provider, [])
+            base_cost = VANTAGE_BASE_COSTS.get(provider, 1000) / len(VANTAGE_TAGS)
+
+            for tag_config in VANTAGE_TAGS:
+                tag_key = tag_config['tag_key']
+                tag_values = tag_config['values']
+
+                for service in services[:3]:  # Top 3 services per provider
+                    for tag_value in tag_values:
+                        # Untagged gets less cost (represents tagging compliance)
+                        if tag_value == '__untagged__':
+                            value_weight = 0.1
+                        else:
+                            value_weight = 0.9 / (len(tag_values) - 1)
+
+                        variation = random.uniform(-0.2, 0.2)
+                        daily_cost = base_cost * value_weight * weekday_factor * (1 + variation) / len(services[:3])
+
+                        if daily_cost < 0.5:
+                            continue
+
+                        metrics.append({
+                            'name': 'vantage_cost_by_tag',
+                            'labels': {
+                                'provider': provider,
+                                'service': service,
+                                'tag_key': tag_key,
+                                'tag_value': tag_value,
+                            },
+                            'value': round(daily_cost, 2),
+                            'timestamp_ms': timestamp_ms,
+                        })
+
+    return metrics
+
+
+def generate_vantage_tags_inventory() -> list:
+    """Generate tag inventory snapshot metrics."""
+    metrics = []
+    timestamp_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+
+    for tag_config in VANTAGE_TAGS:
+        tag_key = tag_config['tag_key']
+        # All tags are available on aws and gcp, fewer on others
+        if tag_key in ['Environment', 'Team']:
+            providers = 'aws,azure,gcp,databricks,snowflake'
+        else:
+            providers = 'aws,gcp'
+
+        metrics.append({
+            'name': 'vantage_tags',
+            'labels': {
+                'tag_key': tag_key,
+                'providers': providers,
+                'hidden': 'false',
+            },
+            'value': 1.0,
+            'timestamp_ms': timestamp_ms,
+        })
+
+    return metrics
+
+
+def generate_all_vantage_metrics(greptimedb: 'GreptimeDBClient', database: str, historical_days: int = 90) -> int:
+    """Generate and push all Vantage mock metrics."""
+    total_records = 0
+
+    logger.info(f"Generating Vantage mock data for {historical_days} days...")
+
+    # Generate daily cost by provider
+    metrics = generate_vantage_daily_cost_by_provider(historical_days)
+    if greptimedb.write_prometheus_metrics(database, metrics):
+        logger.info(f"  Generated {len(metrics)} vantage_daily_cost_by_provider metrics")
+        total_records += len(metrics)
+
+    # Generate daily cost by account
+    metrics = generate_vantage_daily_cost_by_account(historical_days)
+    if greptimedb.write_prometheus_metrics(database, metrics):
+        logger.info(f"  Generated {len(metrics)} vantage_daily_cost_by_account metrics")
+        total_records += len(metrics)
+
+    # Generate daily cost by service
+    metrics = generate_vantage_daily_cost_by_service(historical_days)
+    if greptimedb.write_prometheus_metrics(database, metrics):
+        logger.info(f"  Generated {len(metrics)} vantage_daily_cost_by_service metrics")
+        total_records += len(metrics)
+
+    # Generate cost by tag
+    metrics = generate_vantage_cost_by_tag(historical_days)
+    if greptimedb.write_prometheus_metrics(database, metrics):
+        logger.info(f"  Generated {len(metrics)} vantage_cost_by_tag metrics")
+        total_records += len(metrics)
+
+    # Generate tags inventory
+    metrics = generate_vantage_tags_inventory()
+    if greptimedb.write_prometheus_metrics(database, metrics):
+        logger.info(f"  Generated {len(metrics)} vantage_tags metrics")
+        total_records += len(metrics)
+
+    return total_records
+
+
+# =============================================================================
 # Main Functions
 # =============================================================================
 
@@ -893,6 +1213,8 @@ def main():
     greptimedb_password = os.environ.get('GREPTIMEDB_PASSWORD', 'cloudcosts')
     e6_database = os.environ.get('DATABASE', 'e6_mock')
     k8s_database = os.environ.get('K8S_DATABASE', 'kubernetes')
+    vantage_database = os.environ.get('VANTAGE_DATABASE', 'vantage')
+    vantage_historical_days = int(os.environ.get('VANTAGE_HISTORICAL_DAYS', '90'))
     scrape_interval = int(os.environ.get('SCRAPE_INTERVAL', '60'))
 
     greptimedb = GreptimeDBClient(
@@ -902,15 +1224,17 @@ def main():
     )
 
     logger.info(f"Configured {len(MOCK_CLUSTERS)} mock cluster(s): {[c['name'] for c in MOCK_CLUSTERS]}")
-    logger.info(f"E6 database: {e6_database}, Kubernetes database: {k8s_database}")
-    logger.info(f"Scrape interval: {scrape_interval}s")
+    logger.info(f"E6 database: {e6_database}, Kubernetes database: {k8s_database}, Vantage database: {vantage_database}")
+    logger.info(f"Scrape interval: {scrape_interval}s, Vantage historical days: {vantage_historical_days}")
 
     e6_tables_created = False
+    vantage_initialized = False
     retry_count = 0
     max_retries = 10
 
-    # Create kubernetes database
+    # Create databases
     greptimedb.create_database(k8s_database)
+    greptimedb.create_database(vantage_database)
 
     while True:
         ts = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
@@ -936,6 +1260,14 @@ def main():
 
             # Generate Kubernetes/OpenCost metrics using InfluxDB line protocol
             k8s_records = generate_all_k8s_metrics(greptimedb, k8s_database, timestamp_ms)
+
+            # Generate Vantage mock data (only once at startup, since it's daily data)
+            vantage_records = 0
+            if not vantage_initialized:
+                logger.info("Generating Vantage mock data (one-time initialization)...")
+                vantage_records = generate_all_vantage_metrics(greptimedb, vantage_database, vantage_historical_days)
+                vantage_initialized = True
+                logger.info(f"Vantage mock data initialized: {vantage_records} records")
 
             duration = time.time() - start_time
             logger.info(f"Metrics generation complete. E6: {e6_records}, K8s: {k8s_records}, Duration: {duration:.2f}s")
