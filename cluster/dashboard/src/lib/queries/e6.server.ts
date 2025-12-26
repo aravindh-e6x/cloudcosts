@@ -1,5 +1,9 @@
 // E6 Metrics Queries
 // All queries take startTs and endTs as parameters for date filtering
+//
+// Data structure from mock-exporter:
+// - kubernetes DB: eks_cluster (workspace), namespace (e6_cluster or 'workspace')
+// - e6_* DB: e6_cluster, e6_workspace
 
 import { logQuery } from '../logger.server'
 
@@ -9,11 +13,157 @@ interface DateRange {
 }
 
 /**
- * Get all E6 databases (schemas starting with e6_)
+ * Get all EKS clusters (workspaces) with metadata for the selected day
+ * Queries the kubernetes database
  */
-export function getAllDatabases(): string {
-  const sql = `SELECT schema_name FROM schemata ORDER BY schema_name`
-  logQuery('e6', 'getAllDatabases', {}, sql)
+export function getWorkspaces({ startTs, endTs }: DateRange): string {
+  const sql = `
+    SELECT DISTINCT
+      n.eks_cluster,
+      l.label_topology_kubernetes_io_region as region
+    FROM kube_node_info n
+    LEFT JOIN kube_node_labels l ON n.eks_cluster = l.eks_cluster AND n.node = l.node
+      AND l.ts >= '${startTs}'::timestamp AND l.ts < '${endTs}'::timestamp
+    WHERE n.ts >= '${startTs}'::timestamp AND n.ts < '${endTs}'::timestamp
+    ORDER BY n.eks_cluster
+  `
+  logQuery('e6', 'getWorkspaces', { startTs, endTs }, sql)
+  return sql
+}
+
+/**
+ * Get node count time series for a workspace (last 24 hours)
+ * Queries the kubernetes database
+ */
+export function getNodeCountTimeSeries(eksCluster: string, { startTs, endTs }: DateRange): string {
+  const sql = `
+    SELECT
+      ts,
+      COUNT(DISTINCT node) as node_count
+    FROM kube_node_info
+    WHERE eks_cluster = '${eksCluster}'
+      AND ts >= '${startTs}'::timestamp
+      AND ts < '${endTs}'::timestamp
+    GROUP BY ts
+    ORDER BY ts
+  `
+  logQuery('e6', 'getNodeCountTimeSeries', { eksCluster, startTs, endTs }, sql)
+  return sql
+}
+
+/**
+ * Get cost time series for a workspace (last 24 hours)
+ * Queries the kubernetes database
+ */
+export function getCostTimeSeries(eksCluster: string, { startTs, endTs }: DateRange): string {
+  const sql = `
+    SELECT
+      ts,
+      SUM(metric_value) as hourly_cost
+    FROM node_total_hourly_cost
+    WHERE eks_cluster = '${eksCluster}'
+      AND ts >= '${startTs}'::timestamp
+      AND ts < '${endTs}'::timestamp
+    GROUP BY ts
+    ORDER BY ts
+  `
+  logQuery('e6', 'getCostTimeSeries', { eksCluster, startTs, endTs }, sql)
+  return sql
+}
+
+/**
+ * Get pod count time series for a workspace (last 24 hours)
+ * Queries the kubernetes database
+ */
+export function getPodCountTimeSeries(eksCluster: string, { startTs, endTs }: DateRange): string {
+  const sql = `
+    SELECT
+      ts,
+      COUNT(DISTINCT pod) as pod_count
+    FROM kube_pod_info
+    WHERE eks_cluster = '${eksCluster}'
+      AND ts >= '${startTs}'::timestamp
+      AND ts < '${endTs}'::timestamp
+    GROUP BY ts
+    ORDER BY ts
+  `
+  logQuery('e6', 'getPodCountTimeSeries', { eksCluster, startTs, endTs }, sql)
+  return sql
+}
+
+/**
+ * Get workspace cost for selected day
+ * Queries the kubernetes database
+ */
+export function getWorkspaceCost(eksCluster: string, { startTs, endTs }: DateRange): string {
+  const sql = `
+    SELECT
+      SUM(metric_value) as total_cost,
+      SUM(metric_value) / 24 as hourly_cost
+    FROM node_total_hourly_cost
+    WHERE eks_cluster = '${eksCluster}'
+      AND ts >= '${startTs}'::timestamp AND ts < '${endTs}'::timestamp
+  `
+  logQuery('e6', 'getWorkspaceCost', { eksCluster, startTs, endTs }, sql)
+  return sql
+}
+
+/**
+ * Get workspace info (region) for a specific EKS cluster
+ * Queries the kubernetes database
+ */
+export function getWorkspaceInfo(eksCluster: string, { startTs, endTs }: DateRange): string {
+  const sql = `
+    SELECT DISTINCT
+      n.eks_cluster,
+      l.label_topology_kubernetes_io_region as region
+    FROM kube_node_info n
+    LEFT JOIN kube_node_labels l ON n.eks_cluster = l.eks_cluster AND n.node = l.node
+      AND l.ts >= '${startTs}'::timestamp AND l.ts < '${endTs}'::timestamp
+    WHERE n.eks_cluster = '${eksCluster}'
+      AND n.ts >= '${startTs}'::timestamp AND n.ts < '${endTs}'::timestamp
+    LIMIT 1
+  `
+  logQuery('e6', 'getWorkspaceInfo', { eksCluster, startTs, endTs }, sql)
+  return sql
+}
+
+/**
+ * Get E6 clusters (namespaces) for a specific EKS cluster
+ * Queries the kubernetes database
+ */
+export function getE6Clusters(eksCluster: string, { startTs, endTs }: DateRange): string {
+  const sql = `
+    SELECT DISTINCT namespace as e6_cluster
+    FROM kube_pod_labels
+    WHERE eks_cluster = '${eksCluster}'
+      AND ts >= '${startTs}'::timestamp AND ts < '${endTs}'::timestamp
+      AND label_component IN ('executor', 'queue', 'planner')
+    ORDER BY namespace
+  `
+  logQuery('e6', 'getE6Clusters', { eksCluster, startTs, endTs }, sql)
+  return sql
+}
+
+/**
+ * Get workspace summary stats (nodes, pods) for selected day
+ * Queries the kubernetes database
+ */
+export function getWorkspaceStats(eksCluster: string, { startTs, endTs }: DateRange): string {
+  const sql = `
+    SELECT
+      (SELECT COUNT(DISTINCT node) FROM kube_node_info
+       WHERE eks_cluster = '${eksCluster}'
+         AND ts >= '${startTs}'::timestamp AND ts < '${endTs}'::timestamp) as node_count,
+      (SELECT COUNT(DISTINCT pod) FROM kube_pod_info
+       WHERE eks_cluster = '${eksCluster}'
+         AND ts >= '${startTs}'::timestamp AND ts < '${endTs}'::timestamp) as pod_count,
+      (SELECT COUNT(DISTINCT namespace) FROM kube_pod_labels
+       WHERE eks_cluster = '${eksCluster}'
+         AND ts >= '${startTs}'::timestamp AND ts < '${endTs}'::timestamp
+         AND label_component IN ('executor', 'queue', 'planner')) as e6_cluster_count
+  `
+  logQuery('e6', 'getWorkspaceStats', { eksCluster, startTs, endTs }, sql)
   return sql
 }
 
