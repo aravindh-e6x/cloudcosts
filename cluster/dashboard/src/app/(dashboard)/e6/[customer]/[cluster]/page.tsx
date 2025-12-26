@@ -3,6 +3,7 @@
 import { useMemo } from "react"
 import { useParams } from "next/navigation"
 import Link from "next/link"
+import { format } from "date-fns"
 import {
   Button,
   Skeleton,
@@ -15,12 +16,13 @@ import {
   Badge,
   ResponsiveContainer,
   RechartsLineChart,
+  RechartsAreaChart,
+  Area,
   Line,
   XAxis,
   YAxis,
   CartesianGrid,
   RechartsTooltip,
-  Legend,
 } from "laminar-ui"
 import { Server, ChevronLeft, Box, DollarSign } from "lucide-react"
 import { DateBanner, DataHealthIndicator } from "@/components"
@@ -31,21 +33,6 @@ interface TimeSeriesPoint {
   ts: string
   metric_name: string
   metric_value: number
-}
-
-interface ChartDataPoint {
-  time: string
-  cpu?: number
-  memory?: number
-  cost?: number
-}
-
-interface QueryChartDataPoint {
-  time: string
-  executing: number
-  executionQueued: number
-  planningQueued: number
-  totalInPlanner: number
 }
 
 interface ComponentSummaryRow {
@@ -90,17 +77,38 @@ interface CostTimeSeriesRow {
   hourly_cost: number
 }
 
-function formatTime(ts: string): string {
-  const date = new Date(ts)
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-}
+function formatTime(ts: string | number): string {
+  if (!ts && ts !== 0) return ''
 
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B'
-  const k = 1024
-  const sizes = ['B', 'KB', 'MB', 'GB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
+  // Convert to Date object
+  let date: Date
+  const numTs = typeof ts === 'number' ? ts : Number(ts)
+
+  if (!isNaN(numTs)) {
+    // GreptimeDB returns nanoseconds (19 digits), milliseconds (13 digits), or seconds (10 digits)
+    if (numTs > 1e18) {
+      // Nanoseconds - divide by 1,000,000
+      date = new Date(numTs / 1000000)
+    } else if (numTs > 1e15) {
+      // Microseconds - divide by 1,000
+      date = new Date(numTs / 1000)
+    } else if (numTs > 1e12) {
+      // Milliseconds
+      date = new Date(numTs)
+    } else if (numTs > 1e9) {
+      // Seconds
+      date = new Date(numTs * 1000)
+    } else {
+      date = new Date(numTs)
+    }
+  } else if (typeof ts === 'string') {
+    date = new Date(ts.replace(' ', 'T'))
+  } else {
+    return String(ts)
+  }
+
+  if (isNaN(date.getTime())) return String(ts)
+  return format(date, 'HH:mm')
 }
 
 function formatMemorySize(bytes: number): string {
@@ -385,65 +393,36 @@ function ComponentSummaryTable({ database, clusterName, dateRange }: ComponentSu
   )
 }
 
-interface QueryMetricsChartProps {
-  database: string
+interface CostTimeSeriesChartProps {
   clusterName: string
   dateRange: { startTs: string; endTs: string }
 }
 
-function QueryMetricsChart({ database, clusterName, dateRange }: QueryMetricsChartProps) {
-  const { data: queueData } = useQuery<TimeSeriesPoint>(
-    "e6",
-    "getQueueMetrics",
+function CostTimeSeriesChart({ clusterName, dateRange }: CostTimeSeriesChartProps) {
+  const { data: costData } = useQuery<CostTimeSeriesRow>(
+    "kubernetes",
+    "getClusterCostTimeSeries",
     [clusterName, dateRange],
-    { database, refetchInterval: 60000 }
+    { refetchInterval: 60000 }
   )
 
-  const chartData = useMemo<QueryChartDataPoint[]>(() => {
-    if (!queueData || queueData.length === 0) return []
-
-    const byTime: Record<string, QueryChartDataPoint> = {}
-
-    queueData.forEach(point => {
-      const timeKey = point.ts
-      if (!byTime[timeKey]) {
-        byTime[timeKey] = {
-          time: formatTime(point.ts),
-          executing: 0,
-          executionQueued: 0,
-          planningQueued: 0,
-          totalInPlanner: 0,
-        }
-      }
-
-      switch (point.metric_name) {
-        case 'io_e6x_E6Queue_NumExecutingQueries':
-          byTime[timeKey].executing = point.metric_value
-          break
-        case 'io_e6x_E6Queue_NumExecutionQueuedQueries':
-          byTime[timeKey].executionQueued = point.metric_value
-          break
-        case 'io_e6x_E6Queue_NumPlanningQueuedQueries':
-          byTime[timeKey].planningQueued = point.metric_value
-          break
-        case 'io_e6x_E6Queue_TotalNumQueriesInPlanner':
-          byTime[timeKey].totalInPlanner = point.metric_value
-          break
-      }
-    })
-
-    return Object.values(byTime).sort((a, b) => a.time.localeCompare(b.time))
-  }, [queueData])
+  const chartData = useMemo(() => {
+    if (!costData || costData.length === 0) return []
+    return costData.map(row => ({
+      time: formatTime(row.time),
+      cost: row.hourly_cost || 0,
+    }))
+  }, [costData])
 
   if (chartData.length === 0) {
     return (
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-lg">Query Metrics</CardTitle>
-          <CardDescription>Query execution and queue status over time</CardDescription>
+          <CardTitle className="text-lg">Cost Over Time</CardTitle>
+          <CardDescription>Hourly infrastructure cost from OpenCost</CardDescription>
         </CardHeader>
-        <CardContent className="h-[300px] flex items-center justify-center text-muted-foreground text-sm">
-          No query metrics available
+        <CardContent className="h-[250px] flex items-center justify-center text-muted-foreground text-sm">
+          No cost data available
         </CardContent>
       </Card>
     )
@@ -452,25 +431,131 @@ function QueryMetricsChart({ database, clusterName, dateRange }: QueryMetricsCha
   return (
     <Card>
       <CardHeader className="pb-2">
-        <CardTitle className="text-lg">Query Metrics</CardTitle>
-        <CardDescription>Query execution and queue status over time</CardDescription>
+        <CardTitle className="text-lg">Cost Over Time</CardTitle>
+        <CardDescription>Hourly infrastructure cost from OpenCost</CardDescription>
       </CardHeader>
       <CardContent>
-        <ResponsiveContainer width="100%" height={300}>
+        <ResponsiveContainer width="100%" height={250}>
           <RechartsLineChart data={chartData}>
             <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
             <XAxis dataKey="time" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
-            <YAxis tick={{ fontSize: 10 }} allowDecimals={false} />
-            <RechartsTooltip contentStyle={{ fontSize: 11 }} formatter={(value) => (Number(value) || 0).toFixed(0)} />
-            <Legend wrapperStyle={{ fontSize: 11 }} />
-            <Line type="monotone" dataKey="executing" name="Executing Queries" stroke="#10b981" strokeWidth={2} dot={false} />
-            <Line type="monotone" dataKey="executionQueued" name="Execution Queue" stroke="#f59e0b" strokeWidth={2} dot={false} />
-            <Line type="monotone" dataKey="planningQueued" name="Planning Queue" stroke="#3b82f6" strokeWidth={2} dot={false} />
-            <Line type="monotone" dataKey="totalInPlanner" name="Total in Planner" stroke="#8b5cf6" strokeWidth={2} dot={false} />
+            <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => `$${v.toFixed(2)}`} />
+            <RechartsTooltip contentStyle={{ fontSize: 11 }} formatter={(value) => `$${(Number(value) || 0).toFixed(4)}`} />
+            <Line type="monotone" dataKey="cost" name="Hourly Cost" stroke="#10b981" strokeWidth={2} dot={false} fill="#10b981" />
           </RechartsLineChart>
         </ResponsiveContainer>
       </CardContent>
     </Card>
+  )
+}
+
+interface ComponentTimeSeriesPoint {
+  ts: string
+  component: string
+  cpu_usage: number
+  memory_usage: number
+}
+
+interface ComponentChartData {
+  time: string
+  cpu: number
+  memory: number
+}
+
+interface ComponentMetricsChartsProps {
+  database: string
+  clusterName: string
+  dateRange: { startTs: string; endTs: string }
+}
+
+function ComponentMetricsCharts({ database, clusterName, dateRange }: ComponentMetricsChartsProps) {
+  // Get E6 component metrics from customer database
+  const { data: e6Data } = useQuery<ComponentTimeSeriesPoint>(
+    "e6",
+    "getComponentMetricsTimeSeries",
+    [clusterName, dateRange],
+    { database, refetchInterval: 60000 }
+  )
+
+  // Group data by component
+  const componentCharts = useMemo(() => {
+    if (!e6Data || e6Data.length === 0) return {}
+
+    const byComponent: Record<string, ComponentChartData[]> = {}
+    const tempByComponent: Record<string, Record<string, ComponentChartData>> = {}
+
+    e6Data.forEach(point => {
+      const comp = point.component
+      if (!comp) return
+
+      if (!tempByComponent[comp]) tempByComponent[comp] = {}
+
+      const timeKey = formatTime(point.ts)
+      if (!tempByComponent[comp][timeKey]) {
+        tempByComponent[comp][timeKey] = {
+          time: timeKey,
+          cpu: 0,
+          memory: 0,
+        }
+      }
+      tempByComponent[comp][timeKey].cpu += point.cpu_usage || 0
+      tempByComponent[comp][timeKey].memory += point.memory_usage || 0
+    })
+
+    // Convert to arrays
+    Object.keys(tempByComponent).forEach(comp => {
+      byComponent[comp] = Object.values(tempByComponent[comp]).sort((a, b) => a.time.localeCompare(b.time))
+    })
+
+    return byComponent
+  }, [e6Data])
+
+  const components = Object.keys(componentCharts).sort()
+
+  if (components.length === 0) {
+    return (
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-lg">Component Usage</CardTitle>
+        </CardHeader>
+        <CardContent className="h-[200px] flex items-center justify-center text-muted-foreground text-sm">
+          No component data available
+        </CardContent>
+      </Card>
+    )
+  }
+
+  return (
+    <div className="grid grid-cols-2 gap-4">
+      {components.map(component => {
+        const data = componentCharts[component]
+
+        return (
+          <Card key={component}>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium capitalize">{component} - CPU Usage</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={180}>
+                <RechartsAreaChart data={data}>
+                  <defs>
+                    <linearGradient id={`gradient-${component}`} x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                  <XAxis dataKey="time" tick={{ fontSize: 9 }} interval="preserveStartEnd" />
+                  <YAxis tick={{ fontSize: 9 }} tickFormatter={(v) => `${(v/1000).toFixed(0)}k`} stroke="#10b981" />
+                  <RechartsTooltip contentStyle={{ fontSize: 10 }} formatter={(value) => `${Number(value).toLocaleString()} sec`} />
+                  <Area type="monotone" dataKey="cpu" name="CPU" stroke="#10b981" strokeWidth={2} fill={`url(#gradient-${component})`} />
+                </RechartsAreaChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        )
+      })}
+    </div>
   )
 }
 
@@ -525,234 +610,6 @@ function CostSummaryCard({ clusterName, dateRange }: CostSummaryCardProps) {
   )
 }
 
-interface DualAxisChartProps {
-  title: string
-  data: ChartDataPoint[]
-  leftKey: 'cpu' | 'memory'
-  leftLabel: string
-  leftColor?: string
-  rightLabel?: string
-  rightColor?: string
-}
-
-function DualAxisChart({
-  title,
-  data,
-  leftKey,
-  leftLabel,
-  leftColor = "#10b981",
-  rightLabel = "Cost ($)",
-  rightColor = "#f59e0b",
-}: DualAxisChartProps) {
-  if (data.length === 0) {
-    return (
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-medium">{title}</CardTitle>
-        </CardHeader>
-        <CardContent className="h-[200px] flex items-center justify-center text-muted-foreground text-sm">
-          No data available
-        </CardContent>
-      </Card>
-    )
-  }
-
-  return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium">{title}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <ResponsiveContainer width="100%" height={200}>
-          <RechartsLineChart data={data}>
-            <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-            <XAxis dataKey="time" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
-            <YAxis yAxisId="left" tick={{ fontSize: 10 }} tickFormatter={(v) => leftKey === 'memory' ? formatBytes(v) : v.toFixed(0)} stroke={leftColor} />
-            <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10 }} tickFormatter={(v) => `$${v.toFixed(4)}`} stroke={rightColor} />
-            <RechartsTooltip contentStyle={{ fontSize: 11 }} formatter={(value, name) => {
-              const numValue = Number(value) || 0
-              if (name === leftLabel) return leftKey === 'memory' ? formatBytes(numValue) : numValue.toFixed(2)
-              return `$${numValue.toFixed(6)}`
-            }} />
-            <Legend wrapperStyle={{ fontSize: 11 }} />
-            <Line yAxisId="left" type="monotone" dataKey={leftKey} name={leftLabel} stroke={leftColor} strokeWidth={2} dot={false} />
-            <Line yAxisId="right" type="monotone" dataKey="cost" name={rightLabel} stroke={rightColor} strokeWidth={2} dot={false} />
-          </RechartsLineChart>
-        </ResponsiveContainer>
-      </CardContent>
-    </Card>
-  )
-}
-
-interface ContainerMetricsChartsProps {
-  database: string
-  clusterName: string
-  dateRange: { startTs: string; endTs: string }
-}
-
-function ContainerMetricsCharts({ database, clusterName, dateRange }: ContainerMetricsChartsProps) {
-  // Fetch E6 container metrics
-  const { data: containerData } = useQuery<TimeSeriesPoint>(
-    "e6",
-    "getContainerMetrics",
-    [clusterName, dateRange],
-    { database, refetchInterval: 60000 }
-  )
-
-  // Fetch actual cost time series from OpenCost (kubernetes database)
-  const { data: costData } = useQuery<CostTimeSeriesRow>(
-    "kubernetes",
-    "getClusterCostTimeSeries",
-    [clusterName, dateRange],
-    { refetchInterval: 60000 }
-  )
-
-  // Create a map of time -> cost for easy lookup
-  const costByTime = useMemo<Record<string, number>>(() => {
-    if (!costData) return {}
-    const map: Record<string, number> = {}
-    costData.forEach(row => {
-      const timeKey = formatTime(row.time)
-      map[timeKey] = row.hourly_cost || 0
-    })
-    return map
-  }, [costData])
-
-  const cpuData = useMemo<ChartDataPoint[]>(() => {
-    if (!containerData) return []
-    const byTime: Record<string, ChartDataPoint> = {}
-    containerData.forEach(point => {
-      const timeKey = formatTime(point.ts)
-      if (!byTime[timeKey]) byTime[timeKey] = { time: timeKey, cpu: 0, cost: 0 }
-      if (point.metric_name.includes('cpu')) byTime[timeKey].cpu = (byTime[timeKey].cpu || 0) + point.metric_value
-    })
-    // Use real cost data from OpenCost
-    Object.keys(byTime).forEach(time => {
-      byTime[time].cost = costByTime[time] || 0
-    })
-    return Object.values(byTime).sort((a, b) => a.time.localeCompare(b.time))
-  }, [containerData, costByTime])
-
-  const memoryData = useMemo<ChartDataPoint[]>(() => {
-    if (!containerData) return []
-    const byTime: Record<string, ChartDataPoint> = {}
-    containerData.forEach(point => {
-      const timeKey = formatTime(point.ts)
-      if (!byTime[timeKey]) byTime[timeKey] = { time: timeKey, memory: 0, cost: 0 }
-      if (point.metric_name.includes('memory')) byTime[timeKey].memory = (byTime[timeKey].memory || 0) + point.metric_value
-    })
-    // Use real cost data from OpenCost
-    Object.keys(byTime).forEach(time => {
-      byTime[time].cost = costByTime[time] || 0
-    })
-    return Object.values(byTime).sort((a, b) => a.time.localeCompare(b.time))
-  }, [containerData, costByTime])
-
-  return (
-    <>
-      <DualAxisChart title="Executor - CPU vs Cost" data={cpuData} leftKey="cpu" leftLabel="CPU (seconds)" leftColor="#10b981" />
-      <DualAxisChart title="Executor - Memory vs Cost" data={memoryData} leftKey="memory" leftLabel="Memory" leftColor="#3b82f6" />
-    </>
-  )
-}
-
-interface GenericMetricsChartsProps {
-  database: string
-  clusterName: string
-  dateRange: { startTs: string; endTs: string }
-  queryName: string
-  componentFilter: string
-  titlePrefix: string
-}
-
-function GenericMetricsCharts({ database, clusterName, dateRange, queryName, componentFilter, titlePrefix }: GenericMetricsChartsProps) {
-  const { data } = useQuery<TimeSeriesPoint>(
-    "e6",
-    queryName,
-    [clusterName, dateRange],
-    { database, refetchInterval: 60000 }
-  )
-
-  // Fetch actual cost time series from OpenCost (kubernetes database)
-  const { data: costData } = useQuery<CostTimeSeriesRow>(
-    "kubernetes",
-    "getClusterCostTimeSeries",
-    [clusterName, dateRange],
-    { refetchInterval: 60000 }
-  )
-
-  // Create a map of time -> cost for easy lookup
-  const costByTime = useMemo<Record<string, number>>(() => {
-    if (!costData) return {}
-    const map: Record<string, number> = {}
-    costData.forEach(row => {
-      const timeKey = formatTime(row.time)
-      map[timeKey] = row.hourly_cost || 0
-    })
-    return map
-  }, [costData])
-
-  const cpuData = useMemo<ChartDataPoint[]>(() => {
-    if (!data) return []
-    const byTime: Record<string, ChartDataPoint> = {}
-    data.forEach(point => {
-      if (componentFilter && !point.metric_name.toLowerCase().includes(componentFilter.toLowerCase())) return
-      const timeKey = formatTime(point.ts)
-      if (!byTime[timeKey]) byTime[timeKey] = { time: timeKey, cpu: 0, cost: 0 }
-      if (point.metric_name.includes('cpu') || point.metric_name.includes('CPU') || point.metric_name.includes('Thread') || point.metric_name.includes('Uptime')) {
-        byTime[timeKey].cpu = (byTime[timeKey].cpu || 0) + point.metric_value
-      }
-    })
-    // Use real cost data from OpenCost
-    Object.keys(byTime).forEach(time => {
-      byTime[time].cost = costByTime[time] || 0
-    })
-    return Object.values(byTime).sort((a, b) => a.time.localeCompare(b.time))
-  }, [data, componentFilter, costByTime])
-
-  const memoryData = useMemo<ChartDataPoint[]>(() => {
-    if (!data) return []
-    const byTime: Record<string, ChartDataPoint> = {}
-    data.forEach(point => {
-      if (componentFilter && !point.metric_name.toLowerCase().includes(componentFilter.toLowerCase())) return
-      const timeKey = formatTime(point.ts)
-      if (!byTime[timeKey]) byTime[timeKey] = { time: timeKey, memory: 0, cost: 0 }
-      if (point.metric_name.includes('Memory') || point.metric_name.includes('memory') || point.metric_name.includes('Heap') || point.metric_name.includes('Cache') || point.metric_name.includes('Size')) {
-        byTime[timeKey].memory = (byTime[timeKey].memory || 0) + point.metric_value
-      }
-    })
-    // Use real cost data from OpenCost
-    Object.keys(byTime).forEach(time => {
-      byTime[time].cost = costByTime[time] || 0
-    })
-    return Object.values(byTime).sort((a, b) => a.time.localeCompare(b.time))
-  }, [data, componentFilter, costByTime])
-
-  return (
-    <>
-      <DualAxisChart title={`${titlePrefix} - CPU vs Cost`} data={cpuData} leftKey="cpu" leftLabel="CPU Usage" leftColor="#10b981" />
-      <DualAxisChart title={`${titlePrefix} - Memory vs Cost`} data={memoryData} leftKey="memory" leftLabel="Memory" leftColor="#3b82f6" />
-    </>
-  )
-}
-
-interface MetricsChartsGridProps {
-  database: string
-  clusterName: string
-  dateRange: { startTs: string; endTs: string }
-}
-
-function MetricsChartsGrid({ database, clusterName, dateRange }: MetricsChartsGridProps) {
-  return (
-    <div className="grid grid-cols-2 gap-4">
-      <ContainerMetricsCharts database={database} clusterName={clusterName} dateRange={dateRange} />
-      <GenericMetricsCharts database={database} clusterName={clusterName} dateRange={dateRange} queryName="getQueueMetrics" componentFilter="Planner" titlePrefix="Planner" />
-      <GenericMetricsCharts database={database} clusterName={clusterName} dateRange={dateRange} queryName="getQueueMetrics" componentFilter="Queue" titlePrefix="Queue" />
-      <GenericMetricsCharts database={database} clusterName={clusterName} dateRange={dateRange} queryName="getStorageMetrics" componentFilter="" titlePrefix="Storage" />
-      <GenericMetricsCharts database={database} clusterName={clusterName} dateRange={dateRange} queryName="getSchemaMetrics" componentFilter="" titlePrefix="Schema" />
-    </div>
-  )
-}
 
 interface DataHealthLoaderProps {
   database: string
@@ -812,9 +669,9 @@ export default function ClusterDetailPage() {
                 <DateBanner />
                 <PageHeader database={database} clusterName={clusterName} lastDataTimestamp={lastDataTimestamp} />
                 <CostSummaryCard clusterName={clusterName} dateRange={dateRange} />
+                <CostTimeSeriesChart clusterName={clusterName} dateRange={dateRange} />
+                <ComponentMetricsCharts database={database} clusterName={clusterName} dateRange={dateRange} />
                 <ComponentSummaryTable database={database} clusterName={clusterName} dateRange={dateRange} />
-                <QueryMetricsChart database={database} clusterName={clusterName} dateRange={dateRange} />
-                <MetricsChartsGrid database={database} clusterName={clusterName} dateRange={dateRange} />
               </div>
             )}
           </DataHealthLoader>

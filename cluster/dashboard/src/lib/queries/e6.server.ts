@@ -225,6 +225,27 @@ export function getContainerMetrics(clusterName: string, { startTs, endTs }: Dat
 }
 
 /**
+ * Get component metrics time series (CPU/memory by component over time)
+ */
+export function getComponentMetricsTimeSeries(clusterName: string, { startTs, endTs }: DateRange): string {
+  const sql = `
+    SELECT
+      ts,
+      component,
+      SUM(CASE WHEN metric_name = 'e6data_container_cpu_usage_seconds_total' THEN metric_value ELSE 0 END) as cpu_usage,
+      SUM(CASE WHEN metric_name = 'e6data_container_memory_usage_bytes' THEN metric_value ELSE 0 END) as memory_usage
+    FROM e6_container_metrics
+    WHERE cluster_name = '${clusterName}'
+      AND ts >= '${startTs}'::timestamp AND ts < '${endTs}'::timestamp
+      AND component != ''
+    GROUP BY ts, component
+    ORDER BY ts, component
+  `
+  logQuery('e6', 'getComponentMetricsTimeSeries', { clusterName, startTs, endTs }, sql)
+  return sql
+}
+
+/**
  * Get component summary (pod specs, nodes) for a cluster
  */
 export function getComponentSummary(clusterName: string, { startTs, endTs }: DateRange): string {

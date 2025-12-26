@@ -601,18 +601,40 @@ def generate_k8s_metrics(cluster: dict, timestamp_ms: int) -> list:
         })
 
         # container_cpu_allocation (from OpenCost)
+        cpu_alloc = random.uniform(0.5, 4)
         metrics.append({
             'name': 'container_cpu_allocation',
             'labels': {'cluster': cluster['name'], 'namespace': namespace, 'pod': pod, 'container': container, 'node': node, 'job': 'opencost', 'instance': 'opencost:9003'},
-            'value': random.uniform(0.5, 4),
+            'value': cpu_alloc,
             'timestamp_ms': timestamp_ms,
         })
 
         # container_memory_allocation_bytes (from OpenCost)
+        mem_alloc = random.uniform(2e9, 16e9)
         metrics.append({
             'name': 'container_memory_allocation_bytes',
             'labels': {'cluster': cluster['name'], 'namespace': namespace, 'pod': pod, 'container': container, 'node': node, 'job': 'opencost', 'instance': 'opencost:9003'},
-            'value': random.uniform(2e9, 16e9),
+            'value': mem_alloc,
+            'timestamp_ms': timestamp_ms,
+        })
+
+        # container_cpu_cost_hourly (OpenCost container cost)
+        # Cost = CPU allocation * $0.03/core/hour (typical cloud pricing)
+        cpu_cost = cpu_alloc * 0.03
+        metrics.append({
+            'name': 'container_cpu_cost_hourly',
+            'labels': {'cluster': cluster['name'], 'namespace': namespace, 'pod': pod, 'container': container, 'node': node, 'job': 'opencost', 'instance': 'opencost:9003'},
+            'value': cpu_cost,
+            'timestamp_ms': timestamp_ms,
+        })
+
+        # container_memory_cost_hourly (OpenCost container cost)
+        # Cost = Memory allocation in GB * $0.004/GB/hour (typical cloud pricing)
+        mem_cost = (mem_alloc / (1024**3)) * 0.004
+        metrics.append({
+            'name': 'container_memory_cost_hourly',
+            'labels': {'cluster': cluster['name'], 'namespace': namespace, 'pod': pod, 'container': container, 'node': node, 'job': 'opencost', 'instance': 'opencost:9003'},
+            'value': mem_cost,
             'timestamp_ms': timestamp_ms,
         })
 

@@ -660,6 +660,26 @@ export function getContainerMemoryCostTimeSeries(cluster: string, { startTs, end
 }
 
 /**
+ * Get container cost time series by component (from OpenCost)
+ */
+export function getContainerCostByComponent(cluster: string, { startTs, endTs }: DateRange): string {
+  const sql = `
+    SELECT
+      DATE_TRUNC('hour', greptime_timestamp) as time,
+      container as component,
+      SUM(greptime_value) as cpu_cost
+    FROM container_cpu_cost_hourly
+    WHERE cluster = '${cluster}'
+      AND greptime_timestamp >= '${startTs}'::timestamp
+      AND greptime_timestamp < '${endTs}'::timestamp
+    GROUP BY 1, 2
+    ORDER BY time, component
+  `
+  logQuery('kubernetes', 'getContainerCostByComponent', { cluster, startTs, endTs }, sql)
+  return sql
+}
+
+/**
  * Get node cost breakdown for a cluster
  */
 export function getNodeCostBreakdown(cluster: string, { startTs, endTs }: DateRange): string {
