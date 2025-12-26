@@ -270,6 +270,62 @@ export function getQueryMetricsTimeSeries(clusterName: string, { startTs, endTs 
 }
 
 /**
+ * Get aggregated CPU utilization time series for a cluster (all components combined)
+ */
+export function getClusterCpuTimeSeries(clusterName: string, { startTs, endTs }: DateRange): string {
+  const sql = `
+    SELECT
+      ts,
+      SUM(metric_value) as cpu_usage
+    FROM e6_container_metrics
+    WHERE cluster_name = '${clusterName}'
+      AND ts >= '${startTs}'::timestamp AND ts < '${endTs}'::timestamp
+      AND metric_name = 'e6data_container_cpu_usage_seconds_total'
+    GROUP BY ts
+    ORDER BY ts
+  `
+  logQuery('e6', 'getClusterCpuTimeSeries', { clusterName, startTs, endTs }, sql)
+  return sql
+}
+
+/**
+ * Get aggregated memory utilization time series for a cluster (all components combined)
+ */
+export function getClusterMemoryTimeSeries(clusterName: string, { startTs, endTs }: DateRange): string {
+  const sql = `
+    SELECT
+      ts,
+      SUM(metric_value) / 1073741824 as memory_usage_gb
+    FROM e6_container_metrics
+    WHERE cluster_name = '${clusterName}'
+      AND ts >= '${startTs}'::timestamp AND ts < '${endTs}'::timestamp
+      AND metric_name = 'e6data_container_memory_usage_bytes'
+    GROUP BY ts
+    ORDER BY ts
+  `
+  logQuery('e6', 'getClusterMemoryTimeSeries', { clusterName, startTs, endTs }, sql)
+  return sql
+}
+
+/**
+ * Get query count time series for a cluster (completed queries over time)
+ */
+export function getClusterQueryCountTimeSeries(clusterName: string, { startTs, endTs }: DateRange): string {
+  const sql = `
+    SELECT
+      ts,
+      metric_value as query_count
+    FROM e6_engine_metrics
+    WHERE cluster_name = '${clusterName}'
+      AND ts >= '${startTs}'::timestamp AND ts < '${endTs}'::timestamp
+      AND metric_name = 'io_e6x_E6Engine_NumCompletedQueries'
+    ORDER BY ts
+  `
+  logQuery('e6', 'getClusterQueryCountTimeSeries', { clusterName, startTs, endTs }, sql)
+  return sql
+}
+
+/**
  * Get component summary (pod specs, nodes) for a cluster
  */
 export function getComponentSummary(clusterName: string, { startTs, endTs }: DateRange): string {

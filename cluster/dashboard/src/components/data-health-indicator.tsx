@@ -17,6 +17,18 @@ interface DataHealthIndicatorProps {
 
 type HealthStatus = "healthy" | "warning" | "critical" | "unknown"
 
+// Convert timestamp to milliseconds - handles nanoseconds (18 digits) from GrepTime
+function parseTimestamp(timestamp: string | number): number {
+  if (typeof timestamp === "number") {
+    return timestamp > 1e15 ? Math.floor(timestamp / 1e6) : timestamp
+  }
+  const parsed = Number(timestamp)
+  if (!isNaN(parsed)) {
+    return parsed > 1e15 ? Math.floor(parsed / 1e6) : parsed
+  }
+  return new Date(timestamp).getTime()
+}
+
 export function DataHealthIndicator({
   lastDataTimestamp,
   dataSource,
@@ -30,18 +42,20 @@ export function DataHealthIndicator({
   const [status, setStatus] = useState<HealthStatus>("unknown")
   const [minutesAgo, setMinutesAgo] = useState<number | null>(null)
   const [lastChecked, setLastChecked] = useState<Date>(new Date())
+  const [parsedDate, setParsedDate] = useState<Date | null>(null)
 
   useEffect(() => {
     const calculateStatus = () => {
       if (!lastDataTimestamp) {
         setStatus("unknown")
         setMinutesAgo(null)
+        setParsedDate(null)
         return
       }
 
-      const lastData = typeof lastDataTimestamp === "number"
-        ? new Date(lastDataTimestamp)
-        : new Date(lastDataTimestamp)
+      const timestampMs = parseTimestamp(lastDataTimestamp)
+      const lastData = new Date(timestampMs)
+      setParsedDate(lastData)
 
       const now = new Date()
       const diffMs = now.getTime() - lastData.getTime()
@@ -149,9 +163,9 @@ export function DataHealthIndicator({
           <div className="space-y-1">
             <p className="font-medium">{config.label}</p>
             <p className="text-xs text-muted-foreground">{config.description}</p>
-            {minutesAgo !== null && (
+            {parsedDate && (
               <p className="text-xs text-muted-foreground">
-                Last data: {new Date(lastDataTimestamp as string | number).toLocaleString()}
+                Last data: {parsedDate.toLocaleString()}
               </p>
             )}
             <p className="text-xs text-muted-foreground">

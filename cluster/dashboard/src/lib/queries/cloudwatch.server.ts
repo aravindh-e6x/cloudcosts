@@ -1,7 +1,3 @@
-// CloudWatch Metrics Queries
-// Data is stored in separate tables per metric (e.g., cloudwatch_ec2_CPUUtilization)
-// All queries take startTs and endTs as parameters for date filtering
-
 import { logQuery } from '../logger.server'
 
 interface DateRange {
