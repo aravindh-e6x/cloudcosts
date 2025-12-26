@@ -172,3 +172,143 @@ FROM vantage_daily_cost_by_provider`
   logQuery('vantage', 'getMtdVsSamePeriodLastMonthSql', { date }, sql)
   return sql
 }
+
+/**
+ * Get accounts for a specific provider with cost breakdown
+ */
+export function getAccountsByProvider(provider: string, date: string): string {
+  const sql = `
+    WITH daily_costs AS (
+      SELECT
+        DATE_TRUNC('day', greptime_timestamp) as day,
+        account_id,
+        account_name,
+        MAX(greptime_value) as cost
+      FROM vantage_daily_cost_by_account
+      WHERE provider = '${provider}'
+        AND greptime_timestamp >= '${date}'::timestamp - INTERVAL '30 days'
+        AND greptime_timestamp < '${date}'::timestamp + INTERVAL '1 day'
+      GROUP BY DATE_TRUNC('day', greptime_timestamp), account_id, account_name
+    )
+    SELECT
+      account_id,
+      account_name,
+      SUM(CASE WHEN day >= '${date}'::timestamp AND day < '${date}'::timestamp + INTERVAL '1 day' THEN cost ELSE 0 END) as today,
+      SUM(CASE WHEN day >= '${date}'::timestamp - INTERVAL '6 days' AND day < '${date}'::timestamp + INTERVAL '1 day' THEN cost ELSE 0 END) as last_7d,
+      SUM(CASE WHEN day >= '${date}'::timestamp - INTERVAL '29 days' AND day < '${date}'::timestamp + INTERVAL '1 day' THEN cost ELSE 0 END) as last_30d
+    FROM daily_costs
+    GROUP BY account_id, account_name
+    ORDER BY last_30d DESC
+  `
+  logQuery('vantage', 'getAccountsByProvider', { provider, date }, sql)
+  return sql
+}
+
+/**
+ * Get services for a specific provider and account with cost breakdown
+ */
+export function getServicesByProviderAccount(provider: string, accountId: string, date: string): string {
+  const sql = `
+    WITH daily_costs AS (
+      SELECT
+        DATE_TRUNC('day', greptime_timestamp) as day,
+        service,
+        MAX(greptime_value) as cost
+      FROM vantage_daily_cost_by_service
+      WHERE provider = '${provider}'
+        AND account_id = '${accountId}'
+        AND greptime_timestamp >= '${date}'::timestamp - INTERVAL '30 days'
+        AND greptime_timestamp < '${date}'::timestamp + INTERVAL '1 day'
+      GROUP BY DATE_TRUNC('day', greptime_timestamp), service
+    )
+    SELECT
+      service,
+      SUM(CASE WHEN day >= '${date}'::timestamp AND day < '${date}'::timestamp + INTERVAL '1 day' THEN cost ELSE 0 END) as today,
+      SUM(CASE WHEN day >= '${date}'::timestamp - INTERVAL '6 days' AND day < '${date}'::timestamp + INTERVAL '1 day' THEN cost ELSE 0 END) as last_7d,
+      SUM(CASE WHEN day >= '${date}'::timestamp - INTERVAL '29 days' AND day < '${date}'::timestamp + INTERVAL '1 day' THEN cost ELSE 0 END) as last_30d
+    FROM daily_costs
+    GROUP BY service
+    ORDER BY last_30d DESC
+  `
+  logQuery('vantage', 'getServicesByProviderAccount', { provider, accountId, date }, sql)
+  return sql
+}
+
+/**
+ * Get customers (from tag values) for a specific provider, account, and service
+ */
+export function getCustomersByService(provider: string, accountId: string, service: string, date: string): string {
+  const sql = `
+    WITH daily_costs AS (
+      SELECT
+        DATE_TRUNC('day', greptime_timestamp) as day,
+        tag_value as customer,
+        MAX(greptime_value) as cost
+      FROM vantage_cost_by_tag
+      WHERE provider = '${provider}'
+        AND service = '${service}'
+        AND tag_key = 'Team'
+        AND greptime_timestamp >= '${date}'::timestamp - INTERVAL '30 days'
+        AND greptime_timestamp < '${date}'::timestamp + INTERVAL '1 day'
+      GROUP BY DATE_TRUNC('day', greptime_timestamp), tag_value
+    )
+    SELECT
+      customer,
+      SUM(CASE WHEN day >= '${date}'::timestamp AND day < '${date}'::timestamp + INTERVAL '1 day' THEN cost ELSE 0 END) as today,
+      SUM(CASE WHEN day >= '${date}'::timestamp - INTERVAL '6 days' AND day < '${date}'::timestamp + INTERVAL '1 day' THEN cost ELSE 0 END) as last_7d,
+      SUM(CASE WHEN day >= '${date}'::timestamp - INTERVAL '29 days' AND day < '${date}'::timestamp + INTERVAL '1 day' THEN cost ELSE 0 END) as last_30d
+    FROM daily_costs
+    WHERE customer != '__untagged__'
+    GROUP BY customer
+    ORDER BY last_30d DESC
+  `
+  logQuery('vantage', 'getCustomersByService', { provider, accountId, service, date }, sql)
+  return sql
+}
+
+/**
+ * Get cost trend by provider (daily for last 30 days)
+ */
+export function getProviderCostTrend(provider: string, date: string): string {
+  const sql = `
+    WITH daily_costs AS (
+      SELECT
+        DATE_TRUNC('day', greptime_timestamp) as day,
+        MAX(greptime_value) as cost
+      FROM vantage_daily_cost_by_provider
+      WHERE provider = '${provider}'
+        AND greptime_timestamp >= '${date}'::timestamp - INTERVAL '29 days'
+        AND greptime_timestamp < '${date}'::timestamp + INTERVAL '1 day'
+      GROUP BY DATE_TRUNC('day', greptime_timestamp)
+    )
+    SELECT day as date, cost
+    FROM daily_costs
+    ORDER BY day
+  `
+  logQuery('vantage', 'getProviderCostTrend', { provider, date }, sql)
+  return sql
+}
+
+/**
+ * Get cost trend by account (daily for last 30 days)
+ */
+export function getAccountCostTrend(provider: string, accountId: string, date: string): string {
+  const sql = `
+    WITH daily_costs AS (
+      SELECT
+        DATE_TRUNC('day', greptime_timestamp) as day,
+        MAX(greptime_value) as cost
+      FROM vantage_daily_cost_by_account
+      WHERE provider = '${provider}'
+        AND account_id = '${accountId}'
+        AND greptime_timestamp >= '${date}'::timestamp - INTERVAL '29 days'
+        AND greptime_timestamp < '${date}'::timestamp + INTERVAL '1 day'
+      GROUP BY DATE_TRUNC('day', greptime_timestamp)
+    )
+    SELECT day as date, cost
+    FROM daily_costs
+    ORDER BY day
+  `
+  logQuery('vantage', 'getAccountCostTrend', { provider, accountId, date }, sql)
+  return sql
+}

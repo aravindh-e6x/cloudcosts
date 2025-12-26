@@ -7,7 +7,7 @@ import {
   SidebarSection,
   SidebarNestedItem,
 } from "e6ds"
-import { LayoutDashboard, Server, Boxes, ExternalLink, CloudCog, Database, Grid, Network, Cloud } from "lucide-react"
+import { LayoutDashboard, Server, Boxes, ExternalLink, CloudCog, Database, Grid, Network, Cloud, DollarSign } from "lucide-react"
 import { TimeRangePicker } from "@/components"
 import { useDate } from "@/components/providers"
 
@@ -28,6 +28,7 @@ const navigation: NavSection[] = [
     section: "Overview",
     items: [
       { name: "Dashboard", href: "/", icon: <LayoutDashboard className="h-4 w-4" /> },
+      { name: "Costs", href: "/costs", icon: <DollarSign className="h-4 w-4" /> },
     ]
   },
   {
