@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { Server, Cpu, MemoryStick } from "lucide-react"
+import { Server, Cpu, MemoryStick, Info } from "lucide-react"
 import {
   Card,
   CardContent,
@@ -11,6 +11,10 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
 } from "e6ds"
 import {
   LineChart,
@@ -18,7 +22,7 @@ import {
   XAxis,
   YAxis,
   CartesianGrid,
-  Tooltip,
+  Tooltip as RechartsTooltip,
   ResponsiveContainer,
   Legend,
 } from "recharts"
@@ -95,12 +99,21 @@ export function NodePackingSection({ eksCluster, dateRange, selectedDate }: Node
   }
 
   return (
-    <>
+    <TooltipProvider>
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="flex items-center gap-2 text-base">
             <Server className="h-5 w-5" />
             Node Packing
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+              </TooltipTrigger>
+              <TooltipContent side="top" className="max-w-xs">
+                <p className="text-sm">CPU and memory allocation vs allocatable capacity per node</p>
+                <p className="text-xs text-muted-foreground mt-1">Metrics: kube_node_status_allocatable, container_cpu_allocation, container_memory_allocation_bytes</p>
+              </TooltipContent>
+            </Tooltip>
           </CardTitle>
         </CardHeader>
         <CardContent className="font-mono text-sm">
@@ -206,7 +219,7 @@ export function NodePackingSection({ eksCluster, dateRange, selectedDate }: Node
                 <CartesianGrid strokeDasharray="3 3" stroke="#e5e5e5" />
                 <XAxis dataKey="time" tick={{ fontSize: 12, fill: '#666' }} tickLine={false} axisLine={{ stroke: '#ccc' }} />
                 <YAxis tick={{ fontSize: 12, fill: '#666' }} tickLine={false} axisLine={{ stroke: '#ccc' }} domain={[0, 100]} tickFormatter={(v) => `${v}%`} />
-                <Tooltip
+                <RechartsTooltip
                   contentStyle={{ backgroundColor: '#fff', border: '1px solid #ccc', borderRadius: '8px' }}
                   formatter={(value) => [`${(value as number).toFixed(1)}%`, modalState?.metric === 'cpu' ? 'CPU' : 'Memory']}
                 />
@@ -216,6 +229,6 @@ export function NodePackingSection({ eksCluster, dateRange, selectedDate }: Node
           </div>
         </DialogContent>
       </Dialog>
-    </>
+    </TooltipProvider>
   )
 }

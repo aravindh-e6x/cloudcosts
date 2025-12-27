@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { Target, Cpu, MemoryStick } from "lucide-react"
+import { Target, Cpu, MemoryStick, Info } from "lucide-react"
 import {
   Card,
   CardContent,
@@ -11,6 +11,10 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
 } from "e6ds"
 import {
   LineChart,
@@ -18,7 +22,7 @@ import {
   XAxis,
   YAxis,
   CartesianGrid,
-  Tooltip,
+  Tooltip as RechartsTooltip,
   ResponsiveContainer,
   Legend,
 } from "recharts"
@@ -147,12 +151,21 @@ export function RightSizingSection({ eksCluster, dateRange, selectedDate }: Righ
   )
 
   return (
-    <>
+    <TooltipProvider>
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="flex items-center gap-2 text-base">
             <Target className="h-5 w-5" />
             Right-Sizing
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+              </TooltipTrigger>
+              <TooltipContent side="top" className="max-w-xs">
+                <p className="text-sm">Compares requested resources vs actual usage to identify over-provisioned workloads</p>
+                <p className="text-xs text-muted-foreground mt-1">Metrics: kube_pod_container_resource_requests, container_cpu_usage_seconds_total, container_memory_working_set_bytes</p>
+              </TooltipContent>
+            </Tooltip>
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -286,7 +299,7 @@ export function RightSizingSection({ eksCluster, dateRange, selectedDate }: Righ
                   axisLine={{ stroke: '#ccc' }}
                   tickFormatter={(v) => `${v.toFixed(1)}`}
                 />
-                <Tooltip
+                <RechartsTooltip
                   contentStyle={{
                     backgroundColor: '#fff',
                     border: '1px solid #ccc',
@@ -320,6 +333,6 @@ export function RightSizingSection({ eksCluster, dateRange, selectedDate }: Righ
           </div>
         </DialogContent>
       </Dialog>
-    </>
+    </TooltipProvider>
   )
 }

@@ -2,7 +2,7 @@
 
 import { use, useMemo, useState } from "react"
 import Link from "next/link"
-import { ArrowLeft, DollarSign, Cpu, Box, Layers } from "lucide-react"
+import { ArrowLeft, DollarSign, Cpu, Box, Layers, Info } from "lucide-react"
 import {
   Card,
   CardContent,
@@ -13,6 +13,10 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
 } from "e6ds"
 import { format } from "date-fns"
 import {
@@ -21,7 +25,7 @@ import {
   XAxis,
   YAxis,
   CartesianGrid,
-  Tooltip,
+  Tooltip as RechartsTooltip,
   ResponsiveContainer,
 } from "recharts"
 import { useDate } from "@/components/providers"
@@ -88,6 +92,19 @@ export default function WorkspaceDetailPage({
   const costChartData = useMemo(() => generateMockTimeSeries(2.68, 0.3).map(d => ({ ...d, value: d.value / 2.5 })), [])
   const podChartData = useMemo(() => generateMockTimeSeries(85, 0.15), [])
 
+  // Info tooltip helper
+  const InfoTooltip = ({ description, metric }: { description: string; metric?: string }) => (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+      </TooltipTrigger>
+      <TooltipContent side="top" className="max-w-xs">
+        <p className="text-sm">{description}</p>
+        {metric && <p className="text-xs text-muted-foreground mt-1">Metric: {metric}</p>}
+      </TooltipContent>
+    </Tooltip>
+  )
+
   // Reusable chart component
   const TimeSeriesChart = ({
     data,
@@ -118,7 +135,7 @@ export default function WorkspaceDetailPage({
             allowDecimals={false}
             tickFormatter={formatter}
           />
-          <Tooltip
+          <RechartsTooltip
             contentStyle={{
               backgroundColor: '#fff',
               border: '1px solid #ccc',
@@ -141,101 +158,118 @@ export default function WorkspaceDetailPage({
   )
 
   return (
-    <div className="space-y-6">
-      {/* Back Link */}
-      <Link href="/e6" className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground">
-        <ArrowLeft className="h-4 w-4" />
-        Back to Workspaces
-      </Link>
+    <TooltipProvider>
+      <div className="space-y-6">
+        {/* Back Link */}
+        <Link href="/e6" className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground">
+          <ArrowLeft className="h-4 w-4" />
+          Back to Workspaces
+        </Link>
 
-      {/* Header Card */}
-      <Card>
-        <CardHeader className="pb-2">
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="text-lg font-mono">{decodedCluster}</CardTitle>
-              <p className="text-sm text-muted-foreground mt-1">{selectedDate}</p>
+        {/* Header Card */}
+        <Card>
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-lg font-mono">{decodedCluster}</CardTitle>
+                <p className="text-sm text-muted-foreground mt-1">{selectedDate}</p>
+              </div>
+              <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                <span>{MOCK_WORKSPACE.region}</span>
+                <span>Account: 123456789</span>
+              </div>
             </div>
-            <div className="flex items-center gap-4 text-sm text-muted-foreground">
-              <span>{MOCK_WORKSPACE.region}</span>
-              <span>Account: 123456789</span>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {/* Cost Card */}
+              <Card className="bg-muted/50">
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-2 text-muted-foreground mb-2">
+                    <DollarSign className="h-4 w-4" />
+                    <span className="text-xs">Cost</span>
+                    <InfoTooltip
+                      description="Total compute cost for all nodes in this EKS cluster"
+                      metric="node_total_hourly_cost"
+                    />
+                  </div>
+                  <p className="text-lg text-muted-foreground">
+                    ${MOCK_COST.hourly_cost.toFixed(2)}/hr
+                    <span className="text-xs ml-1">instant</span>
+                  </p>
+                  <p
+                    className="text-2xl font-bold cursor-pointer hover:text-primary transition-colors"
+                    onClick={() => setCostModalOpen(true)}
+                  >
+                    ${MOCK_COST.total_cost.toFixed(0)}
+                    <span className="text-sm font-normal text-muted-foreground ml-1">/day</span>
+                  </p>
+                  <p className="text-xs text-muted-foreground">click total for trend</p>
+                </CardContent>
+              </Card>
+
+              {/* Nodes Card - Clickable */}
+              <Card
+                className="bg-muted/50 cursor-pointer hover:bg-muted/70 transition-colors"
+                onClick={() => setNodeModalOpen(true)}
+              >
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-2 text-muted-foreground mb-2">
+                    <Cpu className="h-4 w-4" />
+                    <span className="text-xs">Nodes</span>
+                    <InfoTooltip
+                      description="Number of worker nodes in this EKS cluster"
+                      metric="kube_node_info"
+                    />
+                  </div>
+                  <p className="text-2xl font-bold">{MOCK_STATS.node_count}</p>
+                  <p className="text-xs text-muted-foreground">click for trend</p>
+                </CardContent>
+              </Card>
+
+              {/* Pods Card - Clickable */}
+              <Card
+                className="bg-muted/50 cursor-pointer hover:bg-muted/70 transition-colors"
+                onClick={() => setPodModalOpen(true)}
+              >
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-2 text-muted-foreground mb-2">
+                    <Box className="h-4 w-4" />
+                    <span className="text-xs">Pods</span>
+                    <InfoTooltip
+                      description="Total number of pods running across all nodes"
+                      metric="kube_pod_info"
+                    />
+                  </div>
+                  <p className="text-2xl font-bold">{MOCK_STATS.pod_count}</p>
+                  <p className="text-xs text-muted-foreground">click for trend</p>
+                </CardContent>
+              </Card>
+
+              {/* E6 Clusters Card */}
+              <Card className="bg-muted/50">
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-2 text-muted-foreground mb-2">
+                    <Layers className="h-4 w-4" />
+                    <span className="text-xs">E6 Clusters</span>
+                    <InfoTooltip
+                      description="E6 database clusters deployed in this EKS cluster"
+                      metric="kube_namespace_labels"
+                    />
+                  </div>
+                  <p className="text-2xl font-bold">{MOCK_STATS.e6_cluster_count}</p>
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {MOCK_E6_CLUSTERS.slice(0, 3).map(cluster => (
+                      <Badge key={cluster} variant="secondary" className="text-xs">
+                        {cluster}
+                      </Badge>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
             </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {/* Cost Card */}
-            <Card className="bg-muted/50">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-2 text-muted-foreground mb-2">
-                  <DollarSign className="h-4 w-4" />
-                  <span className="text-xs">Cost</span>
-                </div>
-                <p className="text-lg text-muted-foreground">
-                  ${MOCK_COST.hourly_cost.toFixed(2)}/hr
-                  <span className="text-xs ml-1">instant</span>
-                </p>
-                <p
-                  className="text-2xl font-bold cursor-pointer hover:text-primary transition-colors"
-                  onClick={() => setCostModalOpen(true)}
-                >
-                  ${MOCK_COST.total_cost.toFixed(0)}
-                  <span className="text-sm font-normal text-muted-foreground ml-1">/day</span>
-                </p>
-                <p className="text-xs text-muted-foreground">click total for trend</p>
-              </CardContent>
-            </Card>
-
-            {/* Nodes Card - Clickable */}
-            <Card
-              className="bg-muted/50 cursor-pointer hover:bg-muted/70 transition-colors"
-              onClick={() => setNodeModalOpen(true)}
-            >
-              <CardContent className="p-4">
-                <div className="flex items-center gap-2 text-muted-foreground mb-2">
-                  <Cpu className="h-4 w-4" />
-                  <span className="text-xs">Nodes</span>
-                </div>
-                <p className="text-2xl font-bold">{MOCK_STATS.node_count}</p>
-                <p className="text-xs text-muted-foreground">click for trend</p>
-              </CardContent>
-            </Card>
-
-            {/* Pods Card - Clickable */}
-            <Card
-              className="bg-muted/50 cursor-pointer hover:bg-muted/70 transition-colors"
-              onClick={() => setPodModalOpen(true)}
-            >
-              <CardContent className="p-4">
-                <div className="flex items-center gap-2 text-muted-foreground mb-2">
-                  <Box className="h-4 w-4" />
-                  <span className="text-xs">Pods</span>
-                </div>
-                <p className="text-2xl font-bold">{MOCK_STATS.pod_count}</p>
-                <p className="text-xs text-muted-foreground">click for trend</p>
-              </CardContent>
-            </Card>
-
-            {/* E6 Clusters Card */}
-            <Card className="bg-muted/50">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-2 text-muted-foreground mb-2">
-                  <Layers className="h-4 w-4" />
-                  <span className="text-xs">E6 Clusters</span>
-                </div>
-                <p className="text-2xl font-bold">{MOCK_STATS.e6_cluster_count}</p>
-                <div className="flex flex-wrap gap-1 mt-1">
-                  {MOCK_E6_CLUSTERS.slice(0, 3).map(cluster => (
-                    <Badge key={cluster} variant="secondary" className="text-xs">
-                      {cluster}
-                    </Badge>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
 
       {/* Cost Modal */}
       <Dialog open={costModalOpen} onOpenChange={setCostModalOpen}>
@@ -313,6 +347,7 @@ export default function WorkspaceDetailPage({
       <IODataTransferSection
         eksCluster={decodedCluster}
         dateRange={dateRange}
+        selectedDate={selectedDate}
       />
 
       {/* E6 Engine Usage Section */}
@@ -321,6 +356,7 @@ export default function WorkspaceDetailPage({
         dateRange={dateRange}
         selectedDate={selectedDate}
       />
-    </div>
+      </div>
+    </TooltipProvider>
   )
 }

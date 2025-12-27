@@ -1,12 +1,16 @@
 "use client"
 
 import { useMemo } from "react"
-import { DollarSign } from "lucide-react"
+import { DollarSign, Info } from "lucide-react"
 import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
 } from "e6ds"
 
 interface CostBreakdownSectionProps {
@@ -56,16 +60,26 @@ export function CostBreakdownSection({ eksCluster, dateRange }: CostBreakdownSec
   }
 
   return (
-    <Card>
-      <CardHeader className="pb-2">
-        <div className="flex items-center justify-between">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <DollarSign className="h-5 w-5" />
-            Cost Breakdown
-          </CardTitle>
-          <span className="text-lg font-bold">${totalHourlyCost.toFixed(2)}/hr</span>
-        </div>
-      </CardHeader>
+    <TooltipProvider>
+      <Card>
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <DollarSign className="h-5 w-5" />
+              Cost Breakdown
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-xs">
+                  <p className="text-sm">Compute costs allocated by component and E6 cluster based on resource usage</p>
+                  <p className="text-xs text-muted-foreground mt-1">Metrics: node_total_hourly_cost, container_cpu_allocation</p>
+                </TooltipContent>
+              </Tooltip>
+            </CardTitle>
+            <span className="text-lg font-bold">${totalHourlyCost.toFixed(2)}/hr</span>
+          </div>
+        </CardHeader>
       <CardContent>
         <div className="grid md:grid-cols-2 gap-6">
           {/* By Component */}
@@ -121,6 +135,7 @@ export function CostBreakdownSection({ eksCluster, dateRange }: CostBreakdownSec
           </div>
         </div>
       </CardContent>
-    </Card>
+      </Card>
+    </TooltipProvider>
   )
 }
