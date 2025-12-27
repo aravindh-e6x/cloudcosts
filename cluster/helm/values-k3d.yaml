@@ -168,12 +168,3 @@ dashboard:
     tls:
       enabled: false
 
-e6mockExporter:
-  enabled: true
-  image:
-    repository: cloudcosts/mock-exporter
-    tag: "latest"
-    pullPolicy: IfNotPresent
-  greptimedb:
-    host: monitoring-stack-greptimedb-standalone
-    port: 4002

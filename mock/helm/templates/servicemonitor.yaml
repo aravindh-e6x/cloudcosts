@@ -1,0 +1,53 @@
+{{- if .Values.serviceMonitor.enabled }}
+{{- $workspace := .Values.workspace.name }}
+
+# ServiceMonitor for workspace components
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: mock-e6-workspace
+  namespace: {{ $workspace }}
+  labels:
+    {{- include "mock-e6.labels" . | nindent 4 }}
+    {{- with .Values.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "mock-e6.selectorLabels" . | nindent 6 }}
+  namespaceSelector:
+    matchNames:
+      - {{ $workspace }}
+  endpoints:
+    - port: metrics
+      interval: {{ .Values.serviceMonitor.interval }}
+      path: /metrics
+
+# ServiceMonitors for each cluster
+{{- range $cluster := .Values.clusters }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: mock-e6-{{ $cluster.name }}
+  namespace: {{ $cluster.name }}
+  labels:
+    {{- include "mock-e6.labels" $ | nindent 4 }}
+    {{- with $.Values.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "mock-e6.selectorLabels" $ | nindent 6 }}
+  namespaceSelector:
+    matchNames:
+      - {{ $cluster.name }}
+  endpoints:
+    - port: metrics
+      interval: {{ $.Values.serviceMonitor.interval }}
+      path: /metrics
+{{- end }}
+{{- end }}

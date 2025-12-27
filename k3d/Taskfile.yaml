@@ -1,0 +1,26 @@
+version: '3'
+
+vars:
+  CLUSTER: cloudcosts
+  CONFIG: config.yaml
+
+tasks:
+  up:
+    desc: Create k3d cluster
+    cmds:
+      - k3d cluster create --config {{.CONFIG}}
+
+  down:
+    desc: Delete k3d cluster
+    cmds:
+      - k3d cluster delete {{.CLUSTER}}
+
+  kubeconfig:
+    desc: Set kubectl context to this cluster
+    cmds:
+      - kubectl config use-context k3d-{{.CLUSTER}}
+  upgrade:
+    desc: Recreate k3d cluster
+    cmds:
+      - k3d cluster delete {{.CLUSTER}} || true
+      - k3d cluster create --config {{.CONFIG}}

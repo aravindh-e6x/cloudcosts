@@ -4,49 +4,50 @@ dotenv: ['.env']
 
 vars:
   CLUSTER_NAME: cloudcosts
-  NAMESPACE: monitoring
-  RELEASE_NAME: monitoring-stack
+  NAMESPACE: cloudcosts-cluster
+  RELEASE_NAME: cloudcosts-cluster
 
 tasks:
   up:
-    desc: Create k3d cluster, build images, and install helm chart
+    desc: Build images and install helm chart
     cmds:
-      - k3d cluster create --config k3d.yaml
-      - task: kubeconfig
-      - docker build -t cloudcosts/dashboard:latest ../dashboard
-      - docker build -t cloudcosts/mock-exporter:latest ../mock-exporter
-      - k3d image import cloudcosts/dashboard:latest cloudcosts/mock-exporter:latest -c {{.CLUSTER_NAME}}
-      # - helm dependency update
+      - task: build
       - kubectl create namespace {{.NAMESPACE}} --dry-run=client -o yaml | kubectl apply -f -
       - envsubst < values-k3d.yaml | helm install {{.RELEASE_NAME}} . -n {{.NAMESPACE}} -f -
 
   down:
-    desc: Delete k3d cluster
+    desc: Uninstall helm chart
     cmds:
-      - k3d cluster delete {{.CLUSTER_NAME}}
+      - helm uninstall {{.RELEASE_NAME}} -n {{.NAMESPACE}} || true
+      - kubectl delete namespace {{.NAMESPACE}} --ignore-not-found
 
   upgrade:
     desc: Build images and upgrade helm chart
     cmds:
       - task: build
-      # - helm dependency update
       - envsubst < values-k3d.yaml | helm upgrade {{.RELEASE_NAME}} . -n {{.NAMESPACE}} -f -
-
-  kubeconfig:
-    desc: Set kubectl context to this cluster
-    cmds:
-      - kubectl config use-context k3d-{{.CLUSTER_NAME}}
 
   build:
     desc: Build and load images into k3d
     cmds:
       - docker build -t cloudcosts/dashboard:latest ../dashboard
-      - docker build -t cloudcosts/mock-exporter:latest ../mock-exporter
-      - k3d image import cloudcosts/dashboard:latest cloudcosts/mock-exporter:latest -c {{.CLUSTER_NAME}}
+      - k3d image import cloudcosts/dashboard:latest -c {{.CLUSTER_NAME}}
 
   reset-db:
-    desc: Reset GreptimeDB (delete data and recreate)
+    desc: Reset GreptimeDB (delete all e6_ databases and recreate)
+    vars:
+      GREPTIMEDB_URL: '{{.GREPTIMEDB_URL | default "https://greptimedb.cloudcosts.local"}}'
     cmds:
+      - |
+        dbs=$(curl -s -u "${GREPTIMEDB_USERNAME}:${GREPTIMEDB_PASSWORD}" -X POST \
+          "{{.GREPTIMEDB_URL}}/v1/sql?db=public" \
+          -d "sql=SHOW DATABASES" | jq -r '.output[0].records.rows[][0]' | grep '^e6_' || true)
+        for db in $dbs; do
+          echo "Dropping $db..."
+          curl -s -u "${GREPTIMEDB_USERNAME}:${GREPTIMEDB_PASSWORD}" -X POST \
+            "{{.GREPTIMEDB_URL}}/v1/sql?db=public" \
+            -d "sql=DROP DATABASE IF EXISTS ${db}"
+        done
       - kubectl delete statefulset {{.RELEASE_NAME}}-greptimedb-standalone -n {{.NAMESPACE}} --ignore-not-found
       - kubectl delete pvc -l app.kubernetes.io/name=greptimedb-standalone -n {{.NAMESPACE}} --ignore-not-found
       - task: upgrade

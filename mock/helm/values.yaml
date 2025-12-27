@@ -1,0 +1,315 @@
+# Mock E6 Components Configuration
+
+image:
+  repository: mock-e6
+  tag: latest
+  pullPolicy: Never
+
+# Workspace configuration
+workspace:
+  name: demo
+
+# Base queries per minute (affects all components)
+baseQpm: 100
+
+# Metric update interval in seconds
+updateInterval: 15
+
+# Workspace-level components (deployed in workspace namespace)
+workspaceComponents:
+  gateway:
+    enabled: true
+    replicas: 2
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
+
+  schema:
+    enabled: true
+    replicas: 1
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 100m
+        memory: 128Mi
+
+  storage:
+    enabled: true
+    replicas: 1
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 100m
+        memory: 128Mi
+
+# E6 clusters (each cluster gets executor, planner, queue)
+clusters:
+  - name: analytics
+    executors: 3
+    resources:
+      executor:
+        requests:
+          cpu: 200m
+          memory: 256Mi
+        limits:
+          cpu: 500m
+          memory: 512Mi
+      planner:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+        limits:
+          cpu: 200m
+          memory: 256Mi
+      queue:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+        limits:
+          cpu: 200m
+          memory: 256Mi
+
+  - name: reporting
+    executors: 2
+    resources:
+      executor:
+        requests:
+          cpu: 200m
+          memory: 256Mi
+        limits:
+          cpu: 500m
+          memory: 512Mi
+      planner:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+        limits:
+          cpu: 200m
+          memory: 256Mi
+      queue:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+        limits:
+          cpu: 200m
+          memory: 256Mi
+
+  - name: batch
+    executors: 5
+    resources:
+      executor:
+        requests:
+          cpu: 300m
+          memory: 512Mi
+        limits:
+          cpu: 1000m
+          memory: 1Gi
+      planner:
+        requests:
+          cpu: 150m
+          memory: 256Mi
+        limits:
+          cpu: 300m
+          memory: 512Mi
+      queue:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+        limits:
+          cpu: 200m
+          memory: 256Mi
+
+  - name: realtime
+    executors: 4
+    resources:
+      executor:
+        requests:
+          cpu: 250m
+          memory: 384Mi
+        limits:
+          cpu: 750m
+          memory: 768Mi
+      planner:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+        limits:
+          cpu: 200m
+          memory: 256Mi
+      queue:
+        requests:
+          cpu: 150m
+          memory: 192Mi
+        limits:
+          cpu: 300m
+          memory: 384Mi
+
+  - name: etl
+    executors: 3
+    resources:
+      executor:
+        requests:
+          cpu: 200m
+          memory: 256Mi
+        limits:
+          cpu: 500m
+          memory: 512Mi
+      planner:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+        limits:
+          cpu: 200m
+          memory: 256Mi
+      queue:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+        limits:
+          cpu: 200m
+          memory: 256Mi
+
+  - name: ml
+    executors: 4
+    resources:
+      executor:
+        requests:
+          cpu: 400m
+          memory: 512Mi
+        limits:
+          cpu: 1000m
+          memory: 1Gi
+      planner:
+        requests:
+          cpu: 200m
+          memory: 256Mi
+        limits:
+          cpu: 400m
+          memory: 512Mi
+      queue:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+        limits:
+          cpu: 200m
+          memory: 256Mi
+
+  - name: staging
+    executors: 2
+    resources:
+      executor:
+        requests:
+          cpu: 150m
+          memory: 192Mi
+        limits:
+          cpu: 300m
+          memory: 384Mi
+      planner:
+        requests:
+          cpu: 75m
+          memory: 96Mi
+        limits:
+          cpu: 150m
+          memory: 192Mi
+      queue:
+        requests:
+          cpu: 75m
+          memory: 96Mi
+        limits:
+          cpu: 150m
+          memory: 192Mi
+
+  - name: dev
+    executors: 1
+    resources:
+      executor:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+        limits:
+          cpu: 200m
+          memory: 256Mi
+      planner:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 100m
+          memory: 128Mi
+      queue:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 100m
+          memory: 128Mi
+
+  - name: test
+    executors: 2
+    resources:
+      executor:
+        requests:
+          cpu: 150m
+          memory: 192Mi
+        limits:
+          cpu: 300m
+          memory: 384Mi
+      planner:
+        requests:
+          cpu: 75m
+          memory: 96Mi
+        limits:
+          cpu: 150m
+          memory: 192Mi
+      queue:
+        requests:
+          cpu: 75m
+          memory: 96Mi
+        limits:
+          cpu: 150m
+          memory: 192Mi
+
+  - name: production
+    executors: 6
+    resources:
+      executor:
+        requests:
+          cpu: 500m
+          memory: 768Mi
+        limits:
+          cpu: 1500m
+          memory: 2Gi
+      planner:
+        requests:
+          cpu: 200m
+          memory: 256Mi
+        limits:
+          cpu: 500m
+          memory: 512Mi
+      queue:
+        requests:
+          cpu: 150m
+          memory: 192Mi
+        limits:
+          cpu: 300m
+          memory: 384Mi
+
+# Service Monitor for Prometheus scraping (requires Prometheus Operator CRDs)
+serviceMonitor:
+  enabled: false
+  interval: 15s
+  labels: {}
+
+# Pod annotations
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "8080"
+  prometheus.io/path: "/metrics"

@@ -1,0 +1,284 @@
+{{- $workspace := .Values.workspace.name }}
+{{- $image := printf "%s:%s" .Values.image.repository .Values.image.tag }}
+{{- $baseQpm := .Values.baseQpm }}
+{{- $updateInterval := .Values.updateInterval }}
+
+{{- range $cluster := .Values.clusters }}
+---
+# Namespace for this E6 cluster
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ $cluster.name }}
+  labels:
+    {{- include "mock-e6.labels" $ | nindent 4 }}
+    e6.io/workspace: {{ $workspace }}
+    e6.io/cluster: {{ $cluster.name }}
+
+---
+# Executor StatefulSet
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: executor-{{ $cluster.name }}
+  namespace: {{ $cluster.name }}
+  labels:
+    {{- include "mock-e6.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: executor
+    e6.io/cluster: {{ $cluster.name }}
+spec:
+  serviceName: executor-{{ $cluster.name }}
+  replicas: {{ $cluster.executors }}
+  selector:
+    matchLabels:
+      {{- include "mock-e6.selectorLabels" $ | nindent 6 }}
+      app.kubernetes.io/component: executor
+      e6.io/cluster: {{ $cluster.name }}
+  template:
+    metadata:
+      labels:
+        {{- include "mock-e6.selectorLabels" $ | nindent 8 }}
+        app.kubernetes.io/component: executor
+        e6.io/component: executor
+        e6.io/cluster: {{ $cluster.name }}
+        e6.io/workspace: {{ $workspace }}
+      annotations:
+        {{- toYaml $.Values.podAnnotations | nindent 8 }}
+    spec:
+      containers:
+        - name: executor
+          image: {{ $image }}
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          ports:
+            - name: metrics
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: E6_COMPONENT
+              value: executor
+            - name: E6_CLUSTER
+              value: {{ $cluster.name }}
+            - name: E6_WORKSPACE
+              value: {{ $workspace }}
+            - name: E6_NAMESPACE
+              value: {{ $cluster.name }}
+            - name: E6_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: E6_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: E6_BASE_QPM
+              value: {{ $baseQpm | quote }}
+            - name: E6_UPDATE_INTERVAL
+              value: {{ $updateInterval | quote }}
+          resources:
+            {{- toYaml $cluster.resources.executor | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: metrics
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: metrics
+            initialDelaySeconds: 5
+            periodSeconds: 10
+
+---
+# Executor Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: executor-{{ $cluster.name }}
+  namespace: {{ $cluster.name }}
+  labels:
+    {{- include "mock-e6.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: executor
+spec:
+  clusterIP: None
+  ports:
+    - port: 8080
+      targetPort: metrics
+      name: metrics
+  selector:
+    {{- include "mock-e6.selectorLabels" $ | nindent 4 }}
+    app.kubernetes.io/component: executor
+    e6.io/cluster: {{ $cluster.name }}
+
+---
+# Planner Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: planner-{{ $cluster.name }}
+  namespace: {{ $cluster.name }}
+  labels:
+    {{- include "mock-e6.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: planner
+    e6.io/cluster: {{ $cluster.name }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "mock-e6.selectorLabels" $ | nindent 6 }}
+      app.kubernetes.io/component: planner
+      e6.io/cluster: {{ $cluster.name }}
+  template:
+    metadata:
+      labels:
+        {{- include "mock-e6.selectorLabels" $ | nindent 8 }}
+        app.kubernetes.io/component: planner
+        e6.io/component: planner
+        e6.io/cluster: {{ $cluster.name }}
+        e6.io/workspace: {{ $workspace }}
+      annotations:
+        {{- toYaml $.Values.podAnnotations | nindent 8 }}
+    spec:
+      containers:
+        - name: planner
+          image: {{ $image }}
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          ports:
+            - name: metrics
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: E6_COMPONENT
+              value: planner
+            - name: E6_CLUSTER
+              value: {{ $cluster.name }}
+            - name: E6_WORKSPACE
+              value: {{ $workspace }}
+            - name: E6_NAMESPACE
+              value: {{ $cluster.name }}
+            - name: E6_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: E6_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: E6_BASE_QPM
+              value: {{ $baseQpm | quote }}
+            - name: E6_UPDATE_INTERVAL
+              value: {{ $updateInterval | quote }}
+          resources:
+            {{- toYaml $cluster.resources.planner | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: metrics
+
+---
+# Planner Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: planner-{{ $cluster.name }}
+  namespace: {{ $cluster.name }}
+  labels:
+    {{- include "mock-e6.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: planner
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8080
+      targetPort: metrics
+      name: metrics
+  selector:
+    {{- include "mock-e6.selectorLabels" $ | nindent 4 }}
+    app.kubernetes.io/component: planner
+    e6.io/cluster: {{ $cluster.name }}
+
+---
+# Queue Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: queue-{{ $cluster.name }}
+  namespace: {{ $cluster.name }}
+  labels:
+    {{- include "mock-e6.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: queue
+    e6.io/cluster: {{ $cluster.name }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "mock-e6.selectorLabels" $ | nindent 6 }}
+      app.kubernetes.io/component: queue
+      e6.io/cluster: {{ $cluster.name }}
+  template:
+    metadata:
+      labels:
+        {{- include "mock-e6.selectorLabels" $ | nindent 8 }}
+        app.kubernetes.io/component: queue
+        e6.io/component: queue
+        e6.io/cluster: {{ $cluster.name }}
+        e6.io/workspace: {{ $workspace }}
+      annotations:
+        {{- toYaml $.Values.podAnnotations | nindent 8 }}
+    spec:
+      containers:
+        - name: queue
+          image: {{ $image }}
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          ports:
+            - name: metrics
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: E6_COMPONENT
+              value: queue
+            - name: E6_CLUSTER
+              value: {{ $cluster.name }}
+            - name: E6_WORKSPACE
+              value: {{ $workspace }}
+            - name: E6_NAMESPACE
+              value: {{ $cluster.name }}
+            - name: E6_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: E6_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: E6_BASE_QPM
+              value: {{ $baseQpm | quote }}
+            - name: E6_UPDATE_INTERVAL
+              value: {{ $updateInterval | quote }}
+          resources:
+            {{- toYaml $cluster.resources.queue | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: metrics
+
+---
+# Queue Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: queue-{{ $cluster.name }}
+  namespace: {{ $cluster.name }}
+  labels:
+    {{- include "mock-e6.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: queue
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8080
+      targetPort: metrics
+      name: metrics
+  selector:
+    {{- include "mock-e6.selectorLabels" $ | nindent 4 }}
+    app.kubernetes.io/component: queue
+    e6.io/cluster: {{ $cluster.name }}
+{{- end }}

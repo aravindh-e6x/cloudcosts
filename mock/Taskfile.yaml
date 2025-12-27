@@ -1,0 +1,27 @@
+version: '3'
+
+vars:
+  IMAGE: mock-e6:latest
+  CLUSTER: cloudcosts
+  RELEASE: mock-e6
+
+tasks:
+  up:
+    desc: Build, import, and deploy
+    cmds:
+      - docker build -t {{.IMAGE}} .
+      - k3d image import {{.IMAGE}} -c {{.CLUSTER}}
+      - helm upgrade --install {{.RELEASE}} ./helm
+
+  down:
+    desc: Uninstall and cleanup
+    cmds:
+      - helm uninstall {{.RELEASE}} || true
+      - kubectl delete ns demo analytics reporting batch realtime etl ml staging dev test production --ignore-not-found
+
+  upgrade:
+    desc: Rebuild and upgrade
+    cmds:
+      - docker build -t {{.IMAGE}} .
+      - k3d image import {{.IMAGE}} -c {{.CLUSTER}}
+      - helm upgrade {{.RELEASE}} ./helm
