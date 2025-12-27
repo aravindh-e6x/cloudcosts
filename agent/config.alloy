@@ -5,7 +5,7 @@
 // Scrape kube-state-metrics
 prometheus.scrape "kube_state_metrics" {
   targets = [{
-    __address__ = "__RELEASE_NAME__-kube-state-metrics.____RELEASE_NAME__SPACE__.svc:8080",
+    __address__ = "{{RELEASE_NAME}}-kube-state-metrics.{{RELEASE_NAMESPACE}}.svc:8080",
   }]
   forward_to = [prometheus.relabel.all_metrics.receiver]
   scrape_interval = "30s"
@@ -20,7 +20,7 @@ discovery.kubernetes "nodes" {
 discovery.relabel "node_exporter" {
   targets = discovery.kubernetes.nodes.targets
   rule {
-    replacement = "__RELEASE_NAME__-prometheus-node-exporter.__RELEASE_NAME__SPACE.svc:9100"
+    replacement = "{{RELEASE_NAME}}-prometheus-node-exporter.{{RELEASE_NAMESPACE}}.svc:9100"
     target_label = "__address__"
   }
   rule {
@@ -158,7 +158,7 @@ prometheus.scrape "cadvisor" {
 // Scrape OpenCost metrics
 prometheus.scrape "opencost" {
   targets = [{
-    __address__ = "__RELEASE_NAME__-opencost.__RELEASE_NAME__SPACE.svc:9003",
+    __address__ = "{{RELEASE_NAME}}-opencost.{{RELEASE_NAMESPACE}}.svc:9003",
   }]
   forward_to = [prometheus.relabel.all_metrics.receiver]
   scrape_interval = "30s"
@@ -187,10 +187,10 @@ prometheus.relabel "all_metrics" {
 
 prometheus.remote_write "greptimedb_cluster" {
   endpoint {
-    url = "GREPTIMEDB_URL/v1/prometheus/write?db=CLUSTER_DATABASE"
+    url = "{{GREPTIMEDB_URL}}/v1/prometheus/write?db={{CLUSTER_DATABASE}}"
     basic_auth {
-      username = "GREPTIMEDB_USERNAME"
-      password = "GREPTIMEDB_PASSWORD"
+      username = "{{GREPTIMEDB_USERNAME}}"
+      password = "{{GREPTIMEDB_PASSWORD}}"
     }
   }
 }
@@ -210,7 +210,6 @@ prometheus.scrape "alloy_self" {
 prometheus.relabel "heartbeat" {
   forward_to = [prometheus.remote_write.greptimedb_system.receiver]
 
-  // Keep only up metric and rename it to exporter_heartbeat
   rule {
     source_labels = ["__name__"]
     regex = "up"
@@ -230,13 +229,13 @@ prometheus.relabel "heartbeat" {
 
 prometheus.remote_write "greptimedb_system" {
   endpoint {
-    url = "GREPTIMEDB_URL/v1/prometheus/write?db=system"
+    url = "{{GREPTIMEDB_URL}}/v1/prometheus/write?db=system"
     basic_auth {
-      username = "GREPTIMEDB_USERNAME"
-      password = "GREPTIMEDB_PASSWORD"
+      username = "{{GREPTIMEDB_USERNAME}}"
+      password = "{{GREPTIMEDB_PASSWORD}}"
     }
   }
   external_labels = {
-    cluster = "CLUSTER_DATABASE",
+    cluster = "{{CLUSTER_DATABASE}}",
   }
 }

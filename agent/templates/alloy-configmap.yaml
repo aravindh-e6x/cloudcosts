@@ -7,10 +7,10 @@ metadata:
 data:
   config.alloy: |
 {{- $config := .Files.Get "config.alloy" }}
-{{- $config = replace "RELEASE_NAME" .Release.Name $config }}
-{{- $config = replace "RELEASE_NAMESPACE" .Release.Namespace $config }}
-{{- $config = replace "GREPTIMEDB_URL" .Values.greptimedb.urlBase $config }}
-{{- $config = replace "GREPTIMEDB_USERNAME" .Values.greptimedb.username $config }}
-{{- $config = replace "GREPTIMEDB_PASSWORD" .Values.greptimedb.password $config }}
-{{- $config = replace "CLUSTER_DATABASE" .Values.cluster.database $config }}
+{{- $config = replace "{{RELEASE_NAME}}" .Release.Name $config }}
+{{- $config = replace "{{RELEASE_NAMESPACE}}" .Release.Namespace $config }}
+{{- $config = replace "{{GREPTIMEDB_URL}}" .Values.greptimedb.urlBase $config }}
+{{- $config = replace "{{GREPTIMEDB_USERNAME}}" .Values.greptimedb.username $config }}
+{{- $config = replace "{{GREPTIMEDB_PASSWORD}}" .Values.greptimedb.password $config }}
+{{- $config = replace "{{CLUSTER_DATABASE}}" .Values.cluster.database $config }}
 {{ $config | indent 4 }}
