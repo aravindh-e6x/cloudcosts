@@ -161,6 +161,7 @@ dashboard:
     secret: "${DASHBOARD_AUTH_SECRET}"
     username: "${DASHBOARD_AUTH_USERNAME}"
     password: "${DASHBOARD_AUTH_PASSWORD}"
+  anthropicApiKey: "${ANTHROPIC_API_KEY}"
   ingress:
     enabled: true
     host: dashboard.cloudcosts.local

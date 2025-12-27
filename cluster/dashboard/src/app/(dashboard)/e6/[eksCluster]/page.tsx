@@ -35,6 +35,7 @@ import {
   CostBreakdownSection,
   IODataTransferSection,
   E6EngineUsageSection,
+  WorkspaceChatPanel,
 } from "./components"
 
 // Mock data for workspace stats
@@ -358,6 +359,12 @@ export default function WorkspaceDetailPage({
         selectedDate={selectedDate}
       />
       </div>
+
+      {/* AI Chat Panel */}
+      <WorkspaceChatPanel
+        eksCluster={decodedCluster}
+        e6Clusters={MOCK_E6_CLUSTERS}
+      />
     </TooltipProvider>
   )
 }

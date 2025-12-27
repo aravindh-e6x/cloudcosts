@@ -53,6 +53,10 @@ spec:
               value: {{ .Values.dashboard.auth.password | quote }}
             - name: AUTH_TRUST_HOST
               value: "true"
+            {{- if .Values.dashboard.anthropicApiKey }}
+            - name: ANTHROPIC_API_KEY
+              value: {{ .Values.dashboard.anthropicApiKey | quote }}
+            {{- end }}
             {{- if .Values.dashboard.ingress.enabled }}
             - name: AUTH_URL
               value: "http{{ if .Values.dashboard.ingress.tls.enabled }}s{{ end }}://{{ .Values.dashboard.ingress.host }}"
