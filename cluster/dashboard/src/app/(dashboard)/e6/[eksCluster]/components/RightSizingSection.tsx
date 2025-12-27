@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { Target, Cpu, MemoryStick, Info } from "lucide-react"
+import { Target, Cpu, MemoryStick, Info, Server, Layers } from "lucide-react"
 import {
   Card,
   CardContent,
@@ -33,15 +33,33 @@ interface RightSizingSectionProps {
   selectedDate?: string
 }
 
-// Mock data for right-sizing by component
-const MOCK_RIGHT_SIZING = [
+// Workspace-level components (shared across all E6 clusters)
+const WORKSPACE_COMPONENTS = [
   { component: "gateway", cpu_requested: 2, cpu_actual: 1.4, memory_requested: 4 * 1024 * 1024 * 1024, memory_actual: 2.8 * 1024 * 1024 * 1024 },
-  { component: "executor", cpu_requested: 16, cpu_actual: 9.6, memory_requested: 32 * 1024 * 1024 * 1024, memory_actual: 19.2 * 1024 * 1024 * 1024 },
-  { component: "planner", cpu_requested: 2, cpu_actual: 1.0, memory_requested: 4 * 1024 * 1024 * 1024, memory_actual: 1.8 * 1024 * 1024 * 1024 },
-  { component: "queue", cpu_requested: 1, cpu_actual: 0.3, memory_requested: 2 * 1024 * 1024 * 1024, memory_actual: 0.8 * 1024 * 1024 * 1024 },
-  { component: "schema", cpu_requested: 1, cpu_actual: 0.5, memory_requested: 2 * 1024 * 1024 * 1024, memory_actual: 1.2 * 1024 * 1024 * 1024 },
   { component: "storage", cpu_requested: 2, cpu_actual: 1.2, memory_requested: 4 * 1024 * 1024 * 1024, memory_actual: 2.4 * 1024 * 1024 * 1024 },
+  { component: "schema", cpu_requested: 1, cpu_actual: 0.5, memory_requested: 2 * 1024 * 1024 * 1024, memory_actual: 1.2 * 1024 * 1024 * 1024 },
 ]
+
+// Cluster-level components (per E6 cluster)
+const CLUSTER_COMPONENTS_BY_E6: Record<string, typeof WORKSPACE_COMPONENTS> = {
+  "prod-analytics": [
+    { component: "executor", cpu_requested: 8, cpu_actual: 5.2, memory_requested: 16 * 1024 * 1024 * 1024, memory_actual: 10.4 * 1024 * 1024 * 1024 },
+    { component: "planner", cpu_requested: 1, cpu_actual: 0.6, memory_requested: 2 * 1024 * 1024 * 1024, memory_actual: 1.1 * 1024 * 1024 * 1024 },
+    { component: "queue", cpu_requested: 0.5, cpu_actual: 0.2, memory_requested: 1 * 1024 * 1024 * 1024, memory_actual: 0.4 * 1024 * 1024 * 1024 },
+  ],
+  "prod-reporting": [
+    { component: "executor", cpu_requested: 4, cpu_actual: 2.8, memory_requested: 8 * 1024 * 1024 * 1024, memory_actual: 5.6 * 1024 * 1024 * 1024 },
+    { component: "planner", cpu_requested: 0.5, cpu_actual: 0.3, memory_requested: 1 * 1024 * 1024 * 1024, memory_actual: 0.5 * 1024 * 1024 * 1024 },
+    { component: "queue", cpu_requested: 0.25, cpu_actual: 0.1, memory_requested: 0.5 * 1024 * 1024 * 1024, memory_actual: 0.2 * 1024 * 1024 * 1024 },
+  ],
+  "dev-testing": [
+    { component: "executor", cpu_requested: 4, cpu_actual: 1.6, memory_requested: 8 * 1024 * 1024 * 1024, memory_actual: 3.2 * 1024 * 1024 * 1024 },
+    { component: "planner", cpu_requested: 0.5, cpu_actual: 0.1, memory_requested: 1 * 1024 * 1024 * 1024, memory_actual: 0.2 * 1024 * 1024 * 1024 },
+    { component: "queue", cpu_requested: 0.25, cpu_actual: 0, memory_requested: 0.5 * 1024 * 1024 * 1024, memory_actual: 0.2 * 1024 * 1024 * 1024 },
+  ],
+}
+
+const E6_CLUSTERS = ["prod-analytics", "prod-reporting", "dev-testing"]
 
 // Generate mock time series for requested vs actual
 const generateTimeSeriesData = (requested: number, actual: number, type: 'cpu' | 'memory') => {
@@ -60,84 +78,80 @@ const generateTimeSeriesData = (requested: number, actual: number, type: 'cpu' |
 }
 
 type ModalType =
-  | { type: 'overall-cpu' }
-  | { type: 'overall-memory' }
-  | { type: 'component-cpu'; component: string }
-  | { type: 'component-memory'; component: string }
+  | { type: 'workspace-cpu'; component: string }
+  | { type: 'workspace-memory'; component: string }
+  | { type: 'cluster-cpu'; e6Cluster: string; component: string }
+  | { type: 'cluster-memory'; e6Cluster: string; component: string }
   | null
 
 export function RightSizingSection({ eksCluster, dateRange, selectedDate }: RightSizingSectionProps) {
   const [modalState, setModalState] = useState<ModalType>(null)
 
-  const rightSizingData = useMemo(() => {
-    return MOCK_RIGHT_SIZING.map(r => ({
+  const workspaceData = useMemo(() => {
+    return WORKSPACE_COMPONENTS.map(r => ({
       ...r,
       cpu_util_pct: (r.cpu_actual / r.cpu_requested) * 100,
       memory_util_pct: (r.memory_actual / r.memory_requested) * 100,
     }))
   }, [])
 
-  // Calculate totals
-  const totals = useMemo(() => {
-    const totalCpuRequested = rightSizingData.reduce((sum, d) => sum + d.cpu_requested, 0)
-    const totalCpuActual = rightSizingData.reduce((sum, d) => sum + d.cpu_actual, 0)
-    const totalMemRequested = rightSizingData.reduce((sum, d) => sum + d.memory_requested, 0)
-    const totalMemActual = rightSizingData.reduce((sum, d) => sum + d.memory_actual, 0)
-    return {
-      cpuRequested: totalCpuRequested,
-      cpuActual: totalCpuActual,
-      cpuUtilPct: totalCpuRequested > 0 ? Math.round(totalCpuActual / totalCpuRequested * 100) : 0,
-      memRequested: totalMemRequested,
-      memActual: totalMemActual,
-      memUtilPct: totalMemRequested > 0 ? Math.round(totalMemActual / totalMemRequested * 100) : 0,
+  const clusterData = useMemo(() => {
+    const result: Record<string, typeof workspaceData> = {}
+    for (const cluster of E6_CLUSTERS) {
+      const components = CLUSTER_COMPONENTS_BY_E6[cluster] || []
+      result[cluster] = components.map(r => ({
+        ...r,
+        cpu_util_pct: r.cpu_requested > 0 ? (r.cpu_actual / r.cpu_requested) * 100 : 0,
+        memory_util_pct: r.memory_requested > 0 ? (r.memory_actual / r.memory_requested) * 100 : 0,
+      }))
     }
-  }, [rightSizingData])
+    return result
+  }, [workspaceData])
 
   // Generate chart data based on modal state
   const chartData = useMemo(() => {
     if (!modalState) return []
 
-    if (modalState.type === 'overall-cpu') {
-      return generateTimeSeriesData(totals.cpuRequested, totals.cpuActual, 'cpu')
-    } else if (modalState.type === 'overall-memory') {
-      return generateTimeSeriesData(totals.memRequested, totals.memActual, 'memory')
-    } else if (modalState.type === 'component-cpu') {
-      const component = rightSizingData.find(r => r.component === modalState.component)
+    if (modalState.type === 'workspace-cpu' || modalState.type === 'workspace-memory') {
+      const component = workspaceData.find(r => r.component === modalState.component)
       if (component) {
-        return generateTimeSeriesData(component.cpu_requested, component.cpu_actual, 'cpu')
+        const isMemory = modalState.type === 'workspace-memory'
+        return generateTimeSeriesData(
+          isMemory ? component.memory_requested : component.cpu_requested,
+          isMemory ? component.memory_actual : component.cpu_actual,
+          isMemory ? 'memory' : 'cpu'
+        )
       }
-    } else if (modalState.type === 'component-memory') {
-      const component = rightSizingData.find(r => r.component === modalState.component)
+    } else if (modalState.type === 'cluster-cpu' || modalState.type === 'cluster-memory') {
+      const components = clusterData[modalState.e6Cluster]
+      const component = components?.find(r => r.component === modalState.component)
       if (component) {
-        return generateTimeSeriesData(component.memory_requested, component.memory_actual, 'memory')
+        const isMemory = modalState.type === 'cluster-memory'
+        return generateTimeSeriesData(
+          isMemory ? component.memory_requested : component.cpu_requested,
+          isMemory ? component.memory_actual : component.cpu_actual,
+          isMemory ? 'memory' : 'cpu'
+        )
       }
     }
     return []
-  }, [modalState, totals, rightSizingData])
+  }, [modalState, workspaceData, clusterData])
 
   // Get modal title
   const getModalTitle = () => {
     if (!modalState) return ''
-    if (modalState.type === 'overall-cpu') return 'Overall CPU - Requested vs Actual'
-    if (modalState.type === 'overall-memory') return 'Overall Memory - Requested vs Actual'
-    if (modalState.type === 'component-cpu') return `${modalState.component.charAt(0).toUpperCase() + modalState.component.slice(1)} CPU - Requested vs Actual`
-    if (modalState.type === 'component-memory') return `${modalState.component.charAt(0).toUpperCase() + modalState.component.slice(1)} Memory - Requested vs Actual`
-    return ''
+    const componentName = 'component' in modalState ? modalState.component : ''
+    const isMemory = modalState.type.includes('memory')
+    const prefix = modalState.type.startsWith('cluster') && 'e6Cluster' in modalState
+      ? `${modalState.e6Cluster} / `
+      : ''
+    return `${prefix}${componentName.charAt(0).toUpperCase() + componentName.slice(1)} ${isMemory ? 'Memory' : 'CPU'} - Requested vs Actual`
   }
 
   // Get chart unit
   const getChartUnit = () => {
     if (!modalState) return ''
     return modalState.type.includes('memory') ? 'GB' : 'cores'
-  }
-
-  // Color based on utilization percentage
-  const getUtilColor = () => {
-    return "bg-primary"
-  }
-
-  const getUtilTextColor = () => {
-    return "text-foreground"
   }
 
   // Progress bar component
@@ -156,7 +170,7 @@ export function RightSizingSection({ eksCluster, dateRange, selectedDate }: Righ
         <CardHeader className="pb-2">
           <CardTitle className="flex items-center gap-2 text-base">
             <Target className="h-5 w-5" />
-            Right-Sizing
+            Resource Sizing
             <Tooltip>
               <TooltipTrigger asChild>
                 <Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
@@ -168,105 +182,109 @@ export function RightSizingSection({ eksCluster, dateRange, selectedDate }: Righ
             </Tooltip>
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          {/* Overall Summary */}
-          <div className="grid grid-cols-2 gap-6 mb-6">
-            {/* CPU Summary - Clickable */}
-            <div
-              className="cursor-pointer hover:bg-muted/50 p-3 -m-3  transition-colors"
-              onClick={() => setModalState({ type: 'overall-cpu' })}
-            >
-              <div className="flex items-center gap-2 mb-2">
-                <Cpu className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm font-medium">CPU</span>
-                <span className="text-xs text-muted-foreground">(click for trend)</span>
-              </div>
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Requested</span>
-                  <span>{Math.round(totals.cpuRequested)} cores</span>
-                </div>
-                <ProgressBar pct={100} color="bg-muted-foreground/30" />
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Actual</span>
-                  <span>{totals.cpuActual.toFixed(1)} cores</span>
-                </div>
-                <ProgressBar pct={totals.cpuUtilPct} color={getUtilColor()} />
-                <div className="text-right">
-                  <span className={`font-bold ${getUtilTextColor()}`}>
-                    {totals.cpuUtilPct}% utilized
-                  </span>
-                </div>
-              </div>
+        <CardContent className="space-y-6">
+          {/* Workspace Components Section */}
+          <div>
+            <div className="flex items-center gap-2 mb-3">
+              <Server className="h-4 w-4 text-muted-foreground" />
+              <span className="text-xs text-muted-foreground font-medium">WORKSPACE COMPONENTS</span>
+              <span className="text-xs text-muted-foreground">(shared across all clusters)</span>
             </div>
-
-            {/* Memory Summary - Clickable */}
-            <div
-              className="cursor-pointer hover:bg-muted/50 p-3 -m-3  transition-colors"
-              onClick={() => setModalState({ type: 'overall-memory' })}
-            >
-              <div className="flex items-center gap-2 mb-2">
-                <MemoryStick className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm font-medium">Memory</span>
-                <span className="text-xs text-muted-foreground">(click for trend)</span>
+            <div className="space-y-2">
+              <div className="grid grid-cols-5 gap-4 text-xs text-muted-foreground font-medium px-1">
+                <div>COMPONENT</div>
+                <div className="col-span-2 text-center">CPU UTILIZATION</div>
+                <div className="col-span-2 text-center">MEMORY UTILIZATION</div>
               </div>
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Requested</span>
-                  <span>{Math.round(totals.memRequested / 1024 / 1024 / 1024)} GB</span>
+              {workspaceData.map((row) => (
+                <div key={row.component} className="grid grid-cols-5 gap-4 items-center text-sm">
+                  <span className="font-medium capitalize">{row.component}</span>
+                  <div
+                    className="col-span-2 flex items-center gap-2 cursor-pointer hover:bg-muted/50 p-1 -m-1 transition-colors"
+                    onClick={() => setModalState({ type: 'workspace-cpu', component: row.component })}
+                  >
+                    <div className="flex-1 bg-muted h-2">
+                      <div
+                        className="h-2 bg-primary"
+                        style={{ width: `${Math.min(row.cpu_util_pct, 100)}%` }}
+                      />
+                    </div>
+                    <span className="text-xs w-10 text-right">
+                      {Math.round(row.cpu_util_pct)}%
+                    </span>
+                  </div>
+                  <div
+                    className="col-span-2 flex items-center gap-2 cursor-pointer hover:bg-muted/50 p-1 -m-1 transition-colors"
+                    onClick={() => setModalState({ type: 'workspace-memory', component: row.component })}
+                  >
+                    <div className="flex-1 bg-muted h-2">
+                      <div
+                        className="h-2 bg-primary"
+                        style={{ width: `${Math.min(row.memory_util_pct, 100)}%` }}
+                      />
+                    </div>
+                    <span className="text-xs w-10 text-right">
+                      {Math.round(row.memory_util_pct)}%
+                    </span>
+                  </div>
                 </div>
-                <ProgressBar pct={100} color="bg-muted-foreground/30" />
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Actual</span>
-                  <span>{(totals.memActual / 1024 / 1024 / 1024).toFixed(1)} GB</span>
-                </div>
-                <ProgressBar pct={totals.memUtilPct} color={getUtilColor()} />
-                <div className="text-right">
-                  <span className={`font-bold ${getUtilTextColor()}`}>
-                    {totals.memUtilPct}% utilized
-                  </span>
-                </div>
-              </div>
+              ))}
             </div>
           </div>
 
-          {/* By Component */}
-          <div className="text-xs text-muted-foreground mb-2">BY COMPONENT (click for trend)</div>
-          <div className="space-y-2">
-            {rightSizingData.map((row) => (
-              <div key={row.component} className="grid grid-cols-3 gap-4 items-center text-sm">
-                <span className="font-medium capitalize">{row.component}</span>
-                <div
-                  className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 p-1 -m-1  transition-colors"
-                  onClick={() => setModalState({ type: 'component-cpu', component: row.component })}
-                >
-                  <div className="w-24 bg-muted  h-2">
-                    <div
-                      className={`h-2  ${getUtilColor()}`}
-                      style={{ width: `${Math.min(row.cpu_util_pct, 100)}%` }}
-                    />
-                  </div>
-                  <span className={`text-xs ${getUtilTextColor()}`}>
-                    {Math.round(row.cpu_util_pct)}%
-                  </span>
-                </div>
-                <div
-                  className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 p-1 -m-1  transition-colors"
-                  onClick={() => setModalState({ type: 'component-memory', component: row.component })}
-                >
-                  <div className="w-24 bg-muted  h-2">
-                    <div
-                      className={`h-2  ${getUtilColor()}`}
-                      style={{ width: `${Math.min(row.memory_util_pct, 100)}%` }}
-                    />
-                  </div>
-                  <span className={`text-xs ${getUtilTextColor()}`}>
-                    {Math.round(row.memory_util_pct)}%
-                  </span>
+          {/* Cluster Components Section */}
+          <div>
+            <div className="flex items-center gap-2 mb-3">
+              <Layers className="h-4 w-4 text-muted-foreground" />
+              <span className="text-xs text-muted-foreground font-medium">CLUSTER COMPONENTS</span>
+              <span className="text-xs text-muted-foreground">(per E6 cluster)</span>
+            </div>
+
+            {E6_CLUSTERS.map((e6Cluster) => (
+              <div key={e6Cluster} className="mb-4 last:mb-0">
+                <div className="text-sm font-medium mb-2 text-muted-foreground">{e6Cluster}</div>
+                <div className="space-y-1 pl-4 border-l-2 border-muted">
+                  {clusterData[e6Cluster]?.map((row) => (
+                    <div key={row.component} className="grid grid-cols-5 gap-4 items-center text-sm">
+                      <span className="capitalize text-muted-foreground">{row.component}</span>
+                      <div
+                        className="col-span-2 flex items-center gap-2 cursor-pointer hover:bg-muted/50 p-1 -m-1 transition-colors"
+                        onClick={() => setModalState({ type: 'cluster-cpu', e6Cluster, component: row.component })}
+                      >
+                        <div className="flex-1 bg-muted h-2">
+                          <div
+                            className="h-2 bg-primary"
+                            style={{ width: `${Math.min(row.cpu_util_pct, 100)}%` }}
+                          />
+                        </div>
+                        <span className="text-xs w-10 text-right">
+                          {Math.round(row.cpu_util_pct)}%
+                        </span>
+                      </div>
+                      <div
+                        className="col-span-2 flex items-center gap-2 cursor-pointer hover:bg-muted/50 p-1 -m-1 transition-colors"
+                        onClick={() => setModalState({ type: 'cluster-memory', e6Cluster, component: row.component })}
+                      >
+                        <div className="flex-1 bg-muted h-2">
+                          <div
+                            className="h-2 bg-primary"
+                            style={{ width: `${Math.min(row.memory_util_pct, 100)}%` }}
+                          />
+                        </div>
+                        <span className="text-xs w-10 text-right">
+                          {Math.round(row.memory_util_pct)}%
+                        </span>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             ))}
           </div>
+
+          <p className="text-xs text-muted-foreground">
+            Click any bar to view time-series trend
+          </p>
         </CardContent>
       </Card>
 

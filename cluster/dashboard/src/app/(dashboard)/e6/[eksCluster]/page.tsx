@@ -341,6 +341,7 @@ export default function WorkspaceDetailPage({
       <CostBreakdownSection
         eksCluster={decodedCluster}
         dateRange={dateRange}
+        selectedDate={selectedDate}
       />
 
       {/* IO & Data Transfer Section */}

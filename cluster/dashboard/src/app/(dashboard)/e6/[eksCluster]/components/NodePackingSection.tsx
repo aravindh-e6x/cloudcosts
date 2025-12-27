@@ -132,7 +132,7 @@ export function NodePackingSection({ eksCluster, dateRange, selectedDate }: Node
               </span>
             </div>
             <div className="flex items-center gap-4">
-              <span className="px-2 py-1 bg-muted rounded font-medium">
+              <span className="px-2 py-1 bg-muted  font-medium">
                 ${totalHourlyCost.toFixed(2)}/hour ${(totalHourlyCost * 24 * 30).toFixed(0)}/month
               </span>
             </div>
