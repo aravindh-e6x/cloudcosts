@@ -28,6 +28,13 @@ interface ClusterMetrics {
   idle_cost: number
 }
 
+interface ComponentMetrics {
+  component: string
+  pod_count: number
+  cpu_allocated: number
+  mem_allocated_gb: number
+}
+
 interface WorkspaceMetrics {
   cost_today: number
   cpu_util_pct: number
@@ -36,6 +43,8 @@ interface WorkspaceMetrics {
   mem_allocated_gb: number
   egress_cost: number
   idle_cost: number
+  node_count: number
+  pod_count: number
 }
 
 function calculateIdleCost(cpuUtilPct: number, memUtilPct: number, cpuCost: number, ramCost: number): number {
@@ -88,34 +97,108 @@ function UtilizationBar({ value, label }: { value: number; label: string }) {
   )
 }
 
-function ClusterRow({ metrics }: { metrics: ClusterMetrics }) {
+function ComponentRow({ component }: { component: ComponentMetrics }) {
+  const cpuPerPod = component.pod_count > 0 ? component.cpu_allocated / component.pod_count : 0
+  const memPerPod = component.pod_count > 0 ? component.mem_allocated_gb / component.pod_count : 0
+
   return (
-    <div className="grid grid-cols-12 gap-4 px-6 py-3 hover:bg-muted/30 transition-colors items-center pl-14 text-sm">
-      <div className="col-span-3 flex items-center gap-2">
-        <Layers className="h-4 w-4 text-muted-foreground" />
-        <span className="font-medium">{metrics.cluster}</span>
+    <div className="grid grid-cols-12 gap-2 px-4 py-2 text-xs items-center">
+      <div className="col-span-2">
+        <span className="capitalize font-medium">{component.component}</span>
       </div>
       <div className="col-span-1 text-right">
-        ${metrics.cost_today.toFixed(2)}
+        {component.pod_count}
       </div>
-      <div className="col-span-1 text-right text-muted-foreground">
-        N/A
+      <div className="col-span-2 text-right text-muted-foreground">
+        {cpuPerPod.toFixed(2)} / {(memPerPod * 1024).toFixed(0)}Mi
       </div>
-      <div className="col-span-1 text-right">
-        ${metrics.idle_cost.toFixed(2)}
+      <div className="col-span-2 text-right">
+        {component.cpu_allocated.toFixed(2)}
       </div>
-      <div className="col-span-2 flex items-center justify-end">
-        <UtilizationBar value={metrics.cpu_util_pct} label="CPU Utilization" />
+      <div className="col-span-2 text-right">
+        {(component.mem_allocated_gb * 1024).toFixed(0)}Mi
       </div>
-      <div className="col-span-2 flex items-center justify-end">
-        <UtilizationBar value={metrics.mem_util_pct} label="Memory Utilization" />
+      <div className="col-span-3" />
+    </div>
+  )
+}
+
+function ClusterRow({
+  metrics,
+  components,
+  isExpanded,
+  onToggle,
+}: {
+  metrics: ClusterMetrics
+  components: ComponentMetrics[]
+  isExpanded: boolean
+  onToggle: () => void
+}) {
+  const executors = components.filter((c) => c.component === "executor")
+  const planners = components.filter((c) => c.component === "planner")
+  const queues = components.filter((c) => c.component === "queue")
+
+  return (
+    <div className="border-b border-muted/30 last:border-0">
+      <div
+        className="grid grid-cols-12 gap-4 px-6 py-3 hover:bg-muted/30 transition-colors items-center pl-14 text-sm cursor-pointer"
+        onClick={onToggle}
+      >
+        <div className="col-span-3 flex items-center gap-2">
+          <button className="p-0.5 hover:bg-muted rounded transition-colors">
+            {isExpanded ? (
+              <ChevronDown className="h-3 w-3 text-muted-foreground" />
+            ) : (
+              <ChevronRight className="h-3 w-3 text-muted-foreground" />
+            )}
+          </button>
+          <Layers className="h-4 w-4 text-muted-foreground" />
+          <span className="font-medium">{metrics.cluster}</span>
+        </div>
+        <div className="col-span-1 text-right">
+          ${metrics.cost_today.toFixed(2)}
+        </div>
+        <div className="col-span-1 text-right text-muted-foreground">
+          N/A
+        </div>
+        <div className="col-span-1 text-right">
+          ${metrics.idle_cost.toFixed(2)}
+        </div>
+        <div className="col-span-2 flex items-center justify-end">
+          <UtilizationBar value={metrics.cpu_util_pct} label="CPU Utilization" />
+        </div>
+        <div className="col-span-2 flex items-center justify-end">
+          <UtilizationBar value={metrics.mem_util_pct} label="Memory Utilization" />
+        </div>
+        <div className="col-span-1 text-right">
+          {metrics.cpu_allocated}
+        </div>
+        <div className="col-span-1 text-right">
+          {metrics.mem_allocated_gb}Gi
+        </div>
       </div>
-      <div className="col-span-1 text-right">
-        {metrics.cpu_allocated}
-      </div>
-      <div className="col-span-1 text-right">
-        {metrics.mem_allocated_gb}Gi
-      </div>
+
+      {isExpanded && (executors.length > 0 || planners.length > 0 || queues.length > 0) && (
+        <div className="bg-muted/10 ml-20 mr-6 mb-2 rounded border">
+          <div className="grid grid-cols-12 gap-2 px-4 py-2 text-xs text-muted-foreground font-medium border-b">
+            <div className="col-span-2">COMPONENT</div>
+            <div className="col-span-1 text-right">PODS</div>
+            <div className="col-span-2 text-right">SPEC (CPU/MEM)</div>
+            <div className="col-span-2 text-right">TOTAL CPU</div>
+            <div className="col-span-2 text-right">TOTAL MEM</div>
+            <div className="col-span-3" />
+          </div>
+          {executors.map((e) => (
+            <ComponentRow key={e.component} component={e} />
+          ))}
+          {planners.map((p) => (
+            <ComponentRow key={p.component} component={p} />
+          ))}
+          {queues.map((q) => (
+            <ComponentRow key={q.component} component={q} />
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -133,8 +216,21 @@ function WorkspaceRow({
   startTs: string
   endTs: string
 }) {
+  const [expandedClusters, setExpandedClusters] = useState<Set<string>>(new Set())
   const dateParams = [{ startTs, endTs }]
   const dbOpts = { database: workspace.database }
+
+  const toggleCluster = (cluster: string) => {
+    setExpandedClusters((prev) => {
+      const next = new Set(prev)
+      if (next.has(cluster)) {
+        next.delete(cluster)
+      } else {
+        next.add(cluster)
+      }
+      return next
+    })
+  }
 
   const { data: costData, loading: costLoading } = useQuery<{ cost_today: number }>(
     "workspaces", "getWorkspaceMetrics", dateParams, dbOpts
@@ -153,6 +249,12 @@ function WorkspaceRow({
   )
   const { data: memAllocData } = useQuery<{ mem_allocated_gb: number }>(
     "workspaces", "getMemAllocation", dateParams, dbOpts
+  )
+  const { data: nodeCountData } = useQuery<{ node_count: number }>(
+    "workspaces", "getNodeCount", dateParams, dbOpts
+  )
+  const { data: podCountData } = useQuery<{ pod_count: number }>(
+    "workspaces", "getPodCount", dateParams, dbOpts
   )
 
   const { data: clustersData, loading: clustersLoading } = useQuery<{
@@ -177,12 +279,34 @@ function WorkspaceRow({
     enabled: isExpanded,
   })
 
+  // Component-level metrics
+  const { data: componentCpuData } = useQuery<{
+    namespace: string
+    component: string
+    pod_count: number
+    cpu_allocated: number
+  }>("workspaces", "getComponentMetrics", dateParams, {
+    ...dbOpts,
+    enabled: isExpanded,
+  })
+  const { data: componentMemData } = useQuery<{
+    namespace: string
+    component: string
+    pod_count: number
+    mem_allocated_gb: number
+  }>("workspaces", "getComponentMemory", dateParams, {
+    ...dbOpts,
+    enabled: isExpanded,
+  })
+
   const costToday = Number(costData?.[0]?.cost_today) || 0
   const cpuCost = Number(cpuCostData?.[0]?.cpu_cost) || 0
   const ramCost = Number(ramCostData?.[0]?.ram_cost) || 0
   const cpuAlloc = Number(cpuAllocData?.[0]?.cpu_allocated) || 0
   const memAlloc = Math.round((Number(memAllocData?.[0]?.mem_allocated_gb) || 0) * 10) / 10
   const egressCost = Number(egressData?.[0]?.egress_cost) || 0
+  const nodeCount = Number(nodeCountData?.[0]?.node_count) || 0
+  const podCount = Number(podCountData?.[0]?.pod_count) || 0
 
   const cpuUtilPct = 45
   const memUtilPct = 55
@@ -195,6 +319,8 @@ function WorkspaceRow({
     mem_allocated_gb: memAlloc,
     egress_cost: egressCost,
     idle_cost: calculateIdleCost(cpuUtilPct, memUtilPct, cpuCost, ramCost),
+    node_count: nodeCount,
+    pod_count: podCount,
   }
 
   const clusterMemMap = new Map(
@@ -203,6 +329,29 @@ function WorkspaceRow({
   const clusterEgressMap = new Map(
     (clusterEgressData || []).map((e) => [e.cluster, Number(e.egress_cost) || 0])
   )
+
+  // Build component metrics by namespace
+  const componentMemMap = new Map<string, Map<string, number>>(
+    (componentMemData || []).reduce((acc, c) => {
+      const ns = String(c.namespace)
+      if (!acc.has(ns)) acc.set(ns, new Map())
+      acc.get(ns)!.set(String(c.component), Number(c.mem_allocated_gb) || 0)
+      return acc
+    }, new Map<string, Map<string, number>>())
+  )
+
+  const componentsByNamespace = new Map<string, ComponentMetrics[]>()
+  for (const c of componentCpuData || []) {
+    const ns = String(c.namespace)
+    if (!componentsByNamespace.has(ns)) componentsByNamespace.set(ns, [])
+    const memMap = componentMemMap.get(ns)
+    componentsByNamespace.get(ns)!.push({
+      component: String(c.component),
+      pod_count: Number(c.pod_count) || 0,
+      cpu_allocated: Number(c.cpu_allocated) || 0,
+      mem_allocated_gb: memMap?.get(String(c.component)) || 0,
+    })
+  }
 
   // Calculate namespace-level costs from allocation metrics
   const clusters: ClusterMetrics[] = (clustersData || []).map((c) => {
@@ -256,6 +405,9 @@ function WorkspaceRow({
             >
               {workspace.name}
             </Link>
+            <div className="text-xs text-muted-foreground">
+              {metrics.node_count} nodes · {metrics.pod_count} pods
+            </div>
           </div>
         </div>
         {workspaceLoading ? (
@@ -342,7 +494,13 @@ function WorkspaceRow({
             </div>
           ) : clusters.length > 0 ? (
             clusters.map((cluster) => (
-              <ClusterRow key={cluster.cluster} metrics={cluster} />
+              <ClusterRow
+                key={cluster.cluster}
+                metrics={cluster}
+                components={componentsByNamespace.get(cluster.cluster) || []}
+                isExpanded={expandedClusters.has(cluster.cluster)}
+                onToggle={() => toggleCluster(cluster.cluster)}
+              />
             ))
           ) : (
             <div className="px-6 py-4 pl-14 text-sm text-muted-foreground">
