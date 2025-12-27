@@ -1,6 +1,6 @@
 apiVersion: v2
-name: monitoring-agent
-description: Monitoring agent for onboarding EKS clusters to central monitoring
+name: cloudcosts-agent
+description: CloudCosts agent for collecting metrics from EKS clusters
 type: application
 version: 0.1.0
 appVersion: "1.0.0"

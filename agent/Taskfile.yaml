@@ -1,0 +1,24 @@
+version: '3'
+
+dotenv: ['../.env']
+
+vars:
+  RELEASE: cloudcosts-agent
+  NAMESPACE: cloudcosts-agent
+
+tasks:
+  up:
+    desc: Install cloudcosts agent
+    cmds:
+      - helm dependency update
+      - envsubst < values-k3d.yaml | helm upgrade --install {{.RELEASE}} . -n {{.NAMESPACE}} --create-namespace -f -
+
+  down:
+    desc: Uninstall cloudcosts agent
+    cmds:
+      - helm uninstall {{.RELEASE}} -n {{.NAMESPACE}} || true
+
+  upgrade:
+    desc: Upgrade cloudcosts agent
+    cmds:
+      - envsubst < values-k3d.yaml | helm upgrade {{.RELEASE}} . -n {{.NAMESPACE}} -f -

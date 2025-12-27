@@ -3,7 +3,7 @@ kind: Job
 metadata:
   name: {{ .Release.Name }}-db-init
   labels:
-    {{- include "monitoring-agent.labels" . | nindent 4 }}
+    {{- include "cloudcosts-agent.labels" . | nindent 4 }}
   annotations:
     helm.sh/hook: pre-install,pre-upgrade
     helm.sh/hook-weight: "-5"
@@ -19,9 +19,9 @@ spec:
             - /bin/sh
             - -c
             - |
-              echo "Creating database 'kubernetes' if not exists..."
+              echo "Creating database '{{ .Values.cluster.database }}' if not exists..."
               curl -s -X POST \
                 -u "{{ .Values.greptimedb.username }}:{{ .Values.greptimedb.password }}" \
                 "{{ .Values.greptimedb.urlBase }}/v1/sql" \
-                -d "sql=CREATE DATABASE IF NOT EXISTS kubernetes"
+                -d "sql=CREATE DATABASE IF NOT EXISTS {{ .Values.cluster.database }}"
               echo "Database initialization complete"

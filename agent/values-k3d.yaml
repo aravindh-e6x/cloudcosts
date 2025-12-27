@@ -1,0 +1,29 @@
+# k3d-specific values for monitoring agent
+
+cluster:
+  database: k3d_cloudcosts
+
+greptimedb:
+  urlBase: "http://cloudcosts-cluster-greptimedb-standalone.cloudcosts-cluster.svc:4000"
+  username: "${GREPTIMEDB_USERNAME}"
+  password: "${GREPTIMEDB_PASSWORD}"
+
+alloy:
+  alloy:
+    configMap:
+      create: false
+      name: cloudcosts-agent-alloy
+      key: config.alloy
+
+opencost:
+  opencost:
+    exporter:
+      defaultClusterId: k3d-cloudcosts
+    prometheus:
+      username: "${GREPTIMEDB_USERNAME}"
+      password: "${GREPTIMEDB_PASSWORD}"
+      internal:
+        enabled: false
+      external:
+        enabled: true
+        url: "http://cloudcosts-cluster-greptimedb-standalone.cloudcosts-cluster.svc:4000/v1/prometheus"
