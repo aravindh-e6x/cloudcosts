@@ -154,6 +154,13 @@ export function RightSizingSection({ eksCluster, dateRange, selectedDate }: Righ
     return modalState.type.includes('memory') ? 'GB' : 'cores'
   }
 
+  // Color coding for utilization (high = good = green, means resources are being used efficiently)
+  const getUtilizationColor = (pct: number) => {
+    if (pct >= 70) return "bg-green-500"
+    if (pct >= 40) return "bg-orange-400"
+    return "bg-red-500"
+  }
+
   // Progress bar component
   const ProgressBar = ({ pct, color }: { pct: number; color: string }) => (
     <div className="w-full bg-muted h-2">
@@ -205,7 +212,7 @@ export function RightSizingSection({ eksCluster, dateRange, selectedDate }: Righ
                   >
                     <div className="flex-1 bg-muted h-2">
                       <div
-                        className="h-2 bg-primary"
+                        className={`h-2 ${getUtilizationColor(row.cpu_util_pct)}`}
                         style={{ width: `${Math.min(row.cpu_util_pct, 100)}%` }}
                       />
                     </div>
@@ -219,7 +226,7 @@ export function RightSizingSection({ eksCluster, dateRange, selectedDate }: Righ
                   >
                     <div className="flex-1 bg-muted h-2">
                       <div
-                        className="h-2 bg-primary"
+                        className={`h-2 ${getUtilizationColor(row.memory_util_pct)}`}
                         style={{ width: `${Math.min(row.memory_util_pct, 100)}%` }}
                       />
                     </div>
@@ -253,7 +260,7 @@ export function RightSizingSection({ eksCluster, dateRange, selectedDate }: Righ
                       >
                         <div className="flex-1 bg-muted h-2">
                           <div
-                            className="h-2 bg-primary"
+                            className={`h-2 ${getUtilizationColor(row.cpu_util_pct)}`}
                             style={{ width: `${Math.min(row.cpu_util_pct, 100)}%` }}
                           />
                         </div>
@@ -267,7 +274,7 @@ export function RightSizingSection({ eksCluster, dateRange, selectedDate }: Righ
                       >
                         <div className="flex-1 bg-muted h-2">
                           <div
-                            className="h-2 bg-primary"
+                            className={`h-2 ${getUtilizationColor(row.memory_util_pct)}`}
                             style={{ width: `${Math.min(row.memory_util_pct, 100)}%` }}
                           />
                         </div>

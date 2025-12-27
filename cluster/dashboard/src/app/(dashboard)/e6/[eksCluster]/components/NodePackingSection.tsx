@@ -98,6 +98,13 @@ export function NodePackingSection({ eksCluster, dateRange, selectedDate }: Node
     return `${gb.toFixed(0)}Gi`
   }
 
+  // Color coding for packing efficiency (high = good = green)
+  const getPackingColor = (pct: number) => {
+    if (pct >= 80) return "bg-green-500"
+    if (pct >= 50) return "bg-orange-400"
+    return "bg-red-500"
+  }
+
   return (
     <TooltipProvider>
       <Card>
@@ -158,7 +165,7 @@ export function NodePackingSection({ eksCluster, dateRange, selectedDate }: Node
                     <span className="w-8 text-muted-foreground">cpu</span>
                     <div className="flex-1 h-4 bg-muted overflow-hidden">
                       <div
-                        className="h-full transition-all bg-primary"
+                        className={`h-full transition-all ${getPackingColor(node.cpu_pct)}`}
                         style={{ width: `${Math.min(node.cpu_pct, 100)}%` }}
                       />
                     </div>
@@ -170,7 +177,7 @@ export function NodePackingSection({ eksCluster, dateRange, selectedDate }: Node
                     <span className="w-12 text-muted-foreground">memory</span>
                     <div className="flex-1 h-4 bg-muted overflow-hidden">
                       <div
-                        className="h-full transition-all bg-primary"
+                        className={`h-full transition-all ${getPackingColor(node.memory_pct)}`}
                         style={{ width: `${Math.min(node.memory_pct, 100)}%` }}
                       />
                     </div>

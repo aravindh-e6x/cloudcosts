@@ -235,6 +235,27 @@ export default function E6ClustersPage() {
   )
 }
 
+// Color coding for packing (high = good = green)
+const getPackingColor = (pct: number) => {
+  if (pct >= 80) return "text-green-600"
+  if (pct >= 50) return "text-orange-500"
+  return "text-red-500"
+}
+
+// Color coding for utilization (high = good = green, means resources are used efficiently)
+const getUtilizationColor = (pct: number) => {
+  if (pct >= 60) return "text-green-600"
+  if (pct >= 40) return "text-orange-500"
+  return "text-red-500"
+}
+
+// Color coding for success rate (high = good = green)
+const getSuccessRateColor = (rate: number) => {
+  if (rate >= 98) return "text-green-600"
+  if (rate >= 95) return "text-orange-500"
+  return "text-red-500"
+}
+
 function WorkspaceRow({
   workspace,
   dateRange,
@@ -293,13 +314,13 @@ function WorkspaceRow({
         <div className="col-span-2 text-right font-medium">
           ${metrics.cost_per_day.toFixed(0)}
         </div>
-        <div className="col-span-2 text-right">
+        <div className={`col-span-2 text-right font-medium ${getPackingColor(metrics.packing_pct)}`}>
           {metrics.packing_pct}%
         </div>
-        <div className="col-span-1 text-right">
+        <div className={`col-span-1 text-right font-medium ${getUtilizationColor(metrics.cpu_util_pct)}`}>
           {metrics.cpu_util_pct}%
         </div>
-        <div className="col-span-1 text-right">
+        <div className={`col-span-1 text-right font-medium ${getUtilizationColor(metrics.memory_util_pct)}`}>
           {metrics.memory_util_pct}%
         </div>
         <div className="col-span-2 text-right text-muted-foreground">
@@ -347,7 +368,7 @@ function WorkspaceRow({
                 </div>
                 <div className="col-span-2 text-right">
                   {clusterMetrics.queries_per_day > 0 ? (
-                    <span className={clusterMetrics.success_rate < 95 ? "text-destructive" : "text-green-600"}>
+                    <span className={`font-medium ${getSuccessRateColor(clusterMetrics.success_rate)}`}>
                       {clusterMetrics.success_rate.toFixed(1)}%
                     </span>
                   ) : "-"}

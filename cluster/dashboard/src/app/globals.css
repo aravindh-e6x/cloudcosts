@@ -129,3 +129,10 @@
 .hover\:bg-brand-primary\/90:hover {
   background-color: color-mix(in srgb, var(--brand-primary) 90%, transparent) !important;
 }
+
+/* Safelist: force these dynamic color classes to be included in the build */
+@layer utilities {
+  .safelist-colors {
+    @apply bg-green-500 bg-orange-400 bg-red-500 text-green-600 text-orange-500 text-red-500;
+  }
+}

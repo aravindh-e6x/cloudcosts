@@ -147,6 +147,13 @@ export function E6EngineUsageSection({ eksCluster, dateRange, selectedDate }: E6
     return `${METRIC_LABELS[modalState.metric]} - Hourly`
   }
 
+  // Color coding for success rate (high = good = green)
+  const getSuccessRateColor = (rate: number) => {
+    if (rate >= 98) return "text-green-600"
+    if (rate >= 95) return "text-orange-500"
+    return "text-red-500"
+  }
+
   return (
     <TooltipProvider>
       <Card>
@@ -221,8 +228,11 @@ export function E6EngineUsageSection({ eksCluster, dateRange, selectedDate }: E6
               </thead>
               <tbody>
                 {MOCK_ENGINE_METRICS.map((cluster) => {
+                  const successRateNum = cluster.queries_completed > 0
+                    ? (cluster.queries_succeeded / cluster.queries_completed) * 100
+                    : 0
                   const successRate = cluster.queries_completed > 0
-                    ? ((cluster.queries_succeeded / cluster.queries_completed) * 100).toFixed(1)
+                    ? successRateNum.toFixed(1)
                     : "-"
                   return (
                     <tr
@@ -232,7 +242,9 @@ export function E6EngineUsageSection({ eksCluster, dateRange, selectedDate }: E6
                     >
                       <td className="py-2 font-medium">{cluster.e6_cluster}</td>
                       <td className="py-2 text-right">{cluster.queries_completed.toLocaleString()}</td>
-                      <td className="py-2 text-right">{successRate}%</td>
+                      <td className={`py-2 text-right font-medium ${cluster.queries_completed > 0 ? getSuccessRateColor(successRateNum) : ''}`}>
+                        {successRate}{cluster.queries_completed > 0 ? '%' : ''}
+                      </td>
                       <td className="py-2 text-right">{cluster.queries_failed}</td>
                       <td className="py-2 text-right">{cluster.avg_query_time_ms}ms</td>
                       <td className="py-2 text-right">{cluster.active_connections}</td>

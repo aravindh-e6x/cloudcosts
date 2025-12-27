@@ -134,6 +134,13 @@ export function CostBreakdownSection({ eksCluster, dateRange, selectedDate }: Co
     return `${componentName} - Hourly Cost`
   }
 
+  // Color coding for cost (high % = red = expensive, draws attention)
+  const getCostColor = (pct: number) => {
+    if (pct >= 50) return "bg-red-500"
+    if (pct >= 30) return "bg-orange-400"
+    return "bg-green-500"
+  }
+
   return (
     <TooltipProvider>
       <Card>
@@ -184,7 +191,7 @@ export function CostBreakdownSection({ eksCluster, dateRange, selectedDate }: Co
                   </div>
                   <div className="flex-1 h-4 bg-muted overflow-hidden">
                     <div
-                      className="h-full bg-primary"
+                      className={`h-full ${getCostColor(row.percentage)}`}
                       style={{ width: `${Math.min(row.percentage, 100)}%` }}
                     />
                   </div>
@@ -234,7 +241,7 @@ export function CostBreakdownSection({ eksCluster, dateRange, selectedDate }: Co
                         </div>
                         <div className="flex-1 h-3 bg-muted overflow-hidden">
                           <div
-                            className="h-full bg-primary"
+                            className={`h-full ${getCostColor(row.percentage)}`}
                             style={{ width: `${Math.min(row.percentage, 100)}%` }}
                           />
                         </div>
