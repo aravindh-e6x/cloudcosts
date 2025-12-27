@@ -2,6 +2,7 @@
 
 import { use, useMemo, useState } from "react"
 import Link from "next/link"
+import { notFound } from "next/navigation"
 import { ArrowLeft, DollarSign, Cpu, Box, Layers, Info } from "lucide-react"
 import {
   Card,
@@ -17,6 +18,7 @@ import {
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
+  Skeleton,
 } from "e6ds"
 import { format } from "date-fns"
 import {
@@ -29,6 +31,8 @@ import {
   ResponsiveContainer,
 } from "recharts"
 import { useDate } from "@/components/providers"
+import { useQuery } from "@/hooks/useQuery"
+import { getWorkspace } from "@/config/workspaces"
 import {
   NodePackingSection,
   RightSizingSection,
@@ -38,60 +42,137 @@ import {
   WorkspaceChatPanel,
 } from "./components"
 
-// Mock data for workspace stats
-const MOCK_STATS = {
-  node_count: 7,
-  pod_count: 85,
-  e6_cluster_count: 3,
+interface WorkspaceStats {
+  node_count: number
+  pod_count: number
+  e6_cluster_count: number
 }
 
-const MOCK_WORKSPACE = {
-  region: "eu-west-1",
+interface WorkspaceCost {
+  hourly_cost: number
+  total_cost: number
 }
 
-const MOCK_COST = {
-  hourly_cost: 2.68,
-  total_cost: 64.32,
+interface E6Cluster {
+  namespace: string
 }
 
-const MOCK_E6_CLUSTERS = ["prod-analytics", "prod-reporting", "dev-testing"]
-
-// Generate mock time series data
-const generateMockTimeSeries = (baseValue: number, variance: number) => {
-  const data = []
-  for (let i = 0; i < 24; i++) {
-    const hourFactor = Math.sin((i - 6) * Math.PI / 12) * 0.3 + 0.7
-    data.push({
-      time: `${i.toString().padStart(2, '0')}:00`,
-      value: Math.round(baseValue * hourFactor * (1 + (Math.random() - 0.5) * variance)),
-    })
-  }
-  return data
+interface TimeSeriesPoint {
+  ts: string
+  node_count?: number
+  pod_count?: number
+  hourly_cost?: number
 }
 
 export default function WorkspaceDetailPage({
   params,
 }: {
-  params: Promise<{ eksCluster: string }>
+  params: Promise<{ workspace: string }>
 }) {
-  const { eksCluster } = use(params)
-  const decodedCluster = decodeURIComponent(eksCluster)
+  const { workspace: workspaceId } = use(params)
+  const workspace = getWorkspace(workspaceId)
+
+  if (!workspace) {
+    notFound()
+  }
+
   const { timeRange } = useDate()
   const [nodeModalOpen, setNodeModalOpen] = useState(false)
   const [costModalOpen, setCostModalOpen] = useState(false)
   const [podModalOpen, setPodModalOpen] = useState(false)
 
-  const dateRange = useMemo(() => ({
-    startTs: "",
-    endTs: "",
-  }), [])
+  const dateRange = useMemo(() => {
+    const from = timeRange?.from || new Date()
+    const to = timeRange?.to || new Date()
+    const startTs = new Date(from)
+    startTs.setHours(0, 0, 0, 0)
+    const endTs = new Date(to)
+    endTs.setHours(23, 59, 59, 999)
+    return {
+      startTs: startTs.toISOString(),
+      endTs: endTs.toISOString(),
+    }
+  }, [timeRange])
 
   const selectedDate = timeRange?.from ? format(timeRange.from, "MMM d, yyyy") : format(new Date(), "MMM d, yyyy")
 
-  // Mock time series data
-  const nodeChartData = useMemo(() => generateMockTimeSeries(7, 0.2), [])
-  const costChartData = useMemo(() => generateMockTimeSeries(2.68, 0.3).map(d => ({ ...d, value: d.value / 2.5 })), [])
-  const podChartData = useMemo(() => generateMockTimeSeries(85, 0.15), [])
+  // Fetch workspace stats (node_count, pod_count, e6_cluster_count)
+  const { data: statsData, loading: statsLoading } = useQuery<WorkspaceStats>(
+    "e6",
+    "getWorkspaceStats",
+    [dateRange],
+    { database: workspace.database }
+  )
+
+  // Fetch workspace cost
+  const { data: costData, loading: costLoading } = useQuery<WorkspaceCost>(
+    "e6",
+    "getWorkspaceCost",
+    [dateRange],
+    { database: workspace.database }
+  )
+
+  // Fetch E6 clusters list
+  const { data: e6ClustersData, loading: e6ClustersLoading } = useQuery<E6Cluster>(
+    "e6",
+    "getE6Clusters",
+    [dateRange],
+    { database: workspace.database }
+  )
+
+  // Fetch time series data
+  const { data: nodeTimeSeriesData } = useQuery<TimeSeriesPoint>(
+    "e6",
+    "getNodeCountTimeSeries",
+    [dateRange],
+    { database: workspace.database }
+  )
+
+  const { data: costTimeSeriesData } = useQuery<TimeSeriesPoint>(
+    "e6",
+    "getCostTimeSeries",
+    [dateRange],
+    { database: workspace.database }
+  )
+
+  const { data: podTimeSeriesData } = useQuery<TimeSeriesPoint>(
+    "e6",
+    "getPodCountTimeSeries",
+    [dateRange],
+    { database: workspace.database }
+  )
+
+  // Extract values from query results
+  const stats = statsData?.[0] || { node_count: 0, pod_count: 0, e6_cluster_count: 0 }
+  const cost = costData?.[0] || { hourly_cost: 0, total_cost: 0 }
+  const e6Clusters = e6ClustersData?.map(c => c.namespace) || []
+
+  // Format time series data for charts
+  const nodeChartData = useMemo(() => {
+    if (!nodeTimeSeriesData?.length) return []
+    return nodeTimeSeriesData.map(d => ({
+      time: format(new Date(d.ts), "HH:mm"),
+      value: d.node_count || 0,
+    }))
+  }, [nodeTimeSeriesData])
+
+  const costChartData = useMemo(() => {
+    if (!costTimeSeriesData?.length) return []
+    return costTimeSeriesData.map(d => ({
+      time: format(new Date(d.ts), "HH:mm"),
+      value: d.hourly_cost || 0,
+    }))
+  }, [costTimeSeriesData])
+
+  const podChartData = useMemo(() => {
+    if (!podTimeSeriesData?.length) return []
+    return podTimeSeriesData.map(d => ({
+      time: format(new Date(d.ts), "HH:mm"),
+      value: d.pod_count || 0,
+    }))
+  }, [podTimeSeriesData])
+
+  const isLoading = statsLoading || costLoading || e6ClustersLoading
 
   // Info tooltip helper
   const InfoTooltip = ({ description, metric }: { description: string; metric?: string }) => (
@@ -172,12 +253,11 @@ export default function WorkspaceDetailPage({
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle className="text-lg font-mono">{decodedCluster}</CardTitle>
+                <CardTitle className="text-lg font-mono">{workspace.name}</CardTitle>
                 <p className="text-sm text-muted-foreground mt-1">{selectedDate}</p>
               </div>
               <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                <span>{MOCK_WORKSPACE.region}</span>
-                <span>Account: 123456789</span>
+                <span>{workspace.region || "-"}</span>
               </div>
             </div>
           </CardHeader>
@@ -194,17 +274,26 @@ export default function WorkspaceDetailPage({
                       metric="node_total_hourly_cost"
                     />
                   </div>
-                  <p className="text-lg text-muted-foreground">
-                    ${MOCK_COST.hourly_cost.toFixed(2)}/hr
-                    <span className="text-xs ml-1">instant</span>
-                  </p>
-                  <p
-                    className="text-2xl font-bold cursor-pointer hover:text-primary transition-colors"
-                    onClick={() => setCostModalOpen(true)}
-                  >
-                    ${MOCK_COST.total_cost.toFixed(0)}
-                    <span className="text-sm font-normal text-muted-foreground ml-1">/day</span>
-                  </p>
+                  {costLoading ? (
+                    <>
+                      <Skeleton className="h-6 w-24 mb-1" />
+                      <Skeleton className="h-8 w-20" />
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-lg text-muted-foreground">
+                        ${(cost.hourly_cost || 0).toFixed(2)}/hr
+                        <span className="text-xs ml-1">instant</span>
+                      </p>
+                      <p
+                        className="text-2xl font-bold cursor-pointer hover:text-primary transition-colors"
+                        onClick={() => setCostModalOpen(true)}
+                      >
+                        ${(cost.total_cost || 0).toFixed(0)}
+                        <span className="text-sm font-normal text-muted-foreground ml-1">/day</span>
+                      </p>
+                    </>
+                  )}
                   <p className="text-xs text-muted-foreground">click total for trend</p>
                 </CardContent>
               </Card>
@@ -223,7 +312,7 @@ export default function WorkspaceDetailPage({
                       metric="kube_node_info"
                     />
                   </div>
-                  <p className="text-2xl font-bold">{MOCK_STATS.node_count}</p>
+                  {statsLoading ? <Skeleton className="h-8 w-12" /> : <p className="text-2xl font-bold">{stats.node_count}</p>}
                   <p className="text-xs text-muted-foreground">click for trend</p>
                 </CardContent>
               </Card>
@@ -242,7 +331,7 @@ export default function WorkspaceDetailPage({
                       metric="kube_pod_info"
                     />
                   </div>
-                  <p className="text-2xl font-bold">{MOCK_STATS.pod_count}</p>
+                  {statsLoading ? <Skeleton className="h-8 w-12" /> : <p className="text-2xl font-bold">{stats.pod_count}</p>}
                   <p className="text-xs text-muted-foreground">click for trend</p>
                 </CardContent>
               </Card>
@@ -258,14 +347,23 @@ export default function WorkspaceDetailPage({
                       metric="kube_namespace_labels"
                     />
                   </div>
-                  <p className="text-2xl font-bold">{MOCK_STATS.e6_cluster_count}</p>
-                  <div className="flex flex-wrap gap-1 mt-1">
-                    {MOCK_E6_CLUSTERS.slice(0, 3).map(cluster => (
-                      <Badge key={cluster} variant="secondary" className="text-xs">
-                        {cluster}
-                      </Badge>
-                    ))}
-                  </div>
+                  {statsLoading || e6ClustersLoading ? (
+                    <>
+                      <Skeleton className="h-8 w-12 mb-1" />
+                      <Skeleton className="h-5 w-32" />
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-2xl font-bold">{stats.e6_cluster_count}</p>
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {e6Clusters.slice(0, 3).map(cluster => (
+                          <Badge key={cluster} variant="secondary" className="text-xs">
+                            {cluster}
+                          </Badge>
+                        ))}
+                      </div>
+                    </>
+                  )}
                 </CardContent>
               </Card>
             </div>
@@ -326,35 +424,35 @@ export default function WorkspaceDetailPage({
 
       {/* Node Packing Section */}
       <NodePackingSection
-        eksCluster={decodedCluster}
+        eksCluster={workspace.id}
         dateRange={dateRange}
         selectedDate={selectedDate}
       />
 
       {/* Right-Sizing Section */}
       <RightSizingSection
-        eksCluster={decodedCluster}
+        eksCluster={workspace.id}
         dateRange={dateRange}
         selectedDate={selectedDate}
       />
 
       {/* Cost Breakdown Section */}
       <CostBreakdownSection
-        eksCluster={decodedCluster}
+        eksCluster={workspace.id}
         dateRange={dateRange}
         selectedDate={selectedDate}
       />
 
       {/* IO & Data Transfer Section */}
       <IODataTransferSection
-        eksCluster={decodedCluster}
+        eksCluster={workspace.id}
         dateRange={dateRange}
         selectedDate={selectedDate}
       />
 
       {/* E6 Engine Usage Section */}
       <E6EngineUsageSection
-        eksCluster={decodedCluster}
+        eksCluster={workspace.id}
         dateRange={dateRange}
         selectedDate={selectedDate}
       />
@@ -362,8 +460,8 @@ export default function WorkspaceDetailPage({
 
       {/* AI Chat Panel */}
       <WorkspaceChatPanel
-        eksCluster={decodedCluster}
-        e6Clusters={MOCK_E6_CLUSTERS}
+        eksCluster={workspace.id}
+        e6Clusters={e6Clusters}
       />
     </TooltipProvider>
   )
