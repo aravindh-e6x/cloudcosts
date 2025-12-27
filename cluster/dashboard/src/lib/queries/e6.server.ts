@@ -274,6 +274,89 @@ export function getNodePackingTimeSeries(eksCluster: string, node: string, { sta
 }
 
 /**
+ * Get detailed node packing data with instance type, memory, pod count, costs
+ */
+export function getNodePackingDetailed(eksCluster: string, { startTs, endTs }: DateRange): string {
+  const sql = `
+    WITH latest AS (
+      SELECT MAX(ts) as max_ts
+      FROM kube_node_info
+      WHERE eks_cluster = '${eksCluster}'
+        AND ts >= '${startTs}'::timestamp AND ts < '${endTs}'::timestamp
+    ),
+    node_info AS (
+      SELECT DISTINCT node, label_node_kubernetes_io_instance_type as instance_type
+      FROM kube_node_labels
+      WHERE eks_cluster = '${eksCluster}'
+        AND ts >= (SELECT max_ts FROM latest) - INTERVAL '10 minutes'
+        AND ts <= (SELECT max_ts FROM latest)
+    ),
+    node_allocatable AS (
+      SELECT
+        node,
+        MAX(CASE WHEN resource_type = 'cpu' THEN metric_value ELSE 0 END) as allocatable_cpu,
+        MAX(CASE WHEN resource_type = 'memory' THEN metric_value ELSE 0 END) as allocatable_memory
+      FROM kube_node_status_allocatable
+      WHERE eks_cluster = '${eksCluster}'
+        AND ts >= (SELECT max_ts FROM latest) - INTERVAL '10 minutes'
+        AND ts <= (SELECT max_ts FROM latest)
+      GROUP BY node
+    ),
+    container_allocated AS (
+      SELECT
+        node,
+        SUM(c.metric_value) as allocated_cpu,
+        COUNT(DISTINCT c.pod) as pod_count
+      FROM container_cpu_allocation c
+      WHERE eks_cluster = '${eksCluster}'
+        AND ts >= (SELECT max_ts FROM latest) - INTERVAL '10 minutes'
+        AND ts <= (SELECT max_ts FROM latest)
+      GROUP BY node
+    ),
+    memory_allocated AS (
+      SELECT node, SUM(metric_value) as allocated_memory
+      FROM container_memory_allocation_bytes
+      WHERE eks_cluster = '${eksCluster}'
+        AND ts >= (SELECT max_ts FROM latest) - INTERVAL '10 minutes'
+        AND ts <= (SELECT max_ts FROM latest)
+      GROUP BY node
+    ),
+    node_costs AS (
+      SELECT node, metric_value as hourly_cost
+      FROM node_total_hourly_cost
+      WHERE eks_cluster = '${eksCluster}'
+        AND ts >= (SELECT max_ts FROM latest) - INTERVAL '10 minutes'
+        AND ts <= (SELECT max_ts FROM latest)
+    )
+    SELECT
+      ni.node,
+      ni.instance_type,
+      na.allocatable_cpu,
+      COALESCE(ca.allocated_cpu, 0) as allocated_cpu,
+      na.allocatable_memory,
+      COALESCE(ma.allocated_memory, 0) as allocated_memory,
+      CASE WHEN na.allocatable_cpu > 0
+        THEN ROUND(COALESCE(ca.allocated_cpu, 0) / na.allocatable_cpu * 100, 1)
+        ELSE 0
+      END as cpu_pct,
+      CASE WHEN na.allocatable_memory > 0
+        THEN ROUND(COALESCE(ma.allocated_memory, 0) / na.allocatable_memory * 100, 1)
+        ELSE 0
+      END as memory_pct,
+      COALESCE(nc.hourly_cost, 0) as hourly_cost,
+      COALESCE(ca.pod_count, 0) as pod_count
+    FROM node_info ni
+    JOIN node_allocatable na ON ni.node = na.node
+    LEFT JOIN container_allocated ca ON ni.node = ca.node
+    LEFT JOIN memory_allocated ma ON ni.node = ma.node
+    LEFT JOIN node_costs nc ON ni.node = nc.node
+    ORDER BY cpu_pct DESC
+  `
+  logQuery('e6', 'getNodePackingDetailed', { eksCluster, startTs, endTs }, sql)
+  return sql
+}
+
+/**
  * Get right-sizing data (CPU/Memory requested vs actual by component)
  */
 export function getRightSizing(eksCluster: string, { startTs, endTs }: DateRange): string {
@@ -353,7 +436,7 @@ export function getE6ClusterActivity(eksCluster: string, e6Cluster: string, { st
   const sql = `
     WITH latest AS (
       SELECT MAX(ts) as max_ts
-      FROM io_e6x_E6Gateway_TotalQueriesCompletedCount
+      FROM io_e6x_e6gateway_totalqueriescompletedcount
       WHERE e6_workspace = '${eksCluster.replace('-prod-eks', '').replace('-eks', '')}'
         AND e6_cluster = '${e6Cluster}'
         AND ts >= '${startTs}'::timestamp AND ts < '${endTs}'::timestamp
@@ -367,12 +450,269 @@ export function getE6ClusterActivity(eksCluster: string, e6Cluster: string, { st
          AND label_component = 'executor'
          AND ts >= (SELECT max_ts FROM latest) - INTERVAL '10 minutes'
          AND ts <= (SELECT max_ts FROM latest)) as executor_count
-    FROM io_e6x_E6Gateway_TotalQueriesCompletedCount q
+    FROM io_e6x_e6gateway_totalqueriescompletedcount q
     WHERE q.e6_workspace = '${eksCluster.replace('-prod-eks', '').replace('-eks', '')}'
       AND q.e6_cluster = '${e6Cluster}'
       AND q.ts = (SELECT max_ts FROM latest)
   `
   logQuery('e6', 'getE6ClusterActivity', { eksCluster, e6Cluster, startTs, endTs }, sql)
+  return sql
+}
+
+/**
+ * Get E6 cluster activity for all clusters in a workspace
+ */
+export function getE6ClusterActivityAll(eksCluster: string, { startTs, endTs }: DateRange): string {
+  const sql = `
+    WITH e6_clusters AS (
+      SELECT DISTINCT namespace as e6_cluster
+      FROM kube_pod_labels
+      WHERE eks_cluster = '${eksCluster}'
+        AND ts >= '${startTs}'::timestamp AND ts < '${endTs}'::timestamp
+        AND label_component IN ('executor', 'queue', 'planner')
+    ),
+    latest AS (
+      SELECT MAX(ts) as max_ts
+      FROM kube_pod_labels
+      WHERE eks_cluster = '${eksCluster}'
+        AND ts >= '${startTs}'::timestamp AND ts < '${endTs}'::timestamp
+    ),
+    executor_counts AS (
+      SELECT namespace as e6_cluster, COUNT(DISTINCT pod) as executor_count
+      FROM kube_pod_labels
+      WHERE eks_cluster = '${eksCluster}'
+        AND label_component = 'executor'
+        AND ts >= (SELECT max_ts FROM latest) - INTERVAL '10 minutes'
+        AND ts <= (SELECT max_ts FROM latest)
+      GROUP BY namespace
+    )
+    SELECT
+      c.e6_cluster,
+      COALESCE(e.executor_count, 0) as executor_count,
+      0 as queries_per_hour
+    FROM e6_clusters c
+    LEFT JOIN executor_counts e ON c.e6_cluster = e.e6_cluster
+  `
+  logQuery('e6', 'getE6ClusterActivityAll', { eksCluster, startTs, endTs }, sql)
+  return sql
+}
+
+/**
+ * Get idle pods (pods with near-zero CPU usage in the last hour)
+ */
+export function getIdlePods(eksCluster: string, { startTs, endTs }: DateRange): string {
+  const sql = `
+    WITH latest AS (
+      SELECT MAX(ts) as max_ts
+      FROM container_cpu_usage_seconds_total
+      WHERE eks_cluster = '${eksCluster}'
+        AND ts >= '${startTs}'::timestamp AND ts < '${endTs}'::timestamp
+    ),
+    pod_cpu AS (
+      SELECT
+        l.pod,
+        l.namespace,
+        AVG(c.metric_value) as avg_cpu
+      FROM kube_pod_labels l
+      JOIN container_cpu_usage_seconds_total c
+        ON l.eks_cluster = c.eks_cluster AND l.pod = c.pod
+        AND c.ts >= (SELECT max_ts FROM latest) - INTERVAL '1 hour'
+        AND c.ts <= (SELECT max_ts FROM latest)
+      WHERE l.eks_cluster = '${eksCluster}'
+        AND l.ts >= (SELECT max_ts FROM latest) - INTERVAL '10 minutes'
+        AND l.ts <= (SELECT max_ts FROM latest)
+        AND l.label_component IN ('executor', 'queue', 'planner', 'gateway', 'schema', 'storage')
+      GROUP BY l.pod, l.namespace
+    )
+    SELECT pod, namespace
+    FROM pod_cpu
+    WHERE avg_cpu < 0.01
+    ORDER BY namespace, pod
+  `
+  logQuery('e6', 'getIdlePods', { eksCluster, startTs, endTs }, sql)
+  return sql
+}
+
+/**
+ * Get cost breakdown by component
+ */
+export function getCostByComponent(eksCluster: string, { startTs, endTs }: DateRange): string {
+  const sql = `
+    WITH latest AS (
+      SELECT MAX(ts) as max_ts
+      FROM container_cpu_allocation
+      WHERE eks_cluster = '${eksCluster}'
+        AND ts >= '${startTs}'::timestamp AND ts < '${endTs}'::timestamp
+    ),
+    node_costs AS (
+      SELECT node, metric_value as hourly_cost
+      FROM node_total_hourly_cost
+      WHERE eks_cluster = '${eksCluster}'
+        AND ts >= (SELECT max_ts FROM latest) - INTERVAL '10 minutes'
+        AND ts <= (SELECT max_ts FROM latest)
+    ),
+    pod_allocation AS (
+      SELECT
+        l.label_component as component,
+        c.node,
+        SUM(c.metric_value) as cpu_allocated
+      FROM kube_pod_labels l
+      JOIN container_cpu_allocation c
+        ON l.eks_cluster = c.eks_cluster AND l.pod = c.pod
+        AND c.ts >= (SELECT max_ts FROM latest) - INTERVAL '10 minutes'
+        AND c.ts <= (SELECT max_ts FROM latest)
+      WHERE l.eks_cluster = '${eksCluster}'
+        AND l.ts >= (SELECT max_ts FROM latest) - INTERVAL '10 minutes'
+        AND l.ts <= (SELECT max_ts FROM latest)
+      GROUP BY l.label_component, c.node
+    ),
+    node_total_cpu AS (
+      SELECT node, SUM(metric_value) as total_cpu
+      FROM kube_node_status_allocatable
+      WHERE eks_cluster = '${eksCluster}'
+        AND resource_type = 'cpu'
+        AND ts >= (SELECT max_ts FROM latest) - INTERVAL '10 minutes'
+        AND ts <= (SELECT max_ts FROM latest)
+      GROUP BY node
+    )
+    SELECT
+      p.component,
+      SUM(p.cpu_allocated / NULLIF(n.total_cpu, 0) * nc.hourly_cost) as hourly_cost
+    FROM pod_allocation p
+    JOIN node_total_cpu n ON p.node = n.node
+    JOIN node_costs nc ON p.node = nc.node
+    GROUP BY p.component
+    ORDER BY hourly_cost DESC
+  `
+  logQuery('e6', 'getCostByComponent', { eksCluster, startTs, endTs }, sql)
+  return sql
+}
+
+/**
+ * Get cost breakdown by E6 cluster (namespace)
+ */
+export function getCostByE6Cluster(eksCluster: string, { startTs, endTs }: DateRange): string {
+  const sql = `
+    WITH latest AS (
+      SELECT MAX(ts) as max_ts
+      FROM container_cpu_allocation
+      WHERE eks_cluster = '${eksCluster}'
+        AND ts >= '${startTs}'::timestamp AND ts < '${endTs}'::timestamp
+    ),
+    node_costs AS (
+      SELECT node, metric_value as hourly_cost
+      FROM node_total_hourly_cost
+      WHERE eks_cluster = '${eksCluster}'
+        AND ts >= (SELECT max_ts FROM latest) - INTERVAL '10 minutes'
+        AND ts <= (SELECT max_ts FROM latest)
+    ),
+    pod_allocation AS (
+      SELECT
+        l.namespace as e6_cluster,
+        c.node,
+        SUM(c.metric_value) as cpu_allocated
+      FROM kube_pod_labels l
+      JOIN container_cpu_allocation c
+        ON l.eks_cluster = c.eks_cluster AND l.pod = c.pod
+        AND c.ts >= (SELECT max_ts FROM latest) - INTERVAL '10 minutes'
+        AND c.ts <= (SELECT max_ts FROM latest)
+      WHERE l.eks_cluster = '${eksCluster}'
+        AND l.ts >= (SELECT max_ts FROM latest) - INTERVAL '10 minutes'
+        AND l.ts <= (SELECT max_ts FROM latest)
+      GROUP BY l.namespace, c.node
+    ),
+    node_total_cpu AS (
+      SELECT node, SUM(metric_value) as total_cpu
+      FROM kube_node_status_allocatable
+      WHERE eks_cluster = '${eksCluster}'
+        AND resource_type = 'cpu'
+        AND ts >= (SELECT max_ts FROM latest) - INTERVAL '10 minutes'
+        AND ts <= (SELECT max_ts FROM latest)
+      GROUP BY node
+    )
+    SELECT
+      p.e6_cluster,
+      SUM(p.cpu_allocated / NULLIF(n.total_cpu, 0) * nc.hourly_cost) as hourly_cost
+    FROM pod_allocation p
+    JOIN node_total_cpu n ON p.node = n.node
+    JOIN node_costs nc ON p.node = nc.node
+    GROUP BY p.e6_cluster
+    ORDER BY hourly_cost DESC
+  `
+  logQuery('e6', 'getCostByE6Cluster', { eksCluster, startTs, endTs }, sql)
+  return sql
+}
+
+/**
+ * Get IO metrics (S3 reads, network, data processed) for the day
+ */
+export function getIOMetrics(eksCluster: string, { startTs, endTs }: DateRange): string {
+  const workspaceName = eksCluster.replace('-prod-eks', '').replace('-eks', '')
+  const sql = `
+    SELECT
+      COALESCE(SUM(CASE WHEN metric_name = 'io_e6x_e6engine_filesreadfroms3bytes' THEN metric_value ELSE 0 END), 0) as s3_bytes_read,
+      COALESCE(SUM(CASE WHEN metric_name = 'io_e6x_e6engine_totalbytesread' THEN metric_value ELSE 0 END), 0) as total_bytes_read,
+      COALESCE(SUM(CASE WHEN metric_name = 'io_e6x_e6engine_numrowsread' THEN metric_value ELSE 0 END), 0) as rows_read
+    FROM io_e6x_e6engine_metrics
+    WHERE e6_workspace = '${workspaceName}'
+      AND ts >= '${startTs}'::timestamp AND ts < '${endTs}'::timestamp
+  `
+  logQuery('e6', 'getIOMetrics', { eksCluster, startTs, endTs }, sql)
+  return sql
+}
+
+/**
+ * Get network metrics (ingress/egress) for the day
+ */
+export function getNetworkMetrics(eksCluster: string, { startTs, endTs }: DateRange): string {
+  const sql = `
+    SELECT
+      COALESCE(SUM(CASE WHEN metric_name = 'container_network_receive_bytes_total' THEN metric_value ELSE 0 END), 0) as network_rx_bytes,
+      COALESCE(SUM(CASE WHEN metric_name = 'container_network_transmit_bytes_total' THEN metric_value ELSE 0 END), 0) as network_tx_bytes
+    FROM container_network_bytes
+    WHERE eks_cluster = '${eksCluster}'
+      AND ts >= '${startTs}'::timestamp AND ts < '${endTs}'::timestamp
+  `
+  logQuery('e6', 'getNetworkMetrics', { eksCluster, startTs, endTs }, sql)
+  return sql
+}
+
+/**
+ * Get E6 engine usage metrics (queries, tasks, connections)
+ */
+export function getE6EngineUsage(eksCluster: string, { startTs, endTs }: DateRange): string {
+  const workspaceName = eksCluster.replace('-prod-eks', '').replace('-eks', '')
+  const sql = `
+    WITH latest AS (
+      SELECT MAX(ts) as max_ts
+      FROM io_e6x_e6gateway_totalqueriescompletedcount
+      WHERE e6_workspace = '${workspaceName}'
+        AND ts >= '${startTs}'::timestamp AND ts < '${endTs}'::timestamp
+    )
+    SELECT
+      COALESCE(SUM(CASE WHEN metric_name = 'io_e6x_e6gateway_totalqueriescompletedcount' THEN metric_value ELSE 0 END), 0) as queries_completed,
+      COALESCE(SUM(CASE WHEN metric_name = 'io_e6x_e6gateway_numsucceededqueries' THEN metric_value ELSE 0 END), 0) as queries_succeeded,
+      COALESCE(SUM(CASE WHEN metric_name = 'io_e6x_e6gateway_totalqueriesfailedcount' THEN metric_value ELSE 0 END), 0) as queries_failed,
+      (SELECT COALESCE(metric_value, 0) FROM io_e6x_e6gateway_currentqueriesrunningcount
+       WHERE e6_workspace = '${workspaceName}'
+         AND ts >= (SELECT max_ts FROM latest) - INTERVAL '10 minutes'
+         AND ts <= (SELECT max_ts FROM latest)
+       LIMIT 1) as queries_running,
+      (SELECT COALESCE(metric_value, 0) FROM io_e6x_e6engine_currentactivetasks
+       WHERE e6_workspace = '${workspaceName}'
+         AND ts >= (SELECT max_ts FROM latest) - INTERVAL '10 minutes'
+         AND ts <= (SELECT max_ts FROM latest)
+       LIMIT 1) as tasks_active,
+      (SELECT COALESCE(metric_value, 0) FROM io_e6x_e6gateway_currentactiveconnections
+       WHERE e6_workspace = '${workspaceName}'
+         AND ts >= (SELECT max_ts FROM latest) - INTERVAL '10 minutes'
+         AND ts <= (SELECT max_ts FROM latest)
+       LIMIT 1) as connections_active
+    FROM io_e6x_gateway_metrics
+    WHERE e6_workspace = '${workspaceName}'
+      AND ts >= '${startTs}'::timestamp AND ts < '${endTs}'::timestamp
+  `
+  logQuery('e6', 'getE6EngineUsage', { eksCluster, startTs, endTs }, sql)
   return sql
 }
 

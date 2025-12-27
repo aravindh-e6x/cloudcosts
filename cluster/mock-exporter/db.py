@@ -61,9 +61,10 @@ class GreptimeDB:
         """Infer GreptimeDB column type from Python value."""
         if isinstance(value, bool):
             return "BOOLEAN"
-        elif isinstance(value, int):
-            return "BIGINT"
         elif isinstance(value, float):
+            return "DOUBLE"
+        elif isinstance(value, int):
+            # Use DOUBLE for all numeric metric values to handle allocation factors
             return "DOUBLE"
         elif isinstance(value, datetime):
             return "TIMESTAMP(3) TIME INDEX"

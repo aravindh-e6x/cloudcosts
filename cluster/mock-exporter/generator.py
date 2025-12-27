@@ -14,13 +14,20 @@ from constants import (
 )
 
 
-def generate_nodes(workspace_name: str, region: str) -> list[dict[str, Any]]:
-    """Generate 4-12 nodes with random instance types."""
-    node_count = random.randint(4, 12)
-    instance_types = list(INSTANCE_SPECS.keys())
+def generate_nodes(workspace_name: str, region: str, min_cpu_needed: int = 0) -> list[dict[str, Any]]:
+    """Generate nodes with enough capacity for pods.
 
+    Creates 4-8 nodes with larger instance types to ensure good packing.
+    """
+    # Use larger instances to ensure pods fit
+    instance_types = ['m5.4xlarge', 'r5.2xlarge', 'm5.2xlarge']
+    node_count = random.randint(4, 8)
+
+    # Ensure we have enough CPU for pods
+    total_cpu = 0
     nodes = []
-    for i in range(node_count):
+    i = 0
+    while total_cpu < min_cpu_needed or i < node_count:
         instance_type = random.choice(instance_types)
         spec = INSTANCE_SPECS[instance_type]
 
@@ -34,27 +41,36 @@ def generate_nodes(workspace_name: str, region: str) -> list[dict[str, Any]]:
             'cpu_hourly_cost': spec['cpu_cost'],
             'ram_hourly_cost': spec['ram_cost'],
         })
+        total_cpu += spec['cpu']
+        i += 1
 
     return nodes
 
 
-def generate_pods(workspace_name: str, e6_clusters: list[str]) -> list[dict[str, Any]]:
-    """Generate pods for workspace and e6 cluster components."""
+def generate_pods(workspace_name: str, e6_clusters: list[str]) -> tuple[list[dict[str, Any]], int]:
+    """Generate pods for workspace and e6 cluster components.
+
+    Returns (pods, total_cpu_needed) so nodes can be sized appropriately.
+    """
     pods = []
 
     # Workspace-level components (namespace: "workspace")
-    gateway_count = min(3, max(1, len(e6_clusters)))
+    gateway_count = min(2, max(1, len(e6_clusters)))
     pods += _create_component_pods(workspace_name, 'workspace', 'gateway', gateway_count)
-    pods += _create_component_pods(workspace_name, 'workspace', 'schema', random.randint(1, 2))
-    pods += _create_component_pods(workspace_name, 'workspace', 'storage', random.randint(1, 2))
+    pods += _create_component_pods(workspace_name, 'workspace', 'schema', 1)
+    pods += _create_component_pods(workspace_name, 'workspace', 'storage', 1)
 
     # E6 cluster-level components (namespace: e6_cluster name)
+    # Reduce executor count to ensure packing is 40-80%
     for e6_cluster in e6_clusters:
-        pods += _create_component_pods(workspace_name, e6_cluster, 'executor', random.randint(2, 8))
-        pods += _create_component_pods(workspace_name, e6_cluster, 'queue', random.randint(1, 2))
+        pods += _create_component_pods(workspace_name, e6_cluster, 'executor', random.randint(2, 4))
+        pods += _create_component_pods(workspace_name, e6_cluster, 'queue', 1)
         pods += _create_component_pods(workspace_name, e6_cluster, 'planner', 1)
 
-    return pods
+    # Calculate total CPU needed
+    total_cpu = sum(p['cpu_request'] for p in pods)
+
+    return pods, total_cpu
 
 
 def _create_component_pods(workspace: str, namespace: str, component: str, count: int) -> list[dict[str, Any]]:
@@ -106,14 +122,33 @@ def generate_usage(pod: dict[str, Any], timestamp: datetime, query_rate: int) ->
         base_util['executor'] = 0.30 + (query_rate / 200) * 0.50
 
     hour = timestamp.hour
+    minute = timestamp.minute
+    # Time-based variation: peaks at 10am-2pm, low at night
     time_factor = 0.5 + 0.5 * math.sin((hour - 6) * math.pi / 12)
-    noise = random.uniform(0.85, 1.15)
-    utilization = min(0.95, base_util[component] * time_factor * noise)
+    # Add minute-level noise for variation in time series
+    minute_noise = 0.9 + 0.2 * math.sin(minute * math.pi / 30)
+    random_noise = random.uniform(0.90, 1.10)
+    utilization = min(0.95, base_util[component] * time_factor * minute_noise * random_noise)
 
     return {
         'cpu_usage': pod['cpu_request'] * utilization,
         'memory_usage': pod['memory_request'] * utilization,
     }
+
+
+def calculate_allocation_factor(timestamp: datetime) -> float:
+    """Calculate allocation factor that varies over time for realistic packing.
+
+    Returns a factor between 0.85 and 1.0 that varies by hour.
+    This simulates pods being scaled up/down over time.
+    """
+    hour = timestamp.hour
+    minute = timestamp.minute
+    # Base variation by hour: more pods during business hours
+    hour_factor = 0.85 + 0.15 * math.sin((hour - 6) * math.pi / 12)
+    # Small minute-level variation
+    minute_factor = 0.97 + 0.03 * math.sin(minute * math.pi / 30)
+    return hour_factor * minute_factor
 
 
 def generate_e6_metrics(e6_cluster: str, timestamp: datetime, is_idle: bool = False) -> dict[str, Any]:

@@ -1,1 +1,5 @@
 export { NodePackingSection } from './NodePackingSection'
+export { RightSizingSection } from './RightSizingSection'
+export { CostBreakdownSection } from './CostBreakdownSection'
+export { IODataTransferSection } from './IODataTransferSection'
+export { E6EngineUsageSection } from './E6EngineUsageSection'

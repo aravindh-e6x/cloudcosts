@@ -173,7 +173,7 @@ Track all metrics marked with ✅ in `METRICS.md`.
   Metrics:
   | Row          | Metric                                            |
   |--------------|---------------------------------------------------|
-  | Queries/hr   | `io_e6x_E6Gateway_TotalQueriesCompletedCount` (rate) |
+  | Queries/hr   | `io_e6x_e6gateway_totalqueriescompletedcount` (rate) |
   | Executors    | `kube_pod_info` (count where component=executor)  |
   | Idle Pods    | Pods where `container_cpu_usage_seconds_total` ≈ 0 |
 
@@ -237,11 +237,11 @@ Track all metrics marked with ✅ in `METRICS.md`.
   Metrics:
   | Row            | Metric                                          |
   |----------------|-------------------------------------------------|
-  | S3 Reads       | `io_e6x_E6Engine_FilesReadFromS3Bytes`          |
+  | S3 Reads       | `io_e6x_e6engine_filesreadfroms3bytes`          |
   | Network In     | `container_network_receive_bytes_total`         |
   | Network Out    | `container_network_transmit_bytes_total`        |
-  | Bytes Read     | `io_e6x_E6Engine_TotalBytesRead`                |
-  | Rows Read      | `io_e6x_E6Engine_NumRowsRead`                   |
+  | Bytes Read     | `io_e6x_e6engine_totalbytesread`                |
+  | Rows Read      | `io_e6x_e6engine_numrowsread`                   |
 
   ┌─────────────────────────────────────────────────────────────────────┐
   │  E6 ENGINE USAGE                                                    │
@@ -280,10 +280,10 @@ Track all metrics marked with ✅ in `METRICS.md`.
 
   | Row                | Metric                                      |
   |--------------------|---------------------------------------------|
-  | Queries Completed  | io_e6x_E6Gateway_TotalQueriesCompletedCount |
-  | Queries Succeeded  | io_e6x_E6Gateway_NumSucceededQueries        |
-  | Queries Failed     | io_e6x_E6Gateway_TotalQueriesFailedCount    |
-  | Queries Running    | io_e6x_E6Gateway_CurrentQueriesRunningCount |
-  | Tasks Active       | io_e6x_E6Engine_CurrentActiveTasks          |
-  | Tasks Running      | io_e6x_E6Engine_CurrentActiveTasksRunning   |
-  | Connections Active | io_e6x_E6Gateway_CurrentActiveConnections   |
+  | Queries Completed  | io_e6x_e6gateway_totalqueriescompletedcount |
+  | Queries Succeeded  | io_e6x_e6gateway_numsucceededqueries        |
+  | Queries Failed     | io_e6x_e6gateway_totalqueriesfailedcount    |
+  | Queries Running    | io_e6x_e6gateway_currentqueriesrunningcount |
+  | Tasks Active       | io_e6x_e6engine_currentactivetasks          |
+  | Tasks Running      | io_e6x_e6engine_currentactivetasksrunning   |
+  | Connections Active | io_e6x_e6gateway_currentactiveconnections   |

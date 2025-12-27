@@ -9,7 +9,6 @@ import {
   CardHeader,
   CardTitle,
   Badge,
-  Skeleton,
   Dialog,
   DialogContent,
   DialogHeader,
@@ -26,43 +25,43 @@ import {
   ResponsiveContainer,
 } from "recharts"
 import { useDate } from "@/components/providers"
-import { useQuery } from "@/hooks/useQuery"
-import { QueryError, EmptyState } from "@/components"
-import { NodePackingSection } from "./components"
+import {
+  NodePackingSection,
+  RightSizingSection,
+  CostBreakdownSection,
+  IODataTransferSection,
+  E6EngineUsageSection,
+} from "./components"
 
-interface WorkspaceStats {
-  node_count: number
-  pod_count: number
-  e6_cluster_count: number
+// Mock data for workspace stats
+const MOCK_STATS = {
+  node_count: 7,
+  pod_count: 85,
+  e6_cluster_count: 3,
 }
 
-interface WorkspaceInfo {
-  eks_cluster: string
-  region: string
+const MOCK_WORKSPACE = {
+  region: "eu-west-1",
 }
 
-interface WorkspaceCost {
-  total_cost: number
-  hourly_cost: number
+const MOCK_COST = {
+  hourly_cost: 2.68,
+  total_cost: 64.32,
 }
 
-interface E6Cluster {
-  e6_cluster: string
-}
+const MOCK_E6_CLUSTERS = ["prod-analytics", "prod-reporting", "dev-testing"]
 
-interface NodeCountTimeSeries {
-  ts: string
-  node_count: number
-}
-
-interface CostTimeSeries {
-  ts: string
-  hourly_cost: number
-}
-
-interface PodCountTimeSeries {
-  ts: string
-  pod_count: number
+// Generate mock time series data
+const generateMockTimeSeries = (baseValue: number, variance: number) => {
+  const data = []
+  for (let i = 0; i < 24; i++) {
+    const hourFactor = Math.sin((i - 6) * Math.PI / 12) * 0.3 + 0.7
+    data.push({
+      time: `${i.toString().padStart(2, '0')}:00`,
+      value: Math.round(baseValue * hourFactor * (1 + (Math.random() - 0.5) * variance)),
+    })
+  }
+  return data
 }
 
 export default function WorkspaceDetailPage({
@@ -72,220 +71,72 @@ export default function WorkspaceDetailPage({
 }) {
   const { eksCluster } = use(params)
   const decodedCluster = decodeURIComponent(eksCluster)
-  const { timeRange, startTimestamp, endTimestamp } = useDate()
+  const { timeRange } = useDate()
   const [nodeModalOpen, setNodeModalOpen] = useState(false)
   const [costModalOpen, setCostModalOpen] = useState(false)
   const [podModalOpen, setPodModalOpen] = useState(false)
 
   const dateRange = useMemo(() => ({
-    startTs: startTimestamp,
-    endTs: endTimestamp,
-  }), [startTimestamp, endTimestamp])
+    startTs: "",
+    endTs: "",
+  }), [])
 
-  // Fetch workspace info (region)
-  const { data: workspaceData, loading: loadingInfo, error: errorInfo } = useQuery<WorkspaceInfo>(
-    "e6",
-    "getWorkspaceInfo",
-    [decodedCluster, dateRange],
-    { database: "kubernetes" }
-  )
+  const selectedDate = timeRange?.from ? format(timeRange.from, "MMM d, yyyy") : format(new Date(), "MMM d, yyyy")
 
-  // Fetch workspace stats
-  const { data: statsData, loading: loadingStats, error: errorStats, refetch } = useQuery<WorkspaceStats>(
-    "e6",
-    "getWorkspaceStats",
-    [decodedCluster, dateRange],
-    { database: "kubernetes" }
-  )
-
-  // Fetch workspace cost
-  const { data: costData, loading: loadingCost } = useQuery<WorkspaceCost>(
-    "e6",
-    "getWorkspaceCost",
-    [decodedCluster, dateRange],
-    { database: "kubernetes" }
-  )
-
-  // Fetch E6 clusters
-  const { data: e6ClustersData } = useQuery<E6Cluster>(
-    "e6",
-    "getE6Clusters",
-    [decodedCluster, dateRange],
-    { database: "kubernetes" }
-  )
-
-  // Fetch node count time series (only when modal is open)
-  const { data: nodeTimeSeriesData, loading: loadingNodeTimeSeries } = useQuery<NodeCountTimeSeries>(
-    "e6",
-    "getNodeCountTimeSeries",
-    [decodedCluster, dateRange],
-    { database: "kubernetes", enabled: nodeModalOpen }
-  )
-
-  // Fetch cost time series (only when modal is open)
-  const { data: costTimeSeriesData, loading: loadingCostTimeSeries } = useQuery<CostTimeSeries>(
-    "e6",
-    "getCostTimeSeries",
-    [decodedCluster, dateRange],
-    { database: "kubernetes", enabled: costModalOpen }
-  )
-
-  // Fetch pod count time series (only when modal is open)
-  const { data: podTimeSeriesData, loading: loadingPodTimeSeries } = useQuery<PodCountTimeSeries>(
-    "e6",
-    "getPodCountTimeSeries",
-    [decodedCluster, dateRange],
-    { database: "kubernetes", enabled: podModalOpen }
-  )
-
-  const workspace = workspaceData?.[0]
-  const stats = statsData?.[0]
-  const cost = costData?.[0]
-  const e6Clusters = e6ClustersData?.map(c => c.e6_cluster) || []
-  const loading = loadingInfo || loadingStats || loadingCost
-  const error = errorInfo || errorStats
-
-  const selectedDate = timeRange?.from ? format(timeRange.from, "MMM d, yyyy") : ""
-
-  // Format node time series data for chart
-  const nodeChartData = useMemo(() => {
-    if (!nodeTimeSeriesData) return []
-    return nodeTimeSeriesData.map(d => ({
-      time: format(new Date(d.ts), "HH:mm"),
-      value: d.node_count,
-    }))
-  }, [nodeTimeSeriesData])
-
-  // Format cost time series data for chart
-  const costChartData = useMemo(() => {
-    if (!costTimeSeriesData) return []
-    return costTimeSeriesData.map(d => ({
-      time: format(new Date(d.ts), "HH:mm"),
-      value: d.hourly_cost,
-    }))
-  }, [costTimeSeriesData])
-
-  // Format pod time series data for chart
-  const podChartData = useMemo(() => {
-    if (!podTimeSeriesData) return []
-    return podTimeSeriesData.map(d => ({
-      time: format(new Date(d.ts), "HH:mm"),
-      value: d.pod_count,
-    }))
-  }, [podTimeSeriesData])
-
-  if (loading) {
-    return (
-      <div className="space-y-6">
-        <Link href="/e6" className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="h-4 w-4" />
-          Back to Workspaces
-        </Link>
-        <Card>
-          <CardHeader>
-            <Skeleton className="h-6 w-48" />
-            <Skeleton className="h-4 w-32 mt-1" />
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {[1, 2, 3, 4].map(i => (
-                <Skeleton key={i} className="h-24 w-full" />
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    )
-  }
-
-  if (error) {
-    return (
-      <div className="space-y-6">
-        <Link href="/e6" className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="h-4 w-4" />
-          Back to Workspaces
-        </Link>
-        <QueryError message={error} onRetry={refetch} />
-      </div>
-    )
-  }
-
-  if (!stats) {
-    return (
-      <div className="space-y-6">
-        <Link href="/e6" className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="h-4 w-4" />
-          Back to Workspaces
-        </Link>
-        <EmptyState
-          title="No data found"
-          description="No data available for this workspace on the selected date."
-        />
-      </div>
-    )
-  }
+  // Mock time series data
+  const nodeChartData = useMemo(() => generateMockTimeSeries(7, 0.2), [])
+  const costChartData = useMemo(() => generateMockTimeSeries(2.68, 0.3).map(d => ({ ...d, value: d.value / 2.5 })), [])
+  const podChartData = useMemo(() => generateMockTimeSeries(85, 0.15), [])
 
   // Reusable chart component
   const TimeSeriesChart = ({
     data,
-    loading,
     color,
     label,
     formatter = (v: number) => v.toString()
   }: {
     data: { time: string; value: number }[]
-    loading: boolean
     color: string
     label: string
     formatter?: (v: number) => string
   }) => (
     <div className="h-[400px] mt-4">
-      {loading ? (
-        <div className="flex items-center justify-center h-full">
-          <Skeleton className="h-full w-full" />
-        </div>
-      ) : data.length === 0 ? (
-        <div className="flex items-center justify-center h-full text-muted-foreground">
-          No data available
-        </div>
-      ) : (
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={data}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#e5e5e5" />
-            <XAxis
-              dataKey="time"
-              tick={{ fontSize: 12, fill: '#666' }}
-              tickLine={false}
-              axisLine={{ stroke: '#ccc' }}
-            />
-            <YAxis
-              tick={{ fontSize: 12, fill: '#666' }}
-              tickLine={false}
-              axisLine={{ stroke: '#ccc' }}
-              domain={[0, 'dataMax + 2']}
-              allowDecimals={false}
-              tickFormatter={formatter}
-            />
-            <Tooltip
-              contentStyle={{
-                backgroundColor: '#fff',
-                border: '1px solid #ccc',
-                borderRadius: '8px',
-              }}
-              labelStyle={{ color: '#333' }}
-              formatter={(value) => [formatter(value as number), label]}
-            />
-            <Line
-              type="stepAfter"
-              dataKey="value"
-              stroke={color}
-              strokeWidth={2}
-              dot={{ fill: color, strokeWidth: 2, r: 4 }}
-              activeDot={{ r: 6, fill: color }}
-            />
-          </LineChart>
-        </ResponsiveContainer>
-      )}
+      <ResponsiveContainer width="100%" height="100%">
+        <LineChart data={data}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#e5e5e5" />
+          <XAxis
+            dataKey="time"
+            tick={{ fontSize: 12, fill: '#666' }}
+            tickLine={false}
+            axisLine={{ stroke: '#ccc' }}
+          />
+          <YAxis
+            tick={{ fontSize: 12, fill: '#666' }}
+            tickLine={false}
+            axisLine={{ stroke: '#ccc' }}
+            domain={[0, 'dataMax + 2']}
+            allowDecimals={false}
+            tickFormatter={formatter}
+          />
+          <Tooltip
+            contentStyle={{
+              backgroundColor: '#fff',
+              border: '1px solid #ccc',
+              borderRadius: '8px',
+            }}
+            labelStyle={{ color: '#333' }}
+            formatter={(value) => [formatter(value as number), label]}
+          />
+          <Line
+            type="stepAfter"
+            dataKey="value"
+            stroke={color}
+            strokeWidth={2}
+            dot={{ fill: color, strokeWidth: 2, r: 4 }}
+            activeDot={{ r: 6, fill: color }}
+          />
+        </LineChart>
+      </ResponsiveContainer>
     </div>
   )
 
@@ -306,9 +157,7 @@ export default function WorkspaceDetailPage({
               <p className="text-sm text-muted-foreground mt-1">{selectedDate}</p>
             </div>
             <div className="flex items-center gap-4 text-sm text-muted-foreground">
-              {workspace?.region && (
-                <span>{workspace.region}</span>
-              )}
+              <span>{MOCK_WORKSPACE.region}</span>
               <span>Account: 123456789</span>
             </div>
           </div>
@@ -323,14 +172,14 @@ export default function WorkspaceDetailPage({
                   <span className="text-xs">Cost</span>
                 </div>
                 <p className="text-lg text-muted-foreground">
-                  ${cost?.hourly_cost?.toFixed(2) || "0"}/hr
+                  ${MOCK_COST.hourly_cost.toFixed(2)}/hr
                   <span className="text-xs ml-1">instant</span>
                 </p>
                 <p
                   className="text-2xl font-bold cursor-pointer hover:text-primary transition-colors"
                   onClick={() => setCostModalOpen(true)}
                 >
-                  ${cost?.total_cost?.toFixed(0) || "0"}
+                  ${MOCK_COST.total_cost.toFixed(0)}
                   <span className="text-sm font-normal text-muted-foreground ml-1">/day</span>
                 </p>
                 <p className="text-xs text-muted-foreground">click total for trend</p>
@@ -347,7 +196,7 @@ export default function WorkspaceDetailPage({
                   <Cpu className="h-4 w-4" />
                   <span className="text-xs">Nodes</span>
                 </div>
-                <p className="text-2xl font-bold">{stats.node_count}</p>
+                <p className="text-2xl font-bold">{MOCK_STATS.node_count}</p>
                 <p className="text-xs text-muted-foreground">click for trend</p>
               </CardContent>
             </Card>
@@ -362,7 +211,7 @@ export default function WorkspaceDetailPage({
                   <Box className="h-4 w-4" />
                   <span className="text-xs">Pods</span>
                 </div>
-                <p className="text-2xl font-bold">{stats.pod_count}</p>
+                <p className="text-2xl font-bold">{MOCK_STATS.pod_count}</p>
                 <p className="text-xs text-muted-foreground">click for trend</p>
               </CardContent>
             </Card>
@@ -374,18 +223,13 @@ export default function WorkspaceDetailPage({
                   <Layers className="h-4 w-4" />
                   <span className="text-xs">E6 Clusters</span>
                 </div>
-                <p className="text-2xl font-bold">{stats.e6_cluster_count}</p>
+                <p className="text-2xl font-bold">{MOCK_STATS.e6_cluster_count}</p>
                 <div className="flex flex-wrap gap-1 mt-1">
-                  {e6Clusters.slice(0, 3).map(cluster => (
+                  {MOCK_E6_CLUSTERS.slice(0, 3).map(cluster => (
                     <Badge key={cluster} variant="secondary" className="text-xs">
                       {cluster}
                     </Badge>
                   ))}
-                  {e6Clusters.length > 3 && (
-                    <Badge variant="outline" className="text-xs">
-                      +{e6Clusters.length - 3}
-                    </Badge>
-                  )}
                 </div>
               </CardContent>
             </Card>
@@ -404,7 +248,6 @@ export default function WorkspaceDetailPage({
           </DialogHeader>
           <TimeSeriesChart
             data={costChartData}
-            loading={loadingCostTimeSeries}
             color="#f59e0b"
             label="Cost/hr"
             formatter={(v) => `$${v.toFixed(2)}`}
@@ -423,7 +266,6 @@ export default function WorkspaceDetailPage({
           </DialogHeader>
           <TimeSeriesChart
             data={nodeChartData}
-            loading={loadingNodeTimeSeries}
             color="#16a34a"
             label="Nodes"
           />
@@ -441,7 +283,6 @@ export default function WorkspaceDetailPage({
           </DialogHeader>
           <TimeSeriesChart
             data={podChartData}
-            loading={loadingPodTimeSeries}
             color="#3b82f6"
             label="Pods"
           />
@@ -450,6 +291,32 @@ export default function WorkspaceDetailPage({
 
       {/* Node Packing Section */}
       <NodePackingSection
+        eksCluster={decodedCluster}
+        dateRange={dateRange}
+        selectedDate={selectedDate}
+      />
+
+      {/* Right-Sizing Section */}
+      <RightSizingSection
+        eksCluster={decodedCluster}
+        dateRange={dateRange}
+        selectedDate={selectedDate}
+      />
+
+      {/* Cost Breakdown Section */}
+      <CostBreakdownSection
+        eksCluster={decodedCluster}
+        dateRange={dateRange}
+      />
+
+      {/* IO & Data Transfer Section */}
+      <IODataTransferSection
+        eksCluster={decodedCluster}
+        dateRange={dateRange}
+      />
+
+      {/* E6 Engine Usage Section */}
+      <E6EngineUsageSection
         eksCluster={decodedCluster}
         dateRange={dateRange}
         selectedDate={selectedDate}

@@ -18,6 +18,7 @@ from generator import (
     generate_usage,
     generate_e6_metrics,
     select_idle_clusters,
+    calculate_allocation_factor,
 )
 
 # Configure logging
@@ -139,15 +140,20 @@ def write_pod_metrics(db: GreptimeDB, eks_cluster: str, pod: dict, ts: datetime)
     })
 
 
-def write_container_metrics(db: GreptimeDB, eks_cluster: str, pod: dict, usage: dict, ts: datetime) -> None:
+def write_container_metrics(db: GreptimeDB, eks_cluster: str, pod: dict, usage: dict, ts: datetime, alloc_factor: float = 1.0) -> None:
     """Write container allocation and usage metrics."""
+    # Apply allocation factor to simulate varying allocation over time
+    # Cast to float explicitly to ensure DOUBLE column type in GreptimeDB
+    cpu_allocation = float(pod['cpu_request'] * alloc_factor)
+    memory_allocation = float(pod['memory_request'] * alloc_factor)
+
     db.insert('container_cpu_allocation', {
         'eks_cluster': eks_cluster,
         'namespace': pod['namespace'],
         'pod': pod['pod'],
         'container': pod['container'],
         'node': pod['node'],
-        'metric_value': pod['cpu_request'],
+        'metric_value': cpu_allocation,
         'ts': ts,
     })
 
@@ -157,7 +163,7 @@ def write_container_metrics(db: GreptimeDB, eks_cluster: str, pod: dict, usage: 
         'pod': pod['pod'],
         'container': pod['container'],
         'node': pod['node'],
-        'metric_value': pod['memory_request'],
+        'metric_value': memory_allocation,
         'ts': ts,
     })
 
@@ -328,6 +334,9 @@ def write_network_metrics(db: GreptimeDB, eks_cluster: str, namespace: str, pod:
 
 def generate_data_point(config: dict, k8s_db: GreptimeDB, e6_dbs: dict, workspaces_data: dict, ts: datetime) -> None:
     """Generate a single data point for all workspaces."""
+    # Calculate allocation factor for this timestamp (varies over time)
+    alloc_factor = calculate_allocation_factor(ts)
+
     for workspace in config['workspaces']:
         workspace_name = workspace['name']
         eks_cluster = workspace['eks_cluster']
@@ -351,7 +360,7 @@ def generate_data_point(config: dict, k8s_db: GreptimeDB, e6_dbs: dict, workspac
 
             usage = generate_usage(pod, ts, query_rate)
             write_pod_metrics(k8s_db, eks_cluster, pod, ts)
-            write_container_metrics(k8s_db, eks_cluster, pod, usage, ts)
+            write_container_metrics(k8s_db, eks_cluster, pod, usage, ts, alloc_factor)
 
         # E6 metrics -> e6_{customer} database
         for e6_cluster in e6_clusters:
@@ -554,8 +563,10 @@ def run_exporter(config: dict) -> None:
         e6_dbs[workspace_name] = e6_db
 
         # Generate static topology
-        nodes = generate_nodes(workspace_name, region)
-        pods = generate_pods(workspace_name, e6_clusters)
+        # First generate pods to know how much CPU we need
+        pods, total_cpu_needed = generate_pods(workspace_name, e6_clusters)
+        # Add 50% headroom so packing is 40-80%, not 100%
+        nodes = generate_nodes(workspace_name, region, int(total_cpu_needed * 1.5))
         assign_pods_to_nodes(pods, nodes)
         idle_clusters = select_idle_clusters(e6_clusters)
 

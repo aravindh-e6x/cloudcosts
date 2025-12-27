@@ -1,19 +1,17 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { Cpu } from "lucide-react"
+import { Server, Cpu, MemoryStick } from "lucide-react"
 import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
-  Skeleton,
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from "e6ds"
-import { format } from "date-fns"
 import {
   LineChart,
   Line,
@@ -22,24 +20,8 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
+  Legend,
 } from "recharts"
-import { useQuery } from "@/hooks/useQuery"
-
-interface NodePackingData {
-  node: string
-  allocatable_cpu: number
-  allocated_cpu: number
-  packing_pct: number
-}
-
-interface NodePackingAvg {
-  avg_packing_pct: number
-}
-
-interface NodePackingTimeSeries {
-  ts: string
-  packing_pct: number
-}
 
 interface NodePackingSectionProps {
   eksCluster: string
@@ -47,75 +29,69 @@ interface NodePackingSectionProps {
   selectedDate: string
 }
 
+// Mock data for nodes
+const MOCK_NODES = [
+  { node: "ip-172-25-2-22.eu-west-1.compute.internal", instance_type: "m5.2xlarge", allocatable_cpu: 8, allocated_cpu: 7.52, allocatable_memory: 32 * 1024 * 1024 * 1024, allocated_memory: 6.4 * 1024 * 1024 * 1024, hourly_cost: 0.384, pod_count: 12 },
+  { node: "ip-172-25-1-101.eu-west-1.compute.internal", instance_type: "m5.2xlarge", allocatable_cpu: 8, allocated_cpu: 7.04, allocatable_memory: 32 * 1024 * 1024 * 1024, allocated_memory: 6.4 * 1024 * 1024 * 1024, hourly_cost: 0.384, pod_count: 10 },
+  { node: "ip-172-25-2-12.eu-west-1.compute.internal", instance_type: "m5.2xlarge", allocatable_cpu: 8, allocated_cpu: 7.52, allocatable_memory: 32 * 1024 * 1024 * 1024, allocated_memory: 6.4 * 1024 * 1024 * 1024, hourly_cost: 0.384, pod_count: 12 },
+  { node: "ip-172-25-4-156.eu-west-1.compute.internal", instance_type: "m5.2xlarge", allocatable_cpu: 8, allocated_cpu: 7.68, allocatable_memory: 32 * 1024 * 1024 * 1024, allocated_memory: 9.6 * 1024 * 1024 * 1024, hourly_cost: 0.384, pod_count: 13 },
+  { node: "ip-172-25-0-75.eu-west-1.compute.internal", instance_type: "m5.2xlarge", allocatable_cpu: 8, allocated_cpu: 7.6, allocatable_memory: 32 * 1024 * 1024 * 1024, allocated_memory: 4.5 * 1024 * 1024 * 1024, hourly_cost: 0.384, pod_count: 12 },
+  { node: "ip-172-25-2-58.eu-west-1.compute.internal", instance_type: "m5.2xlarge", allocatable_cpu: 8, allocated_cpu: 7.92, allocatable_memory: 32 * 1024 * 1024 * 1024, allocated_memory: 5.4 * 1024 * 1024 * 1024, hourly_cost: 0.384, pod_count: 13 },
+  { node: "ip-172-25-3-198.eu-west-1.compute.internal", instance_type: "m5.2xlarge", allocatable_cpu: 8, allocated_cpu: 7.44, allocatable_memory: 32 * 1024 * 1024 * 1024, allocated_memory: 8.0 * 1024 * 1024 * 1024, hourly_cost: 0.384, pod_count: 13 },
+]
+
+type ModalState = { node: string; metric: 'cpu' | 'memory' } | null
+
+// Generate mock time series data for a node
+const generateNodeTimeSeries = (basePct: number, metric: 'cpu' | 'memory') => {
+  const data = []
+  for (let i = 0; i < 24; i++) {
+    const hourFactor = Math.sin((i - 6) * Math.PI / 12) * 0.15 + 0.85
+    const noise = 0.95 + Math.random() * 0.1
+    const value = basePct * hourFactor * noise
+    data.push({
+      time: `${i.toString().padStart(2, '0')}:00`,
+      value: Math.min(value, 100),
+    })
+  }
+  return data
+}
+
 export function NodePackingSection({ eksCluster, dateRange, selectedDate }: NodePackingSectionProps) {
-  const [selectedNode, setSelectedNode] = useState<string | null>(null)
+  const [modalState, setModalState] = useState<ModalState>(null)
 
-  // Fetch node packing data (current)
-  const { data: packingData, loading: loadingPacking } = useQuery<NodePackingData>(
-    "e6",
-    "getNodePacking",
-    [eksCluster, dateRange],
-    { database: "kubernetes" }
-  )
+  const nodesWithPct = useMemo(() => {
+    return MOCK_NODES.map(n => ({
+      ...n,
+      cpu_pct: (n.allocated_cpu / n.allocatable_cpu) * 100,
+      memory_pct: (n.allocated_memory / n.allocatable_memory) * 100,
+    })).sort((a, b) => b.cpu_pct - a.cpu_pct)
+  }, [])
 
-  // Fetch average packing for the day
-  const { data: avgData, loading: loadingAvg } = useQuery<NodePackingAvg>(
-    "e6",
-    "getNodePackingAvg",
-    [eksCluster, dateRange],
-    { database: "kubernetes" }
-  )
+  const totalNodes = nodesWithPct.length
+  const totalPods = nodesWithPct.reduce((sum, n) => sum + n.pod_count, 0)
+  const totalCpuAllocatable = nodesWithPct.reduce((sum, n) => sum + n.allocatable_cpu, 0)
+  const totalCpuAllocated = nodesWithPct.reduce((sum, n) => sum + n.allocated_cpu, 0)
+  const totalMemoryAllocatable = nodesWithPct.reduce((sum, n) => sum + n.allocatable_memory, 0)
+  const totalMemoryAllocated = nodesWithPct.reduce((sum, n) => sum + n.allocated_memory, 0)
+  const totalHourlyCost = nodesWithPct.reduce((sum, n) => sum + n.hourly_cost, 0)
 
-  // Fetch time series for selected node
-  const { data: timeSeriesData, loading: loadingTimeSeries } = useQuery<NodePackingTimeSeries>(
-    "e6",
-    "getNodePackingTimeSeries",
-    [eksCluster, selectedNode || '', dateRange],
-    { database: "kubernetes", enabled: !!selectedNode }
-  )
+  const avgCpuPct = totalCpuAllocatable > 0 ? (totalCpuAllocated / totalCpuAllocatable) * 100 : 0
+  const avgMemPct = totalMemoryAllocatable > 0 ? (totalMemoryAllocated / totalMemoryAllocatable) * 100 : 0
 
-  const avgPacking = avgData?.[0]?.avg_packing_pct || 0
-  const currentAvg = packingData?.length
-    ? Math.round(packingData.reduce((sum, n) => sum + n.packing_pct, 0) / packingData.length)
-    : 0
-
+  // Generate chart data based on selected node and metric
   const chartData = useMemo(() => {
-    if (!timeSeriesData) return []
-    return timeSeriesData.map(d => ({
-      time: format(new Date(d.ts), "HH:mm"),
-      value: d.packing_pct,
-    }))
-  }, [timeSeriesData])
+    if (!modalState) return []
+    const nodeData = nodesWithPct.find(n => n.node === modalState.node)
+    if (!nodeData) return []
+    const basePct = modalState.metric === 'cpu' ? nodeData.cpu_pct : nodeData.memory_pct
+    return generateNodeTimeSeries(basePct, modalState.metric)
+  }, [modalState, nodesWithPct])
 
-  // Color based on packing percentage
-  const getPackingColor = (pct: number) => {
-    if (pct >= 80) return "bg-green-500"
-    if (pct >= 60) return "bg-yellow-500"
-    if (pct >= 40) return "bg-orange-500"
-    return "bg-red-500"
-  }
 
-  const getPackingTextColor = (pct: number) => {
-    if (pct >= 80) return "text-green-600"
-    if (pct >= 60) return "text-yellow-600"
-    if (pct >= 40) return "text-orange-600"
-    return "text-red-600"
-  }
-
-  if (loadingPacking || loadingAvg) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Cpu className="h-5 w-5" />
-            Node Packing
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Skeleton className="h-48 w-full" />
-        </CardContent>
-      </Card>
-    )
+  const formatMemory = (bytes: number) => {
+    const gb = bytes / (1024 * 1024 * 1024)
+    return `${gb.toFixed(0)}Gi`
   }
 
   return (
@@ -123,109 +99,120 @@ export function NodePackingSection({ eksCluster, dateRange, selectedDate }: Node
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="flex items-center gap-2 text-base">
-            <Cpu className="h-5 w-5" />
+            <Server className="h-5 w-5" />
             Node Packing
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          {/* Summary row */}
-          <div className="flex items-center justify-between mb-4 text-sm">
-            <div>
-              <span className="text-muted-foreground">Today Avg: </span>
-              <span className={`font-bold ${getPackingTextColor(avgPacking)}`}>
-                {avgPacking}%
+        <CardContent className="font-mono text-sm">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-6">
+              <span className="text-muted-foreground">
+                <span className="font-bold text-foreground">{totalNodes}</span> nodes
+              </span>
+              <span className="text-muted-foreground">
+                <span className="text-foreground">{Math.round(totalCpuAllocated)}m/{Math.round(totalCpuAllocatable)}m</span>
+                <span className="ml-2">{avgCpuPct.toFixed(1)}%</span> cpu
+              </span>
+              <span className="text-muted-foreground">
+                <span className="text-foreground">{formatMemory(totalMemoryAllocated)}/{formatMemory(totalMemoryAllocatable)}</span>
+                <span className="ml-2">{avgMemPct.toFixed(1)}%</span> memory
               </span>
             </div>
-            <div>
-              <span className="text-muted-foreground">Now: </span>
-              <span className={`font-bold ${getPackingTextColor(currentAvg)}`}>
-                {currentAvg}%
+            <div className="flex items-center gap-4">
+              <span className="px-2 py-1 bg-muted rounded font-medium">
+                ${totalHourlyCost.toFixed(2)}/hour ${(totalHourlyCost * 24 * 30).toFixed(0)}/month
               </span>
             </div>
           </div>
+          <div className="text-muted-foreground text-xs mb-3">
+            {totalPods} pods (0 pending {totalPods} running {totalPods} bound)
+          </div>
 
-          {/* Node grid */}
-          <div className="text-xs text-muted-foreground mb-2">Current Node Utilization</div>
-          <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2">
-            {packingData?.map((node) => (
+          <div className="space-y-1 max-h-[400px] overflow-y-auto">
+            {nodesWithPct.map((node) => (
               <div
                 key={node.node}
-                className="cursor-pointer hover:opacity-80 transition-opacity"
-                onClick={() => setSelectedNode(node.node)}
+                className="flex items-center gap-2 text-xs p-1"
               >
-                <div
-                  className={`h-12 rounded flex items-center justify-center text-white font-bold text-sm ${getPackingColor(node.packing_pct)}`}
-                >
-                  {Math.round(node.packing_pct)}%
+                <div className="w-56 text-muted-foreground truncate">
+                  {node.node}
                 </div>
-                <div className="text-xs text-center text-muted-foreground mt-1 truncate">
-                  {node.node.split('-').pop()}
+                <div className="flex-1 flex gap-1">
+                  <div
+                    className="flex items-center gap-1 flex-1 cursor-pointer hover:bg-muted/50 p-1 -m-1  transition-colors"
+                    onClick={() => setModalState({ node: node.node, metric: 'cpu' })}
+                  >
+                    <span className="w-8 text-muted-foreground">cpu</span>
+                    <div className="flex-1 h-4 bg-muted overflow-hidden">
+                      <div
+                        className="h-full transition-all bg-primary"
+                        style={{ width: `${Math.min(node.cpu_pct, 100)}%` }}
+                      />
+                    </div>
+                  </div>
+                  <div
+                    className="flex items-center gap-1 flex-1 cursor-pointer hover:bg-muted/50 p-1 -m-1 transition-colors"
+                    onClick={() => setModalState({ node: node.node, metric: 'memory' })}
+                  >
+                    <span className="w-12 text-muted-foreground">memory</span>
+                    <div className="flex-1 h-4 bg-muted overflow-hidden">
+                      <div
+                        className="h-full transition-all bg-primary"
+                        style={{ width: `${Math.min(node.memory_pct, 100)}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+                <div className="w-20 text-right flex gap-2 justify-end text-muted-foreground">
+                  <span>{Math.round(node.cpu_pct)}%</span>
+                  <span>{Math.round(node.memory_pct)}%</span>
+                </div>
+                <div className="w-16 text-muted-foreground">
+                  ({node.pod_count} pods)
+                </div>
+                <div className="w-36 text-muted-foreground text-right">
+                  {node.instance_type}/${node.hourly_cost.toFixed(3)}
+                </div>
+                <div className="w-24 text-muted-foreground">
+                  On-Demand
                 </div>
               </div>
             ))}
           </div>
 
           <p className="text-xs text-muted-foreground mt-3">
-            Click node for time-series
+            Click CPU or Memory bar for time-series
           </p>
         </CardContent>
       </Card>
 
-      {/* Node Time Series Modal */}
-      <Dialog open={!!selectedNode} onOpenChange={(open) => !open && setSelectedNode(null)}>
+      <Dialog open={!!modalState} onOpenChange={(open) => !open && setModalState(null)}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Cpu className="h-5 w-5" />
-              {selectedNode} - Packing % - {selectedDate}
+              {modalState?.metric === 'cpu' ? (
+                <Cpu className="h-5 w-5" />
+              ) : (
+                <MemoryStick className="h-5 w-5" />
+              )}
+              <span className="font-mono text-sm">
+                {modalState?.node} - {modalState?.metric === 'cpu' ? 'CPU' : 'Memory'} % - {selectedDate}
+              </span>
             </DialogTitle>
           </DialogHeader>
           <div className="h-[400px] mt-4">
-            {loadingTimeSeries ? (
-              <div className="flex items-center justify-center h-full">
-                <Skeleton className="h-full w-full" />
-              </div>
-            ) : chartData.length === 0 ? (
-              <div className="flex items-center justify-center h-full text-muted-foreground">
-                No data available
-              </div>
-            ) : (
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e5e5" />
-                  <XAxis
-                    dataKey="time"
-                    tick={{ fontSize: 12, fill: '#666' }}
-                    tickLine={false}
-                    axisLine={{ stroke: '#ccc' }}
-                  />
-                  <YAxis
-                    tick={{ fontSize: 12, fill: '#666' }}
-                    tickLine={false}
-                    axisLine={{ stroke: '#ccc' }}
-                    domain={[0, 100]}
-                    tickFormatter={(v) => `${v}%`}
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: '#fff',
-                      border: '1px solid #ccc',
-                      borderRadius: '8px',
-                    }}
-                    labelStyle={{ color: '#333' }}
-                    formatter={(value) => [`${value}%`, 'Packing']}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="value"
-                    stroke="#16a34a"
-                    strokeWidth={2}
-                    dot={{ fill: '#16a34a', strokeWidth: 2, r: 3 }}
-                    activeDot={{ r: 5, fill: '#16a34a' }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            )}
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e5e5" />
+                <XAxis dataKey="time" tick={{ fontSize: 12, fill: '#666' }} tickLine={false} axisLine={{ stroke: '#ccc' }} />
+                <YAxis tick={{ fontSize: 12, fill: '#666' }} tickLine={false} axisLine={{ stroke: '#ccc' }} domain={[0, 100]} tickFormatter={(v) => `${v}%`} />
+                <Tooltip
+                  contentStyle={{ backgroundColor: '#fff', border: '1px solid #ccc', borderRadius: '8px' }}
+                  formatter={(value) => [`${(value as number).toFixed(1)}%`, modalState?.metric === 'cpu' ? 'CPU' : 'Memory']}
+                />
+                <Line type="monotone" dataKey="value" stroke="#22c55e" strokeWidth={2} dot={false} name={modalState?.metric === 'cpu' ? 'CPU' : 'Memory'} />
+              </LineChart>
+            </ResponsiveContainer>
           </div>
         </DialogContent>
       </Dialog>
