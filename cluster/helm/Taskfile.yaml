@@ -16,7 +16,7 @@ tasks:
       - docker build -t cloudcosts/dashboard:latest ../dashboard
       - docker build -t cloudcosts/mock-exporter:latest ../mock-exporter
       - k3d image import cloudcosts/dashboard:latest cloudcosts/mock-exporter:latest -c {{.CLUSTER_NAME}}
-      - helm dependency update
+      # - helm dependency update
       - kubectl create namespace {{.NAMESPACE}} --dry-run=client -o yaml | kubectl apply -f -
       - envsubst < values-k3d.yaml | helm install {{.RELEASE_NAME}} . -n {{.NAMESPACE}} -f -
 
@@ -29,7 +29,7 @@ tasks:
     desc: Build images and upgrade helm chart
     cmds:
       - task: build
-      - helm dependency update
+      # - helm dependency update
       - envsubst < values-k3d.yaml | helm upgrade {{.RELEASE_NAME}} . -n {{.NAMESPACE}} -f -
 
   kubeconfig:

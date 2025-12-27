@@ -91,6 +91,7 @@ class GreptimeDB:
 
         columns = []
         time_index = None
+        primary_key_cols = []
         for col, val in data.items():
             col_type = self._infer_type(val)
             if "TIME INDEX" in col_type:
@@ -98,13 +99,18 @@ class GreptimeDB:
                 columns.append(f"{col} {col_type.replace(' TIME INDEX', '')}")
             else:
                 columns.append(f"{col} {col_type}")
+                # String columns form the primary key (tag columns in GreptimeDB)
+                if col_type == "STRING":
+                    primary_key_cols.append(col)
 
         if time_index is None:
             raise ValueError(f"Table {table} must have a timestamp column")
 
+        # Build CREATE TABLE with PRIMARY KEY for dedup
+        pk_clause = f", PRIMARY KEY ({', '.join(primary_key_cols)})" if primary_key_cols else ""
         sql = f"""CREATE TABLE IF NOT EXISTS {table} (
             {', '.join(columns)},
-            TIME INDEX ({time_index})
+            TIME INDEX ({time_index}){pk_clause}
         )"""
 
         try:

@@ -168,6 +168,215 @@ export function getWorkspaceStats(eksCluster: string, { startTs, endTs }: DateRa
 }
 
 /**
+ * Get node packing (CPU utilization) per node for selected day
+ * Packing % = allocated CPU / allocatable CPU
+ */
+export function getNodePacking(eksCluster: string, { startTs, endTs }: DateRange): string {
+  const sql = `
+    WITH latest AS (
+      SELECT MAX(ts) as max_ts
+      FROM kube_node_info
+      WHERE eks_cluster = '${eksCluster}'
+        AND ts >= '${startTs}'::timestamp AND ts < '${endTs}'::timestamp
+    ),
+    node_allocatable AS (
+      SELECT node, metric_value as allocatable_cpu
+      FROM kube_node_status_allocatable
+      WHERE eks_cluster = '${eksCluster}'
+        AND resource_type = 'cpu'
+        AND ts >= (SELECT max_ts FROM latest) - INTERVAL '10 minutes'
+        AND ts <= (SELECT max_ts FROM latest)
+    ),
+    container_allocated AS (
+      SELECT node, SUM(metric_value) as allocated_cpu
+      FROM container_cpu_allocation
+      WHERE eks_cluster = '${eksCluster}'
+        AND ts >= (SELECT max_ts FROM latest) - INTERVAL '10 minutes'
+        AND ts <= (SELECT max_ts FROM latest)
+      GROUP BY node
+    )
+    SELECT
+      a.node,
+      a.allocatable_cpu,
+      COALESCE(c.allocated_cpu, 0) as allocated_cpu,
+      CASE WHEN a.allocatable_cpu > 0
+        THEN ROUND(COALESCE(c.allocated_cpu, 0) / a.allocatable_cpu * 100, 1)
+        ELSE 0
+      END as packing_pct
+    FROM node_allocatable a
+    LEFT JOIN container_allocated c ON a.node = c.node
+    ORDER BY packing_pct DESC
+  `
+  logQuery('e6', 'getNodePacking', { eksCluster, startTs, endTs }, sql)
+  return sql
+}
+
+/**
+ * Get average node packing for the day
+ */
+export function getNodePackingAvg(eksCluster: string, { startTs, endTs }: DateRange): string {
+  const sql = `
+    WITH hourly_packing AS (
+      SELECT
+        date_trunc('hour', a.ts) as hour,
+        AVG(CASE WHEN a.metric_value > 0
+          THEN c.allocated / a.metric_value * 100
+          ELSE 0
+        END) as avg_packing
+      FROM kube_node_status_allocatable a
+      JOIN (
+        SELECT ts, node, SUM(metric_value) as allocated
+        FROM container_cpu_allocation
+        WHERE eks_cluster = '${eksCluster}'
+          AND ts >= '${startTs}'::timestamp AND ts < '${endTs}'::timestamp
+        GROUP BY ts, node
+      ) c ON a.node = c.node AND a.ts = c.ts
+      WHERE a.eks_cluster = '${eksCluster}'
+        AND a.resource_type = 'cpu'
+        AND a.ts >= '${startTs}'::timestamp AND ts < '${endTs}'::timestamp
+      GROUP BY date_trunc('hour', a.ts)
+    )
+    SELECT ROUND(AVG(avg_packing), 1) as avg_packing_pct
+    FROM hourly_packing
+  `
+  logQuery('e6', 'getNodePackingAvg', { eksCluster, startTs, endTs }, sql)
+  return sql
+}
+
+/**
+ * Get node packing time series for a specific node
+ */
+export function getNodePackingTimeSeries(eksCluster: string, node: string, { startTs, endTs }: DateRange): string {
+  const sql = `
+    SELECT
+      a.ts,
+      CASE WHEN a.metric_value > 0
+        THEN ROUND(COALESCE(c.allocated, 0) / a.metric_value * 100, 1)
+        ELSE 0
+      END as packing_pct
+    FROM kube_node_status_allocatable a
+    LEFT JOIN (
+      SELECT ts, node, SUM(metric_value) as allocated
+      FROM container_cpu_allocation
+      WHERE eks_cluster = '${eksCluster}'
+        AND node = '${node}'
+        AND ts >= '${startTs}'::timestamp AND ts < '${endTs}'::timestamp
+      GROUP BY ts, node
+    ) c ON a.ts = c.ts
+    WHERE a.eks_cluster = '${eksCluster}'
+      AND a.node = '${node}'
+      AND a.resource_type = 'cpu'
+      AND a.ts >= '${startTs}'::timestamp AND a.ts < '${endTs}'::timestamp
+    ORDER BY a.ts
+  `
+  logQuery('e6', 'getNodePackingTimeSeries', { eksCluster, node, startTs, endTs }, sql)
+  return sql
+}
+
+/**
+ * Get right-sizing data (CPU/Memory requested vs actual by component)
+ */
+export function getRightSizing(eksCluster: string, { startTs, endTs }: DateRange): string {
+  const sql = `
+    WITH latest AS (
+      SELECT MAX(ts) as max_ts
+      FROM container_cpu_allocation
+      WHERE eks_cluster = '${eksCluster}'
+        AND ts >= '${startTs}'::timestamp AND ts < '${endTs}'::timestamp
+    ),
+    requests AS (
+      SELECT
+        l.label_component as component,
+        SUM(r.metric_value) as cpu_requested,
+        SUM(m.metric_value) as memory_requested
+      FROM kube_pod_labels l
+      JOIN kube_pod_container_resource_requests r
+        ON l.eks_cluster = r.eks_cluster AND l.pod = r.pod
+        AND r.resource_type = 'cpu'
+        AND r.ts >= (SELECT max_ts FROM latest) - INTERVAL '10 minutes'
+        AND r.ts <= (SELECT max_ts FROM latest)
+      JOIN kube_pod_container_resource_requests m
+        ON l.eks_cluster = m.eks_cluster AND l.pod = m.pod
+        AND m.resource_type = 'memory'
+        AND m.ts >= (SELECT max_ts FROM latest) - INTERVAL '10 minutes'
+        AND m.ts <= (SELECT max_ts FROM latest)
+      WHERE l.eks_cluster = '${eksCluster}'
+        AND l.ts >= (SELECT max_ts FROM latest) - INTERVAL '10 minutes'
+        AND l.ts <= (SELECT max_ts FROM latest)
+      GROUP BY l.label_component
+    ),
+    usage AS (
+      SELECT
+        l.label_component as component,
+        SUM(c.metric_value) / 300 as cpu_actual,
+        SUM(mem.metric_value) as memory_actual
+      FROM kube_pod_labels l
+      JOIN container_cpu_usage_seconds_total c
+        ON l.eks_cluster = c.eks_cluster AND l.pod = c.pod
+        AND c.ts >= (SELECT max_ts FROM latest) - INTERVAL '10 minutes'
+        AND c.ts <= (SELECT max_ts FROM latest)
+      JOIN container_memory_working_set_bytes mem
+        ON l.eks_cluster = mem.eks_cluster AND l.pod = mem.pod
+        AND mem.ts >= (SELECT max_ts FROM latest) - INTERVAL '10 minutes'
+        AND mem.ts <= (SELECT max_ts FROM latest)
+      WHERE l.eks_cluster = '${eksCluster}'
+        AND l.ts >= (SELECT max_ts FROM latest) - INTERVAL '10 minutes'
+        AND l.ts <= (SELECT max_ts FROM latest)
+      GROUP BY l.label_component
+    )
+    SELECT
+      r.component,
+      r.cpu_requested,
+      COALESCE(u.cpu_actual, 0) as cpu_actual,
+      CASE WHEN r.cpu_requested > 0
+        THEN ROUND(COALESCE(u.cpu_actual, 0) / r.cpu_requested * 100, 1)
+        ELSE 0
+      END as cpu_util_pct,
+      r.memory_requested,
+      COALESCE(u.memory_actual, 0) as memory_actual,
+      CASE WHEN r.memory_requested > 0
+        THEN ROUND(COALESCE(u.memory_actual, 0) / r.memory_requested * 100, 1)
+        ELSE 0
+      END as memory_util_pct
+    FROM requests r
+    LEFT JOIN usage u ON r.component = u.component
+    ORDER BY r.component
+  `
+  logQuery('e6', 'getRightSizing', { eksCluster, startTs, endTs }, sql)
+  return sql
+}
+
+/**
+ * Get E6 cluster activity (queries per hour, executor count, idle status)
+ */
+export function getE6ClusterActivity(eksCluster: string, e6Cluster: string, { startTs, endTs }: DateRange): string {
+  const sql = `
+    WITH latest AS (
+      SELECT MAX(ts) as max_ts
+      FROM io_e6x_E6Gateway_TotalQueriesCompletedCount
+      WHERE e6_workspace = '${eksCluster.replace('-prod-eks', '').replace('-eks', '')}'
+        AND e6_cluster = '${e6Cluster}'
+        AND ts >= '${startTs}'::timestamp AND ts < '${endTs}'::timestamp
+    )
+    SELECT
+      '${e6Cluster}' as e6_cluster,
+      COALESCE(q.metric_value, 0) as queries_per_hour,
+      (SELECT COUNT(DISTINCT pod) FROM kube_pod_labels
+       WHERE eks_cluster = '${eksCluster}'
+         AND namespace = '${e6Cluster}'
+         AND label_component = 'executor'
+         AND ts >= (SELECT max_ts FROM latest) - INTERVAL '10 minutes'
+         AND ts <= (SELECT max_ts FROM latest)) as executor_count
+    FROM io_e6x_E6Gateway_TotalQueriesCompletedCount q
+    WHERE q.e6_workspace = '${eksCluster.replace('-prod-eks', '').replace('-eks', '')}'
+      AND q.e6_cluster = '${e6Cluster}'
+      AND q.ts = (SELECT max_ts FROM latest)
+  `
+  logQuery('e6', 'getE6ClusterActivity', { eksCluster, e6Cluster, startTs, endTs }, sql)
+  return sql
+}
+
+/**
  * Get customer summary stats (cluster count, last updated)
  */
 export function getCustomerStats({ startTs, endTs }: DateRange): string {

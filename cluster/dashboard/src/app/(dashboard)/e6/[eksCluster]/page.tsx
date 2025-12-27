@@ -28,6 +28,7 @@ import {
 import { useDate } from "@/components/providers"
 import { useQuery } from "@/hooks/useQuery"
 import { QueryError, EmptyState } from "@/components"
+import { NodePackingSection } from "./components"
 
 interface WorkspaceStats {
   node_count: number
@@ -272,7 +273,7 @@ export default function WorkspaceDetailPage({
                 borderRadius: '8px',
               }}
               labelStyle={{ color: '#333' }}
-              formatter={(value: number) => [formatter(value), label]}
+              formatter={(value) => [formatter(value as number), label]}
             />
             <Line
               type="stepAfter"
@@ -314,21 +315,25 @@ export default function WorkspaceDetailPage({
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {/* Cost Card - Clickable */}
-            <Card
-              className="bg-muted/50 cursor-pointer hover:bg-muted/70 transition-colors"
-              onClick={() => setCostModalOpen(true)}
-            >
+            {/* Cost Card */}
+            <Card className="bg-muted/50">
               <CardContent className="p-4">
                 <div className="flex items-center gap-2 text-muted-foreground mb-2">
                   <DollarSign className="h-4 w-4" />
                   <span className="text-xs">Cost</span>
                 </div>
-                <p className="text-2xl font-bold">
+                <p className="text-lg text-muted-foreground">
+                  ${cost?.hourly_cost?.toFixed(2) || "0"}/hr
+                  <span className="text-xs ml-1">instant</span>
+                </p>
+                <p
+                  className="text-2xl font-bold cursor-pointer hover:text-primary transition-colors"
+                  onClick={() => setCostModalOpen(true)}
+                >
                   ${cost?.total_cost?.toFixed(0) || "0"}
                   <span className="text-sm font-normal text-muted-foreground ml-1">/day</span>
                 </p>
-                <p className="text-xs text-muted-foreground">click for trend</p>
+                <p className="text-xs text-muted-foreground">click total for trend</p>
               </CardContent>
             </Card>
 
@@ -442,6 +447,13 @@ export default function WorkspaceDetailPage({
           />
         </DialogContent>
       </Dialog>
+
+      {/* Node Packing Section */}
+      <NodePackingSection
+        eksCluster={decodedCluster}
+        dateRange={dateRange}
+        selectedDate={selectedDate}
+      />
     </div>
   )
 }

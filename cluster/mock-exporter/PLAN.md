@@ -76,8 +76,7 @@ Track all metrics marked with ✅ in `METRICS.md`.
 
 
 
-# Dashboard
-
+# Dashboar
 
   ┌─────────────────────────────────────────────────────────────────────┐
   │  condenast-prod-eks          us-east-1          Account: 123456789 │
