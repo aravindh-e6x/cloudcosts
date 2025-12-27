@@ -8,7 +8,31 @@ export interface Workspace {
 export const workspaces: Workspace[] = [
   {
     id: "k3d-cloudcosts",
-    name: "K3D CloudCosts",
+    name: "Cisco",
+    database: "k3d_cloudcosts",
+    region: "local",
+  },
+   {
+    id: "k3d-cloudcosts1",
+    name: "Freshworks",
+    database: "k3d_cloudcosts",
+    region: "local",
+  },
+   {
+    id: "k3d-cloudcosts2",
+    name: "Condenast",
+    database: "k3d_cloudcosts",
+    region: "local",
+  },
+   {
+    id: "k3d-cloudcosts3",
+    name: "Tekion",
+    database: "k3d_cloudcosts",
+    region: "local",
+  },
+   {
+    id: "k3d-cloudcosts4",
+    name: "Zepto",
     database: "k3d_cloudcosts",
     region: "local",
   },
