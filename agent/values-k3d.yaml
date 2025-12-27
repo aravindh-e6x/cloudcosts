@@ -20,10 +20,7 @@ opencost:
     exporter:
       defaultClusterId: k3d-cloudcosts
     prometheus:
-      username: "${GREPTIMEDB_USERNAME}"
-      password: "${GREPTIMEDB_PASSWORD}"
       internal:
         enabled: false
       external:
-        enabled: true
-        url: "http://cloudcosts-cluster-greptimedb-standalone.cloudcosts-cluster.svc:4000/v1/prometheus"
+        enabled: false
