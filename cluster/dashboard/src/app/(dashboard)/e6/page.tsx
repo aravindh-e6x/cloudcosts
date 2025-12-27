@@ -98,8 +98,8 @@ function ClusterRow({ metrics }: { metrics: ClusterMetrics }) {
       <div className="col-span-1 text-right">
         ${metrics.cost_today.toFixed(2)}
       </div>
-      <div className="col-span-1 text-right">
-        ${metrics.egress_cost.toFixed(2)}
+      <div className="col-span-1 text-right text-muted-foreground">
+        N/A
       </div>
       <div className="col-span-1 text-right">
         ${metrics.idle_cost.toFixed(2)}
