@@ -1,11 +1,26 @@
 "use client"
 
 import { createContext, useContext, useMemo, useState } from "react"
-import { DollarSign, ChevronRight, ChevronDown, Cpu, HardDrive, Server, Box, Layers, Component, ChevronsUpDown } from "lucide-react"
+import { DollarSign, ChevronRight, ChevronDown, Cpu, HardDrive, Server, Box, Layers, Component, ChevronsUpDown, Activity, Database, Zap, BarChart3 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "e6ds"
 import { generateCostDrilldownData } from "./mockData"
 import { useTimeline } from "../TimelineContext"
-import { NodeMetrics, E6ClusterMetrics, PodMetrics, E6ComponentMetrics } from "./types"
+import { NodeMetrics, E6ClusterMetrics, PodMetrics, E6ComponentMetrics, ComponentMetrics } from "./types"
+
+// Format bytes to human readable
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+  return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`
+}
+
+// Format large numbers
+function formatNumber(num: number): string {
+  if (num < 1000) return num.toString()
+  if (num < 1000000) return `${(num / 1000).toFixed(1)}K`
+  return `${(num / 1000000).toFixed(1)}M`
+}
 
 // Context for expand all state
 const ExpandAllContext = createContext<boolean>(false)
@@ -184,7 +199,155 @@ function NodesSection({ nodes, totalCost, level }: { nodes: NodeMetrics[]; total
   )
 }
 
-// E6 Component Detail (pods, CPU, Memory)
+// Render component-specific metrics based on type
+function ComponentMetricsDisplay({ metrics, level }: { metrics: ComponentMetrics; level: number }) {
+  switch (metrics.type) {
+    case "gateway":
+      return (
+        <>
+          <div className="flex items-center py-1 px-2 border-b border-gray-100">
+            <Indent level={level} />
+            <Activity className="h-3 w-3 mr-2 text-cyan-500" />
+            <span className="text-xs text-muted-foreground w-32">Queries running:</span>
+            <span className="text-xs font-bold">{metrics.data.queriesRunning}</span>
+            <span className="text-xs text-muted-foreground ml-2">({metrics.data.queriesQueued} queued)</span>
+          </div>
+          <div className="flex items-center py-1 px-2 border-b border-gray-100">
+            <Indent level={level} />
+            <Zap className="h-3 w-3 mr-2 text-yellow-500" />
+            <span className="text-xs text-muted-foreground w-32">Connections:</span>
+            <span className="text-xs font-bold">{metrics.data.activeConnections}</span>
+          </div>
+          <div className="flex items-center py-1 px-2">
+            <Indent level={level} />
+            <BarChart3 className="h-3 w-3 mr-2 text-green-500" />
+            <span className="text-xs text-muted-foreground w-32">Queries completed:</span>
+            <span className="text-xs font-bold text-green-600">{metrics.data.queriesSucceeded}</span>
+            <span className="text-xs text-red-500 ml-2">({metrics.data.queriesFailed} failed)</span>
+          </div>
+        </>
+      )
+    case "executor":
+      return (
+        <>
+          <div className="flex items-center py-1 px-2 border-b border-gray-100">
+            <Indent level={level} />
+            <Activity className="h-3 w-3 mr-2 text-cyan-500" />
+            <span className="text-xs text-muted-foreground w-32">Active tasks:</span>
+            <span className="text-xs font-bold">{metrics.data.activeTasks}</span>
+            <span className="text-xs text-muted-foreground ml-2">({metrics.data.runningTasks} running)</span>
+          </div>
+          <div className="flex items-center py-1 px-2 border-b border-gray-100">
+            <Indent level={level} />
+            <Database className="h-3 w-3 mr-2 text-blue-500" />
+            <span className="text-xs text-muted-foreground w-32">Data read:</span>
+            <span className="text-xs font-bold">{formatBytes(metrics.data.filesReadFromCacheBytes)}</span>
+            <span className="text-xs text-muted-foreground ml-1">cache</span>
+            <span className="text-xs font-bold ml-2">{formatBytes(metrics.data.filesReadFromS3Bytes)}</span>
+            <span className="text-xs text-muted-foreground ml-1">S3</span>
+          </div>
+          <div className="flex items-center py-1 px-2 border-b border-gray-100">
+            <Indent level={level} />
+            <BarChart3 className="h-3 w-3 mr-2 text-green-500" />
+            <span className="text-xs text-muted-foreground w-32">Rows read:</span>
+            <span className="text-xs font-bold">{formatNumber(metrics.data.rowsRead)}</span>
+          </div>
+          <div className="flex items-center py-1 px-2">
+            <Indent level={level} />
+            <HardDrive className="h-3 w-3 mr-2 text-purple-500" />
+            <span className="text-xs text-muted-foreground w-32">Memory:</span>
+            <span className="text-xs font-bold">{formatBytes(metrics.data.usedMemoryBytes)}</span>
+            <span className="text-xs text-muted-foreground ml-1">/ {formatBytes(metrics.data.allocatedMemoryBytes)}</span>
+          </div>
+        </>
+      )
+    case "queue":
+      return (
+        <>
+          <div className="flex items-center py-1 px-2 border-b border-gray-100">
+            <Indent level={level} />
+            <Activity className="h-3 w-3 mr-2 text-cyan-500" />
+            <span className="text-xs text-muted-foreground w-32">Active requests:</span>
+            <span className="text-xs font-bold">{metrics.data.activeRequests}</span>
+          </div>
+          <div className="flex items-center py-1 px-2 border-b border-gray-100">
+            <Indent level={level} />
+            <Zap className="h-3 w-3 mr-2 text-yellow-500" />
+            <span className="text-xs text-muted-foreground w-32">Tasks:</span>
+            <span className="text-xs font-bold">{metrics.data.activeTasks}</span>
+            <span className="text-xs text-muted-foreground ml-2">({metrics.data.tasksRunning} running, {metrics.data.activeSplits} splits)</span>
+          </div>
+          <div className="flex items-center py-1 px-2">
+            <Indent level={level} />
+            <BarChart3 className="h-3 w-3 mr-2 text-green-500" />
+            <span className="text-xs text-muted-foreground w-32">Requests:</span>
+            <span className="text-xs font-bold text-green-600">{metrics.data.requestsSucceeded}</span>
+            <span className="text-xs text-muted-foreground ml-1">succeeded</span>
+            <span className="text-xs text-red-500 ml-2">({metrics.data.requestsFailed} failed)</span>
+          </div>
+        </>
+      )
+    case "schema":
+      return (
+        <>
+          <div className="flex items-center py-1 px-2 border-b border-gray-100">
+            <Indent level={level} />
+            <Database className="h-3 w-3 mr-2 text-blue-500" />
+            <span className="text-xs text-muted-foreground w-32">Table listing:</span>
+            <span className="text-xs font-bold">{metrics.data.tableListingInProgress}</span>
+            <span className="text-xs text-muted-foreground ml-1">in progress</span>
+            <span className="text-xs ml-2">({metrics.data.tableListingQueued} queued)</span>
+          </div>
+          <div className="flex items-center py-1 px-2 border-b border-gray-100">
+            <Indent level={level} />
+            <Activity className="h-3 w-3 mr-2 text-cyan-500" />
+            <span className="text-xs text-muted-foreground w-32">Metadata reads:</span>
+            <span className="text-xs font-bold">{metrics.data.metadataInProgress}</span>
+            <span className="text-xs text-muted-foreground ml-1">in progress</span>
+            <span className="text-xs ml-2">({metrics.data.metadataQueued} queued)</span>
+          </div>
+          <div className="flex items-center py-1 px-2">
+            <Indent level={level} />
+            <Zap className="h-3 w-3 mr-2 text-yellow-500" />
+            <span className="text-xs text-muted-foreground w-32">Thrift requests:</span>
+            <span className="text-xs font-bold">{metrics.data.thriftInProgress}</span>
+            <span className="text-xs text-muted-foreground ml-1">in progress</span>
+            <span className="text-xs ml-2">({metrics.data.thriftQueued} queued)</span>
+          </div>
+        </>
+      )
+    case "storage":
+      return (
+        <>
+          <div className="flex items-center py-1 px-2 border-b border-gray-100">
+            <Indent level={level} />
+            <Database className="h-3 w-3 mr-2 text-blue-500" />
+            <span className="text-xs text-muted-foreground w-32">Cache size:</span>
+            <span className="text-xs font-bold">{formatBytes(metrics.data.cacheSize)}</span>
+          </div>
+          <div className="flex items-center py-1 px-2 border-b border-gray-100">
+            <Indent level={level} />
+            <Activity className="h-3 w-3 mr-2 text-cyan-500" />
+            <span className="text-xs text-muted-foreground w-32">Requests:</span>
+            <span className="text-xs font-bold">{metrics.data.metadataRequestsInProgress}</span>
+            <span className="text-xs text-muted-foreground ml-1">metadata</span>
+            <span className="text-xs font-bold ml-2">{metrics.data.partitionRequestsInProgress}</span>
+            <span className="text-xs text-muted-foreground ml-1">partition</span>
+          </div>
+          <div className="flex items-center py-1 px-2">
+            <Indent level={level} />
+            <Zap className="h-3 w-3 mr-2 text-yellow-500" />
+            <span className="text-xs text-muted-foreground w-32">Thrift:</span>
+            <span className="text-xs font-bold">{metrics.data.thriftInProgress}</span>
+            <span className="text-xs text-muted-foreground ml-1">in progress</span>
+            <span className="text-xs ml-2">({metrics.data.thriftQueued} queued)</span>
+          </div>
+        </>
+      )
+  }
+}
+
+// E6 Component Detail (pods, CPU, Memory, component-specific metrics)
 function E6ComponentDetail({ component, level }: { component: E6ComponentMetrics; level: number }) {
   const expandAll = useExpandAll()
   const [expanded, setExpanded] = useState(false)
@@ -200,16 +363,10 @@ function E6ComponentDetail({ component, level }: { component: E6ComponentMetrics
         {isExpanded ? <ChevronDown className="h-3 w-3 mr-2" /> : <ChevronRight className="h-3 w-3 mr-2" />}
         <Component className="h-3 w-3 mr-2 text-green-600" />
         <span className="text-sm font-medium">{component.component}</span>
+        <span className="text-xs text-muted-foreground ml-2">({component.podCount} pods)</span>
       </div>
       {isExpanded && (
         <div className="bg-slate-50">
-          {/* How many pods */}
-          <div className="flex items-center py-1 px-2 border-b border-gray-100">
-            <Indent level={level + 1} />
-            <Box className="h-3 w-3 mr-2 text-blue-500" />
-            <span className="text-xs text-muted-foreground w-24">Pods:</span>
-            <span className="text-xs font-bold">{component.podCount}</span>
-          </div>
           {/* CPU */}
           <div className="flex items-center py-1 px-2 border-b border-gray-100">
             <Indent level={level + 1} />
@@ -219,12 +376,20 @@ function E6ComponentDetail({ component, level }: { component: E6ComponentMetrics
             <UtilBar used={component.cpuUsed} total={component.cpuRequested} width={60} />
           </div>
           {/* Memory */}
-          <div className="flex items-center py-1 px-2">
+          <div className="flex items-center py-1 px-2 border-b border-gray-100">
             <Indent level={level + 1} />
             <HardDrive className="h-3 w-3 mr-2 text-purple-500" />
             <span className="text-xs text-muted-foreground w-24">Memory:</span>
             <span className="text-xs font-medium w-20">{component.memUsedGb} / {component.memRequestedGb} GB</span>
             <UtilBar used={component.memUsedGb} total={component.memRequestedGb} width={60} />
+          </div>
+          {/* Component-specific metrics */}
+          <div className="border-t border-gray-200 bg-white">
+            <div className="flex items-center py-1 px-2 bg-gray-100 border-b border-gray-100">
+              <Indent level={level + 1} />
+              <span className="text-xs font-medium text-muted-foreground">E6 Metrics:</span>
+            </div>
+            <ComponentMetricsDisplay metrics={component.componentMetrics} level={level + 1} />
           </div>
         </div>
       )}
@@ -232,11 +397,12 @@ function E6ComponentDetail({ component, level }: { component: E6ComponentMetrics
   )
 }
 
-// E6 Cluster Detail (components breakdown)
+// E6 Cluster Detail (cluster metrics + components breakdown)
 function E6ClusterDetail({ cluster, level }: { cluster: E6ClusterMetrics; level: number }) {
   const expandAll = useExpandAll()
   const [expanded, setExpanded] = useState(false)
   const isExpanded = expandAll || expanded
+  const cm = cluster.clusterMetrics
 
   return (
     <div className="border-b border-gray-200 last:border-0">
@@ -252,7 +418,47 @@ function E6ClusterDetail({ cluster, level }: { cluster: E6ClusterMetrics; level:
       </div>
       {isExpanded && (
         <div className="bg-gray-50 border-t border-gray-100">
-          {/* For each component */}
+          {/* Cluster-level E6 metrics summary */}
+          <div className="flex items-center py-1.5 px-2 bg-indigo-50 border-b border-indigo-100">
+            <Indent level={level + 1} />
+            <span className="text-xs font-medium text-indigo-700">Cluster Metrics:</span>
+          </div>
+          <div className="bg-white border-b border-gray-200">
+            <div className="flex items-center py-1 px-2 border-b border-gray-100">
+              <Indent level={level + 1} />
+              <Activity className="h-3 w-3 mr-2 text-cyan-500" />
+              <span className="text-xs text-muted-foreground w-32">Queries:</span>
+              <span className="text-xs font-bold">{cm.totalQueriesRunning}</span>
+              <span className="text-xs text-muted-foreground ml-1">running</span>
+              <span className="text-xs ml-2">({cm.totalQueriesQueued} queued)</span>
+            </div>
+            <div className="flex items-center py-1 px-2 border-b border-gray-100">
+              <Indent level={level + 1} />
+              <Zap className="h-3 w-3 mr-2 text-yellow-500" />
+              <span className="text-xs text-muted-foreground w-32">Tasks/Requests:</span>
+              <span className="text-xs font-bold">{cm.totalActiveTasks}</span>
+              <span className="text-xs text-muted-foreground ml-1">tasks</span>
+              <span className="text-xs font-bold ml-2">{cm.totalActiveRequests}</span>
+              <span className="text-xs text-muted-foreground ml-1">requests</span>
+            </div>
+            <div className="flex items-center py-1 px-2 border-b border-gray-100">
+              <Indent level={level + 1} />
+              <Database className="h-3 w-3 mr-2 text-blue-500" />
+              <span className="text-xs text-muted-foreground w-32">Data read:</span>
+              <span className="text-xs font-bold">{formatBytes(cm.totalBytesReadCache)}</span>
+              <span className="text-xs text-muted-foreground ml-1">cache</span>
+              <span className="text-xs font-bold ml-2">{formatBytes(cm.totalBytesReadS3)}</span>
+              <span className="text-xs text-muted-foreground ml-1">S3</span>
+            </div>
+            <div className="flex items-center py-1 px-2">
+              <Indent level={level + 1} />
+              <BarChart3 className="h-3 w-3 mr-2 text-green-500" />
+              <span className="text-xs text-muted-foreground w-32">Cache hit rate:</span>
+              <span className="text-xs font-bold text-green-600">{cm.cacheHitRate}%</span>
+            </div>
+          </div>
+
+          {/* Components */}
           <div className="flex items-center py-1.5 px-2 bg-gray-100 border-b border-gray-200">
             <Indent level={level + 1} />
             <span className="text-xs font-medium text-muted-foreground">Components:</span>
