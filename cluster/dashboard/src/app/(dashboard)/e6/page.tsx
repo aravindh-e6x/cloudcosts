@@ -256,6 +256,23 @@ function WorkspaceRow({
   const { data: podCountData } = useQuery<{ pod_count: number }>(
     "workspaces", "getPodCount", dateParams, dbOpts
   )
+  // CPU utilization: separate queries for usage and allocation, calculate in JS
+  const { data: cpuUsageData } = useQuery<{
+    total_min_cpu: number
+    total_max_cpu: number
+    min_ts: number
+    max_ts: number
+  }>("workspaces", "getCpuUsageRaw", dateParams, dbOpts)
+  const { data: cpuAllocTotalData } = useQuery<{ total_allocated: number }>(
+    "workspaces", "getCpuAllocatedTotal", dateParams, dbOpts
+  )
+  // Memory utilization: separate queries, calculate in JS
+  const { data: memTotalData } = useQuery<{ total_bytes: number }>(
+    "workspaces", "getMemTotal", dateParams, dbOpts
+  )
+  const { data: memAvailData } = useQuery<{ avail_bytes: number }>(
+    "workspaces", "getMemAvailable", dateParams, dbOpts
+  )
 
   const { data: clustersData, loading: clustersLoading } = useQuery<{
     cluster: string
@@ -308,8 +325,23 @@ function WorkspaceRow({
   const nodeCount = Number(nodeCountData?.[0]?.node_count) || 0
   const podCount = Number(podCountData?.[0]?.pod_count) || 0
 
-  const cpuUtilPct = 45
-  const memUtilPct = 55
+  // Calculate CPU utilization: (delta_cpu_seconds / time_seconds) / allocated_cpu * 100
+  const cpuUsage = cpuUsageData?.[0]
+  const cpuAllocTotal = Number(cpuAllocTotalData?.[0]?.total_allocated) || 0
+  let cpuUtilPct = 0
+  if (cpuUsage && cpuAllocTotal > 0) {
+    const deltaCpu = (Number(cpuUsage.total_max_cpu) || 0) - (Number(cpuUsage.total_min_cpu) || 0)
+    const deltaTimeMs = (Number(cpuUsage.max_ts) || 0) - (Number(cpuUsage.min_ts) || 0)
+    const deltaTimeSec = deltaTimeMs / 1000
+    if (deltaTimeSec > 0) {
+      cpuUtilPct = Math.round((deltaCpu / deltaTimeSec / cpuAllocTotal) * 100)
+    }
+  }
+
+  // Calculate memory utilization: (total - available) / total * 100
+  const memTotal = Number(memTotalData?.[0]?.total_bytes) || 0
+  const memAvail = Number(memAvailData?.[0]?.avail_bytes) || 0
+  const memUtilPct = memTotal > 0 ? Math.round(((memTotal - memAvail) / memTotal) * 100) : 0
 
   const metrics: WorkspaceMetrics = {
     cost_today: costToday,

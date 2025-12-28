@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { HardDrive, ArrowDownToLine, ArrowUpFromLine, Info } from "lucide-react"
+import { HardDrive, ArrowDownToLine, ArrowUpFromLine, Info, Globe, Map, Layers } from "lucide-react"
 import {
   Card,
   CardContent,
@@ -15,6 +15,7 @@ import {
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
+  Skeleton,
 } from "e6ds"
 import {
   LineChart,
@@ -25,6 +26,8 @@ import {
   Tooltip as RechartsTooltip,
   ResponsiveContainer,
 } from "recharts"
+import { useQuery } from "@/hooks/useQuery"
+import { format } from "date-fns"
 
 interface IODataTransferSectionProps {
   eksCluster: string
@@ -32,99 +35,86 @@ interface IODataTransferSectionProps {
   selectedDate: string
 }
 
-// Mock data for IO metrics
-const MOCK_IO_DATA = {
-  s3_bytes_read: 156.4 * 1024 * 1024 * 1024, // 156.4 GB
-  total_bytes_read: 312.8 * 1024 * 1024 * 1024, // 312.8 GB
-  rows_read: 4_562_000_000, // 4.56B rows
-  network_in: 89.2 * 1024 * 1024 * 1024, // 89.2 GB
-  network_out: 42.6 * 1024 * 1024 * 1024, // 42.6 GB
+interface EgressCost {
+  internet_egress: number
+  region_egress: number
+  zone_egress: number
 }
 
-// Mock data by E6 cluster
-const MOCK_IO_BY_CLUSTER = [
-  { e6_cluster: "prod-analytics", s3_gb: 98.2, network_in_gb: 56.4, network_out_gb: 28.1 },
-  { e6_cluster: "prod-reporting", s3_gb: 48.7, network_in_gb: 26.8, network_out_gb: 12.3 },
-  { e6_cluster: "dev-testing", s3_gb: 9.5, network_in_gb: 6.0, network_out_gb: 2.2 },
-]
-
-type MetricType = 's3' | 'total_read' | 'rows' | 'network_in' | 'network_out' | null
-
-const METRIC_LABELS: Record<string, string> = {
-  s3: 'S3 Read',
-  total_read: 'Total Read',
-  rows: 'Rows Read',
-  network_in: 'Network In',
-  network_out: 'Network Out',
+interface TimeSeriesPoint {
+  ts: string
+  value: number
 }
 
-const METRIC_UNITS: Record<string, string> = {
-  s3: 'GB',
-  total_read: 'GB',
-  rows: 'M rows',
-  network_in: 'GB',
-  network_out: 'GB',
-}
-
-// Generate mock time series for a metric
-const generateIOTimeSeries = (metric: string) => {
-  const data = []
-  const baseValues: Record<string, number> = {
-    s3: 6.5,
-    total_read: 13.0,
-    rows: 190,
-    network_in: 3.7,
-    network_out: 1.8,
-  }
-  const base = baseValues[metric] || 5
-
-  for (let i = 0; i < 24; i++) {
-    const hourFactor = Math.sin((i - 6) * Math.PI / 12) * 0.4 + 0.6
-    const noise = 0.85 + Math.random() * 0.3
-    data.push({
-      time: `${i.toString().padStart(2, '0')}:00`,
-      value: base * hourFactor * noise,
-    })
-  }
-  return data
-}
+type MetricType = "internet" | "region" | "zone" | null
 
 export function IODataTransferSection({ eksCluster, dateRange, selectedDate }: IODataTransferSectionProps) {
   const [selectedMetric, setSelectedMetric] = useState<MetricType>(null)
 
-  const formatBytes = (bytes: number) => {
-    const gb = bytes / (1024 * 1024 * 1024)
-    if (gb >= 1000) {
-      return `${(gb / 1024).toFixed(1)} TB`
-    }
-    return `${gb.toFixed(1)} GB`
+  // Fetch egress cost breakdown
+  const { data: egressData, loading } = useQuery<EgressCost>(
+    "workspace",
+    "getEgressCost",
+    [dateRange]
+  )
+
+  // Fetch time series for selected metric
+  const { data: timeSeriesData } = useQuery<TimeSeriesPoint>(
+    "workspace",
+    "getIOTimeSeries",
+    [selectedMetric, dateRange],
+    { enabled: !!selectedMetric }
+  )
+
+  const rawEgress = egressData?.[0] || { internet_egress: 0, region_egress: 0, zone_egress: 0 }
+  const egress = {
+    internet_egress: rawEgress.internet_egress || 0,
+    region_egress: rawEgress.region_egress || 0,
+    zone_egress: rawEgress.zone_egress || 0,
   }
+  const totalEgress = egress.internet_egress + egress.region_egress + egress.zone_egress
 
-  const formatNumber = (num: number) => {
-    if (num >= 1_000_000_000) {
-      return `${(num / 1_000_000_000).toFixed(2)}B`
-    }
-    if (num >= 1_000_000) {
-      return `${(num / 1_000_000).toFixed(1)}M`
-    }
-    if (num >= 1_000) {
-      return `${(num / 1_000).toFixed(1)}K`
-    }
-    return num.toString()
-  }
-
-  const totals = useMemo(() => ({
-    s3: formatBytes(MOCK_IO_DATA.s3_bytes_read),
-    totalRead: formatBytes(MOCK_IO_DATA.total_bytes_read),
-    rows: formatNumber(MOCK_IO_DATA.rows_read),
-    networkIn: formatBytes(MOCK_IO_DATA.network_in),
-    networkOut: formatBytes(MOCK_IO_DATA.network_out),
-  }), [])
-
+  // Format time series data for chart
   const chartData = useMemo(() => {
-    if (!selectedMetric) return []
-    return generateIOTimeSeries(selectedMetric)
-  }, [selectedMetric])
+    if (!timeSeriesData?.length) return []
+    return timeSeriesData.map((d) => ({
+      time: format(new Date(d.ts), "HH:mm"),
+      value: d.value || 0,
+    }))
+  }, [timeSeriesData])
+
+  const getMetricLabel = (metric: MetricType) => {
+    switch (metric) {
+      case "internet":
+        return "Internet Egress"
+      case "region":
+        return "Cross-Region Egress"
+      case "zone":
+        return "Cross-Zone Egress"
+      default:
+        return ""
+    }
+  }
+
+  if (loading) {
+    return (
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <HardDrive className="h-5 w-5" />
+            IO & Data Transfer
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+            <Skeleton className="h-8 w-full" />
+            <Skeleton className="h-6 w-3/4" />
+            <Skeleton className="h-6 w-1/2" />
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
 
   return (
     <TooltipProvider>
@@ -132,88 +122,108 @@ export function IODataTransferSection({ eksCluster, dateRange, selectedDate }: I
         <CardHeader className="pb-2">
           <CardTitle className="flex items-center gap-2 text-base">
             <HardDrive className="h-5 w-5" />
-            IO & Data Transfer
+            Network Egress Costs
             <Tooltip>
               <TooltipTrigger asChild>
                 <Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
               </TooltipTrigger>
               <TooltipContent side="top" className="max-w-xs">
-                <p className="text-sm">Data read from S3, total bytes processed, and network traffic in/out</p>
-                <p className="text-xs text-muted-foreground mt-1">Metrics: workload_metrics (s3_bytes_read, network_bytes_in/out)</p>
+                <p className="text-sm">Network egress costs by destination type</p>
+                <p className="text-xs text-muted-foreground mt-1">Metrics: kubecost_network_*_egress_cost</p>
               </TooltipContent>
             </Tooltip>
           </CardTitle>
         </CardHeader>
         <CardContent>
           {/* Summary Stats */}
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
-            <div
-              className="text-center p-3 bg-muted/50 cursor-pointer hover:bg-muted transition-colors"
-              onClick={() => setSelectedMetric('s3')}
-            >
-              <p className="text-2xl font-bold">{totals.s3}</p>
-              <p className="text-xs text-muted-foreground">S3 Read</p>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            <div className="text-center p-3 bg-muted/50">
+              <p className="text-2xl font-bold">${totalEgress.toFixed(2)}</p>
+              <p className="text-xs text-muted-foreground">Total Egress Cost</p>
             </div>
             <div
               className="text-center p-3 bg-muted/50 cursor-pointer hover:bg-muted transition-colors"
-              onClick={() => setSelectedMetric('total_read')}
-            >
-              <p className="text-2xl font-bold">{totals.totalRead}</p>
-              <p className="text-xs text-muted-foreground">Total Read</p>
-            </div>
-            <div
-              className="text-center p-3 bg-muted/50 cursor-pointer hover:bg-muted transition-colors"
-              onClick={() => setSelectedMetric('rows')}
-            >
-              <p className="text-2xl font-bold">{totals.rows}</p>
-              <p className="text-xs text-muted-foreground">Rows Read</p>
-            </div>
-            <div
-              className="text-center p-3 bg-muted/50 cursor-pointer hover:bg-muted transition-colors"
-              onClick={() => setSelectedMetric('network_in')}
+              onClick={() => setSelectedMetric("internet")}
             >
               <div className="flex items-center justify-center gap-1">
-                <ArrowDownToLine className="h-4 w-4 text-muted-foreground" />
-                <p className="text-2xl font-bold">{totals.networkIn}</p>
+                <Globe className="h-4 w-4 text-muted-foreground" />
+                <p className="text-2xl font-bold">${egress.internet_egress.toFixed(2)}</p>
               </div>
-              <p className="text-xs text-muted-foreground">Network In</p>
+              <p className="text-xs text-muted-foreground">Internet Egress</p>
             </div>
             <div
               className="text-center p-3 bg-muted/50 cursor-pointer hover:bg-muted transition-colors"
-              onClick={() => setSelectedMetric('network_out')}
+              onClick={() => setSelectedMetric("region")}
             >
               <div className="flex items-center justify-center gap-1">
-                <ArrowUpFromLine className="h-4 w-4 text-muted-foreground" />
-                <p className="text-2xl font-bold">{totals.networkOut}</p>
+                <Map className="h-4 w-4 text-muted-foreground" />
+                <p className="text-2xl font-bold">${egress.region_egress.toFixed(2)}</p>
               </div>
-              <p className="text-xs text-muted-foreground">Network Out</p>
+              <p className="text-xs text-muted-foreground">Cross-Region</p>
+            </div>
+            <div
+              className="text-center p-3 bg-muted/50 cursor-pointer hover:bg-muted transition-colors"
+              onClick={() => setSelectedMetric("zone")}
+            >
+              <div className="flex items-center justify-center gap-1">
+                <Layers className="h-4 w-4 text-muted-foreground" />
+                <p className="text-2xl font-bold">${egress.zone_egress.toFixed(2)}</p>
+              </div>
+              <p className="text-xs text-muted-foreground">Cross-Zone</p>
             </div>
           </div>
 
-          {/* By E6 Cluster */}
-          <div className="text-xs text-muted-foreground mb-3">BY E6 CLUSTER (click metric for trend)</div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b text-muted-foreground">
-                  <th className="text-left py-2 font-medium">E6 CLUSTER</th>
-                  <th className="text-right py-2 font-medium">S3 READ</th>
-                  <th className="text-right py-2 font-medium">NETWORK IN</th>
-                  <th className="text-right py-2 font-medium">NETWORK OUT</th>
-                </tr>
-              </thead>
-              <tbody>
-                {MOCK_IO_BY_CLUSTER.map((cluster) => (
-                  <tr key={cluster.e6_cluster} className="border-b last:border-0">
-                    <td className="py-2 font-medium">{cluster.e6_cluster}</td>
-                    <td className="py-2 text-right">{cluster.s3_gb.toFixed(1)} GB</td>
-                    <td className="py-2 text-right">{cluster.network_in_gb.toFixed(1)} GB</td>
-                    <td className="py-2 text-right">{cluster.network_out_gb.toFixed(1)} GB</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          {/* Egress breakdown bar */}
+          {totalEgress > 0 && (
+            <div className="space-y-2">
+              <div className="text-xs text-muted-foreground font-medium">COST BREAKDOWN</div>
+              <div className="flex h-4 overflow-hidden rounded">
+                {egress.internet_egress > 0 && (
+                  <div
+                    className="bg-red-500"
+                    style={{ width: `${(egress.internet_egress / totalEgress) * 100}%` }}
+                    title={`Internet: $${egress.internet_egress.toFixed(2)}`}
+                  />
+                )}
+                {egress.region_egress > 0 && (
+                  <div
+                    className="bg-orange-400"
+                    style={{ width: `${(egress.region_egress / totalEgress) * 100}%` }}
+                    title={`Region: $${egress.region_egress.toFixed(2)}`}
+                  />
+                )}
+                {egress.zone_egress > 0 && (
+                  <div
+                    className="bg-green-500"
+                    style={{ width: `${(egress.zone_egress / totalEgress) * 100}%` }}
+                    title={`Zone: $${egress.zone_egress.toFixed(2)}`}
+                  />
+                )}
+              </div>
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <div className="flex items-center gap-1">
+                  <div className="w-3 h-3 bg-red-500 rounded" />
+                  Internet
+                </div>
+                <div className="flex items-center gap-1">
+                  <div className="w-3 h-3 bg-orange-400 rounded" />
+                  Cross-Region
+                </div>
+                <div className="flex items-center gap-1">
+                  <div className="w-3 h-3 bg-green-500 rounded" />
+                  Cross-Zone
+                </div>
+              </div>
+            </div>
+          )}
+
+          {totalEgress === 0 && (
+            <div className="text-center text-muted-foreground py-4">
+              No egress cost data available for the selected time range
+            </div>
+          )}
+
+          <p className="text-xs text-muted-foreground mt-4">Click any metric for hourly trend</p>
         </CardContent>
       </Card>
 
@@ -223,46 +233,28 @@ export function IODataTransferSection({ eksCluster, dateRange, selectedDate }: I
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <HardDrive className="h-5 w-5" />
-              {selectedMetric && METRIC_LABELS[selectedMetric]} - Hourly - {selectedDate}
+              {getMetricLabel(selectedMetric)} - Hourly - {selectedDate}
             </DialogTitle>
           </DialogHeader>
           <div className="h-[400px] mt-4">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e5e5e5" />
-                <XAxis
-                  dataKey="time"
-                  tick={{ fontSize: 12, fill: '#666' }}
-                  tickLine={false}
-                  axisLine={{ stroke: '#ccc' }}
-                />
-                <YAxis
-                  tick={{ fontSize: 12, fill: '#666' }}
-                  tickLine={false}
-                  axisLine={{ stroke: '#ccc' }}
-                  tickFormatter={(v) => v.toFixed(1)}
-                />
-                <RechartsTooltip
-                  contentStyle={{
-                    backgroundColor: '#fff',
-                    border: '1px solid #ccc',
-                    borderRadius: '8px',
-                  }}
-                  formatter={(value) => [
-                    `${(value as number).toFixed(2)} ${selectedMetric ? METRIC_UNITS[selectedMetric] : ''}`,
-                    selectedMetric ? METRIC_LABELS[selectedMetric] : ''
-                  ]}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="value"
-                  stroke="#22c55e"
-                  strokeWidth={2}
-                  dot={false}
-                  name={selectedMetric ? METRIC_LABELS[selectedMetric] : ''}
-                />
-              </LineChart>
-            </ResponsiveContainer>
+            {chartData.length === 0 ? (
+              <div className="flex items-center justify-center h-full text-muted-foreground">
+                No time series data available
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e5e5" />
+                  <XAxis dataKey="time" tick={{ fontSize: 12, fill: "#666" }} tickLine={false} axisLine={{ stroke: "#ccc" }} />
+                  <YAxis tick={{ fontSize: 12, fill: "#666" }} tickLine={false} axisLine={{ stroke: "#ccc" }} tickFormatter={(v) => `$${v.toFixed(2)}`} />
+                  <RechartsTooltip
+                    contentStyle={{ backgroundColor: "#fff", border: "1px solid #ccc", borderRadius: "8px" }}
+                    formatter={(value) => [`$${(value as number).toFixed(2)}`, getMetricLabel(selectedMetric)]}
+                  />
+                  <Line type="monotone" dataKey="value" stroke="#22c55e" strokeWidth={2} dot={false} name={getMetricLabel(selectedMetric)} />
+                </LineChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </DialogContent>
       </Dialog>

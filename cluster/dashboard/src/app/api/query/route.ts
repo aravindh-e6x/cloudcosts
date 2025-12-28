@@ -6,6 +6,7 @@ import * as vantageQueries from "@/lib/queries/vantage.server"
 import * as e6Queries from "@/lib/queries/e6.server"
 import * as cloudwatchQueries from "@/lib/queries/cloudwatch.server"
 import * as workspacesQueries from "@/lib/queries/workspaces.server"
+import * as workspaceQueries from "@/lib/queries/workspace.server"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type QueryModule = Record<string, (...args: any[]) => string>
@@ -17,6 +18,7 @@ const queryRegistry: Record<string, QueryModule> = {
   e6: e6Queries as QueryModule,
   cloudwatch: cloudwatchQueries as QueryModule,
   workspaces: workspacesQueries as QueryModule,
+  workspace: workspaceQueries as QueryModule,
 }
 
 // Database mapping for each schema (can be overridden by database param)
@@ -26,6 +28,7 @@ const databaseMap: Record<string, string> = {
   e6: "information_schema",
   cloudwatch: "cloudwatch",
   workspaces: "k3d_cloudcosts",
+  workspace: "k3d_cloudcosts",
 }
 
 export async function POST(request: NextRequest) {

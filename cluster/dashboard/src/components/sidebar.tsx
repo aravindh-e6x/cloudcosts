@@ -113,12 +113,11 @@ export function Sidebar() {
             }
 
             return (
-              <Link key={item.name} href={item.href} passHref legacyBehavior>
+              <Link key={item.name} href={item.href} className="block">
                 <SidebarNestedItem
                   label={item.name}
                   icon={item.icon}
                   active={isActive}
-                  href={item.href}
                 />
               </Link>
             )
