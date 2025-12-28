@@ -35,11 +35,13 @@ import { useQuery } from "@/hooks/useQuery"
 import { getWorkspace } from "@/config/workspaces"
 import {
   NodePackingSection,
-  RightSizingSection,
   CostBreakdownSection,
   IODataTransferSection,
   E6EngineUsageSection,
   WorkspaceChatPanel,
+  E6ClusterPackingSection,
+  TimelineProvider,
+  TimelineScrubber,
 } from "./components"
 
 interface NodeCount {
@@ -203,22 +205,28 @@ export default function WorkspaceDetailPage({
   )
 
   return (
-    <TooltipProvider>
-      <div className="space-y-6">
-        {/* Back Link */}
-        <Link href="/e6" className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="h-4 w-4" />
-          Back to Workspaces
-        </Link>
+    <TimelineProvider dateRange={dateRange}>
+      <TooltipProvider>
+        <div className="space-y-6">
+          {/* Back Link */}
+          <Link href="/e6" className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground">
+            <ArrowLeft className="h-4 w-4" />
+            Back to Workspaces
+          </Link>
 
-        {/* Workspace Heading */}
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold font-mono">{workspace.name}</h1>
-          <span className="text-sm text-muted-foreground">{workspace.region || "-"}</span>
-        </div>
+          {/* Workspace Heading */}
+          <div className="flex items-center justify-between">
+            <h1 className="text-2xl font-bold font-mono">{workspace.name}</h1>
+            <span className="text-sm text-muted-foreground">{workspace.region || "-"}</span>
+          </div>
 
-        {/* Header Card */}
-        <Card>
+          {/* Timeline Scrubber - Sticky at top */}
+          <div className="sticky top-0 z-30 -mx-6 px-6 py-2 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+            <TimelineScrubber />
+          </div>
+
+          {/* Header Card */}
+          <Card>
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
               <div>
@@ -386,9 +394,10 @@ export default function WorkspaceDetailPage({
         selectedDate={selectedDate}
       />
 
-      {/* Right-Sizing Section */}
-      <RightSizingSection
+      {/* E6 Cluster Packing Section */}
+      <E6ClusterPackingSection
         eksCluster={workspace.id}
+        e6Clusters={e6Clusters}
         dateRange={dateRange}
         selectedDate={selectedDate}
       />
@@ -415,11 +424,12 @@ export default function WorkspaceDetailPage({
       />
       </div>
 
-      {/* AI Chat Panel */}
-      <WorkspaceChatPanel
-        eksCluster={workspace.id}
-        e6Clusters={e6Clusters}
-      />
-    </TooltipProvider>
+        {/* AI Chat Panel */}
+        <WorkspaceChatPanel
+          eksCluster={workspace.id}
+          e6Clusters={e6Clusters}
+        />
+      </TooltipProvider>
+    </TimelineProvider>
   )
 }

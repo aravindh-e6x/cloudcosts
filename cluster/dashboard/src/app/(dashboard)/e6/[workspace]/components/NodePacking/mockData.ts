@@ -1,4 +1,3 @@
-import { addMinutes } from "date-fns"
 import { NodeSnapshot, TimeSnapshot } from "./types"
 
 // Instance types with their specs
@@ -121,65 +120,54 @@ function generateNodePool(): NodePoolEntry[] {
 
 const NODE_POOL = generateNodePool()
 
-// Generate mock data for the timeline
-export function generateMockSnapshots(startTs: string, endTs: string): TimeSnapshot[] {
-  const start = new Date(startTs)
-  const end = new Date(endTs)
-  const snapshots: TimeSnapshot[] = []
+// Generate a snapshot for a single timestamp
+export function generateNodeSnapshot(timestamp: Date): TimeSnapshot {
+  const hour = timestamp.getHours()
+  const minute = timestamp.getMinutes()
+  const timeOfDay = hour + minute / 60
 
-  let current = new Date(start)
-  let snapshotIndex = 0
+  // Use timestamp to generate consistent snapshot index for variation
+  const snapshotIndex = Math.floor((hour * 60 + minute) / 15)
 
-  while (current <= end) {
-    const hour = current.getHours()
-    const minute = current.getMinutes()
-    const timeOfDay = hour + minute / 60
-
-    // Get active nodes for this time
-    const activeNodeDefs = NODE_POOL.filter((n) => {
-      if (n.startHour < n.endHour) {
-        return timeOfDay >= n.startHour && timeOfDay < n.endHour
-      } else {
-        return timeOfDay >= n.startHour || timeOfDay < n.endHour
-      }
-    })
-
-    // Calculate load factor based on time of day
-    let loadFactor: number
-    if (hour >= 9 && hour <= 17) {
-      loadFactor = 0.70 + Math.sin((hour - 9) * Math.PI / 8) * 0.18
-    } else if (hour >= 1 && hour <= 5) {
-      loadFactor = 0.88
+  // Get active nodes for this time
+  const activeNodeDefs = NODE_POOL.filter((n) => {
+    if (n.startHour < n.endHour) {
+      return timeOfDay >= n.startHour && timeOfDay < n.endHour
     } else {
-      loadFactor = 0.40
+      return timeOfDay >= n.startHour || timeOfDay < n.endHour
     }
+  })
 
-    const nodes: NodeSnapshot[] = activeNodeDefs.map((nodeDef, i) => {
-      // Add variation per node and time - more spread for realistic distribution
-      const variation = Math.sin(snapshotIndex * 0.15 + i * 0.7) * 0.25
-      const nodeVariation = (i % 7) * 0.05 - 0.15
-      const cpuPct = Math.min(0.98, Math.max(0.10, loadFactor + variation + nodeVariation))
-      const memPct = Math.min(0.95, Math.max(0.15, loadFactor * 0.85 + variation * 0.6 + nodeVariation * 0.8))
-
-      return {
-        node: nodeDef.name,
-        cpuAllocated: nodeDef.cpuCapacity * cpuPct,
-        cpuCapacity: nodeDef.cpuCapacity,
-        memAllocatedGb: nodeDef.memCapacityGb * memPct,
-        memCapacityGb: nodeDef.memCapacityGb,
-        podCount: Math.floor(3 + cpuPct * nodeDef.cpuCapacity * 1.5),
-        instanceType: nodeDef.instanceType,
-      }
-    })
-
-    snapshots.push({
-      timestamp: new Date(current),
-      nodes,
-    })
-
-    current = addMinutes(current, 15)
-    snapshotIndex++
+  // Calculate load factor based on time of day
+  let loadFactor: number
+  if (hour >= 9 && hour <= 17) {
+    loadFactor = 0.70 + Math.sin((hour - 9) * Math.PI / 8) * 0.18
+  } else if (hour >= 1 && hour <= 5) {
+    loadFactor = 0.88
+  } else {
+    loadFactor = 0.40
   }
 
-  return snapshots
+  const nodes: NodeSnapshot[] = activeNodeDefs.map((nodeDef, i) => {
+    // Add variation per node and time - more spread for realistic distribution
+    const variation = Math.sin(snapshotIndex * 0.15 + i * 0.7) * 0.25
+    const nodeVariation = (i % 7) * 0.05 - 0.15
+    const cpuPct = Math.min(0.98, Math.max(0.10, loadFactor + variation + nodeVariation))
+    const memPct = Math.min(0.95, Math.max(0.15, loadFactor * 0.85 + variation * 0.6 + nodeVariation * 0.8))
+
+    return {
+      node: nodeDef.name,
+      cpuAllocated: nodeDef.cpuCapacity * cpuPct,
+      cpuCapacity: nodeDef.cpuCapacity,
+      memAllocatedGb: nodeDef.memCapacityGb * memPct,
+      memCapacityGb: nodeDef.memCapacityGb,
+      podCount: Math.floor(3 + cpuPct * nodeDef.cpuCapacity * 1.5),
+      instanceType: nodeDef.instanceType,
+    }
+  })
+
+  return {
+    timestamp: new Date(timestamp),
+    nodes,
+  }
 }

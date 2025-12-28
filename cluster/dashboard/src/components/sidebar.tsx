@@ -9,7 +9,7 @@ import {
 } from "e6ds"
 import { LayoutDashboard, Boxes, ExternalLink, CloudCog, Database, Grid, Network } from "lucide-react"
 import { TimeRangePicker } from "@/components"
-import { useDate } from "@/components/providers"
+import { useDate, useSidebar } from "@/components/providers"
 
 interface NavItem {
   name: string
@@ -74,21 +74,26 @@ function SidebarFooter() {
 export function Sidebar() {
   const pathname = usePathname()
   const { timeRange, setTimeRange } = useDate()
+  const { collapsed, setCollapsed } = useSidebar()
 
   return (
     <LaminarSidebar
       header={<SidebarHeader />}
       footer={<SidebarFooter />}
-      collapsible={false}
+      collapsible={true}
+      collapsed={collapsed}
+      onCollapsedChange={setCollapsed}
     >
-      {/* Date Selector */}
-      <div className="border-b border-sidebar-border px-1 pb-3 mb-2 -mx-2">
-        <TimeRangePicker value={timeRange} onChange={setTimeRange} />
-      </div>
+      {/* Date Selector - hidden when collapsed */}
+      {!collapsed && (
+        <div className="border-b border-sidebar-border px-1 pb-3 mb-2 -mx-2">
+          <TimeRangePicker value={timeRange} onChange={setTimeRange} />
+        </div>
+      )}
 
       {/* Navigation */}
       {navigation.map((section) => (
-        <SidebarSection key={section.section} title={section.section}>
+        <SidebarSection key={section.section} title={section.section} collapsed={collapsed}>
           {section.items.map((item) => {
             const isActive = pathname === item.href ||
               (item.href !== "/" && pathname.startsWith(item.href))
@@ -101,13 +106,14 @@ export function Sidebar() {
                   href={item.href}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center justify-between gap-3 rounded-md px-3 py-2 text-sm transition-colors text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                  title={collapsed ? item.name : undefined}
+                  className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground ${collapsed ? "justify-center px-2" : "justify-between"}`}
                 >
-                  <div className="flex items-center gap-3">
+                  <div className={`flex items-center gap-3 ${collapsed ? "gap-0" : ""}`}>
                     {item.icon}
-                    {item.name}
+                    {!collapsed && item.name}
                   </div>
-                  <ExternalLink className="h-3 w-3 text-muted-foreground" />
+                  {!collapsed && <ExternalLink className="h-3 w-3 text-muted-foreground" />}
                 </a>
               )
             }
@@ -118,6 +124,7 @@ export function Sidebar() {
                   label={item.name}
                   icon={item.icon}
                   active={isActive}
+                  collapsed={collapsed}
                 />
               </Link>
             )
