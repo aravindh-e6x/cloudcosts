@@ -402,11 +402,11 @@ export default function WorkspaceDetailPage({
         selectedDate={selectedDate}
       />
 
-      {/* Treemaps - CPU and Memory side by side */}
-      <div className="grid grid-cols-2 gap-4">
-        <ClusterTreemap />
-        <MemoryTreemap />
-      </div>
+      {/* CPU Treemap */}
+      <ClusterTreemap />
+
+      {/* Memory Treemap */}
+      <MemoryTreemap />
 
       {/* Cost Drilldown - Dual view by Node / E6 Cluster */}
       <CostDrilldown />
