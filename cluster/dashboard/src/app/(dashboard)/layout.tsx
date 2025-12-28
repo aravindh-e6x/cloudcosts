@@ -1,6 +1,7 @@
 "use client"
 
 import { Sidebar } from "@/components/sidebar"
+import { DateBanner } from "@/components"
 import { MainContent, PageContent } from "e6ds"
 
 export default function DashboardLayout({
@@ -12,7 +13,10 @@ export default function DashboardLayout({
     <>
       <Sidebar />
       <MainContent>
-        <PageContent>{children}</PageContent>
+        <PageContent>
+          <DateBanner />
+          {children}
+        </PageContent>
       </MainContent>
     </>
   )

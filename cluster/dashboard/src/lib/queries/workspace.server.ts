@@ -151,7 +151,7 @@ export function getRightSizing({ startTs, endTs }: DateRange): string {
           ELSE 'other'
         END as component,
         namespace,
-        SUM(greptime_value) as cpu_requested
+        AVG(greptime_value) as cpu_requested
       FROM container_cpu_allocation
       WHERE greptime_timestamp >= '${startTs}'
         AND greptime_timestamp < '${endTs}'
@@ -171,8 +171,61 @@ export function getRightSizing({ startTs, endTs }: DateRange): string {
           ELSE 'other'
         END as component,
         namespace,
-        SUM(greptime_value) as memory_requested
+        AVG(greptime_value) as memory_requested
       FROM container_memory_allocation_bytes
+      WHERE greptime_timestamp >= '${startTs}'
+        AND greptime_timestamp < '${endTs}'
+        AND namespace IS NOT NULL
+        AND namespace NOT IN ('kube-system', 'cloudcosts-agent', 'cloudcosts-cluster')
+      GROUP BY component, namespace
+    ),
+    cpu_usage AS (
+      SELECT
+        CASE
+          WHEN pod LIKE 'executor-%' THEN 'executor'
+          WHEN pod LIKE 'planner-%' THEN 'planner'
+          WHEN pod LIKE 'queue-%' THEN 'queue'
+          WHEN pod LIKE 'gateway-%' THEN 'gateway'
+          WHEN pod LIKE 'storage-%' THEN 'storage'
+          WHEN pod LIKE 'schema-%' THEN 'schema'
+          ELSE 'other'
+        END as component,
+        namespace,
+        pod,
+        MIN(greptime_value) as min_cpu,
+        MAX(greptime_value) as max_cpu,
+        MIN(greptime_timestamp) as min_ts,
+        MAX(greptime_timestamp) as max_ts
+      FROM container_cpu_usage_seconds_total
+      WHERE greptime_timestamp >= '${startTs}'
+        AND greptime_timestamp < '${endTs}'
+        AND namespace IS NOT NULL
+        AND namespace NOT IN ('kube-system', 'cloudcosts-agent', 'cloudcosts-cluster')
+      GROUP BY component, namespace, pod
+    ),
+    cpu_usage_agg AS (
+      SELECT
+        component,
+        namespace,
+        SUM(max_cpu - min_cpu) as delta_cpu,
+        MAX(max_ts) - MIN(min_ts) as delta_time_ms
+      FROM cpu_usage
+      GROUP BY component, namespace
+    ),
+    memory_usage AS (
+      SELECT
+        CASE
+          WHEN pod LIKE 'executor-%' THEN 'executor'
+          WHEN pod LIKE 'planner-%' THEN 'planner'
+          WHEN pod LIKE 'queue-%' THEN 'queue'
+          WHEN pod LIKE 'gateway-%' THEN 'gateway'
+          WHEN pod LIKE 'storage-%' THEN 'storage'
+          WHEN pod LIKE 'schema-%' THEN 'schema'
+          ELSE 'other'
+        END as component,
+        namespace,
+        AVG(greptime_value) as avg_memory_used
+      FROM container_memory_working_set_bytes
       WHERE greptime_timestamp >= '${startTs}'
         AND greptime_timestamp < '${endTs}'
         AND namespace IS NOT NULL
@@ -183,11 +236,16 @@ export function getRightSizing({ startTs, endTs }: DateRange): string {
       ca.component,
       ca.namespace,
       ca.cpu_requested,
-      ca.cpu_requested * 0.65 as cpu_actual,
+      CASE WHEN cu.delta_time_ms > 0
+        THEN cu.delta_cpu / (cu.delta_time_ms / 1000)
+        ELSE 0
+      END as cpu_actual,
       COALESCE(cm.memory_requested, 0) as memory_requested,
-      COALESCE(cm.memory_requested, 0) * 0.60 as memory_actual
+      COALESCE(mu.avg_memory_used, 0) as memory_actual
     FROM component_allocation ca
     LEFT JOIN component_memory cm ON ca.component = cm.component AND ca.namespace = cm.namespace
+    LEFT JOIN cpu_usage_agg cu ON ca.component = cu.component AND ca.namespace = cu.namespace
+    LEFT JOIN memory_usage mu ON ca.component = mu.component AND ca.namespace = mu.namespace
     WHERE ca.component != 'other'
     ORDER BY ca.namespace, ca.component
   `
@@ -205,24 +263,86 @@ export function getRightSizingTimeSeries(
   metric: "cpu" | "memory",
   { startTs, endTs }: DateRange
 ): string {
-  const table = metric === "cpu" ? "container_cpu_allocation" : "container_memory_allocation_bytes"
   const namespaceFilter = namespace ? `AND namespace = '${namespace}'` : ""
 
-  const sql = `
-    SELECT
-      DATE_BIN('1 hour', greptime_timestamp) as ts,
-      SUM(greptime_value) as requested,
-      SUM(greptime_value) * 0.65 as actual
-    FROM ${table}
-    WHERE greptime_timestamp >= '${startTs}'
-      AND greptime_timestamp < '${endTs}'
-      AND pod LIKE '${component}-%'
-      ${namespaceFilter}
-    GROUP BY DATE_BIN('1 hour', greptime_timestamp)
-    ORDER BY ts
-  `
-  logQuery("workspace", "getRightSizingTimeSeries", { component, namespace, metric, startTs, endTs }, sql)
-  return sql
+  if (metric === "cpu") {
+    const sql = `
+      WITH hourly_requested AS (
+        SELECT
+          DATE_BIN('1 hour', greptime_timestamp) as ts,
+          AVG(greptime_value) as requested
+        FROM container_cpu_allocation
+        WHERE greptime_timestamp >= '${startTs}'
+          AND greptime_timestamp < '${endTs}'
+          AND pod LIKE '${component}-%'
+          ${namespaceFilter}
+        GROUP BY DATE_BIN('1 hour', greptime_timestamp)
+      ),
+      hourly_usage AS (
+        SELECT
+          DATE_BIN('1 hour', greptime_timestamp) as ts,
+          pod,
+          MIN(greptime_value) as min_cpu,
+          MAX(greptime_value) as max_cpu
+        FROM container_cpu_usage_seconds_total
+        WHERE greptime_timestamp >= '${startTs}'
+          AND greptime_timestamp < '${endTs}'
+          AND pod LIKE '${component}-%'
+          ${namespaceFilter}
+        GROUP BY DATE_BIN('1 hour', greptime_timestamp), pod
+      ),
+      hourly_actual AS (
+        SELECT
+          ts,
+          SUM(max_cpu - min_cpu) / 3600 as actual
+        FROM hourly_usage
+        GROUP BY ts
+      )
+      SELECT
+        hr.ts,
+        hr.requested,
+        COALESCE(ha.actual, 0) as actual
+      FROM hourly_requested hr
+      LEFT JOIN hourly_actual ha ON hr.ts = ha.ts
+      ORDER BY hr.ts
+    `
+    logQuery("workspace", "getRightSizingTimeSeries", { component, namespace, metric, startTs, endTs }, sql)
+    return sql
+  } else {
+    const sql = `
+      WITH hourly_requested AS (
+        SELECT
+          DATE_BIN('1 hour', greptime_timestamp) as ts,
+          AVG(greptime_value) as requested
+        FROM container_memory_allocation_bytes
+        WHERE greptime_timestamp >= '${startTs}'
+          AND greptime_timestamp < '${endTs}'
+          AND pod LIKE '${component}-%'
+          ${namespaceFilter}
+        GROUP BY DATE_BIN('1 hour', greptime_timestamp)
+      ),
+      hourly_actual AS (
+        SELECT
+          DATE_BIN('1 hour', greptime_timestamp) as ts,
+          AVG(greptime_value) as actual
+        FROM container_memory_working_set_bytes
+        WHERE greptime_timestamp >= '${startTs}'
+          AND greptime_timestamp < '${endTs}'
+          AND pod LIKE '${component}-%'
+          ${namespaceFilter}
+        GROUP BY DATE_BIN('1 hour', greptime_timestamp)
+      )
+      SELECT
+        hr.ts,
+        hr.requested,
+        COALESCE(ha.actual, 0) as actual
+      FROM hourly_requested hr
+      LEFT JOIN hourly_actual ha ON hr.ts = ha.ts
+      ORDER BY hr.ts
+    `
+    logQuery("workspace", "getRightSizingTimeSeries", { component, namespace, metric, startTs, endTs }, sql)
+    return sql
+  }
 }
 
 // ============================================================================
@@ -235,13 +355,8 @@ export function getRightSizingTimeSeries(
  */
 export function getCostByComponent({ startTs, endTs }: DateRange): string {
   const sql = `
-    WITH total_cost AS (
-      SELECT SUM(greptime_value) as workspace_cost
-      FROM node_total_hourly_cost
-      WHERE greptime_timestamp >= '${startTs}'
-        AND greptime_timestamp < '${endTs}'
-    ),
-    component_cpu AS (
+    SELECT component, SUM(cpu_alloc) as cpu_allocated
+    FROM (
       SELECT
         CASE
           WHEN pod LIKE 'executor-%' THEN 'executor'
@@ -250,35 +365,20 @@ export function getCostByComponent({ startTs, endTs }: DateRange): string {
           WHEN pod LIKE 'gateway-%' THEN 'gateway'
           WHEN pod LIKE 'storage-%' THEN 'storage'
           WHEN pod LIKE 'schema-%' THEN 'schema'
-          ELSE 'other'
+          ELSE NULL
         END as component,
-        SUM(greptime_value) as cpu_allocated
+        pod,
+        MAX(greptime_value) as cpu_alloc
       FROM container_cpu_allocation
       WHERE greptime_timestamp >= '${startTs}'
         AND greptime_timestamp < '${endTs}'
         AND namespace IS NOT NULL
         AND namespace NOT IN ('kube-system', 'cloudcosts-agent', 'cloudcosts-cluster')
-      GROUP BY component
-    ),
-    total_cpu AS (
-      SELECT SUM(greptime_value) as total_cpu
-      FROM container_cpu_allocation
-      WHERE greptime_timestamp >= '${startTs}'
-        AND greptime_timestamp < '${endTs}'
-        AND namespace IS NOT NULL
-        AND namespace NOT IN ('kube-system', 'cloudcosts-agent', 'cloudcosts-cluster')
+      GROUP BY component, pod
     )
-    SELECT
-      cc.component,
-      CASE WHEN tc.total_cpu > 0
-        THEN (cc.cpu_allocated / tc.total_cpu) * tw.workspace_cost
-        ELSE 0
-      END as daily_cost
-    FROM component_cpu cc
-    CROSS JOIN total_cpu tc
-    CROSS JOIN total_cost tw
-    WHERE cc.component != 'other'
-    ORDER BY daily_cost DESC
+    WHERE component IS NOT NULL
+    GROUP BY component
+    ORDER BY cpu_allocated DESC
   `
   logQuery("workspace", "getCostByComponent", { startTs, endTs }, sql)
   return sql
@@ -290,41 +390,16 @@ export function getCostByComponent({ startTs, endTs }: DateRange): string {
  */
 export function getCostByNamespace({ startTs, endTs }: DateRange): string {
   const sql = `
-    WITH total_cost AS (
-      SELECT SUM(greptime_value) as workspace_cost
-      FROM node_total_hourly_cost
-      WHERE greptime_timestamp >= '${startTs}'
-        AND greptime_timestamp < '${endTs}'
-    ),
-    namespace_cpu AS (
-      SELECT
-        namespace,
-        SUM(greptime_value) as cpu_allocated
-      FROM container_cpu_allocation
-      WHERE greptime_timestamp >= '${startTs}'
-        AND greptime_timestamp < '${endTs}'
-        AND namespace IS NOT NULL
-        AND namespace NOT IN ('kube-system', 'cloudcosts-agent', 'cloudcosts-cluster')
-      GROUP BY namespace
-    ),
-    total_cpu AS (
-      SELECT SUM(greptime_value) as total_cpu
-      FROM container_cpu_allocation
-      WHERE greptime_timestamp >= '${startTs}'
-        AND greptime_timestamp < '${endTs}'
-        AND namespace IS NOT NULL
-        AND namespace NOT IN ('kube-system', 'cloudcosts-agent', 'cloudcosts-cluster')
-    )
     SELECT
-      nc.namespace,
-      CASE WHEN tc.total_cpu > 0
-        THEN (nc.cpu_allocated / tc.total_cpu) * tw.workspace_cost
-        ELSE 0
-      END as daily_cost
-    FROM namespace_cpu nc
-    CROSS JOIN total_cpu tc
-    CROSS JOIN total_cost tw
-    ORDER BY daily_cost DESC
+      namespace,
+      AVG(greptime_value) as cpu_allocated
+    FROM container_cpu_allocation
+    WHERE greptime_timestamp >= '${startTs}'
+      AND greptime_timestamp < '${endTs}'
+      AND namespace IS NOT NULL
+      AND namespace NOT IN ('kube-system', 'cloudcosts-agent', 'cloudcosts-cluster')
+    GROUP BY namespace
+    ORDER BY cpu_allocated DESC
   `
   logQuery("workspace", "getCostByNamespace", { startTs, endTs }, sql)
   return sql
@@ -336,13 +411,8 @@ export function getCostByNamespace({ startTs, endTs }: DateRange): string {
  */
 export function getCostByComponentPerNamespace({ startTs, endTs }: DateRange): string {
   const sql = `
-    WITH total_cost AS (
-      SELECT SUM(greptime_value) as workspace_cost
-      FROM node_total_hourly_cost
-      WHERE greptime_timestamp >= '${startTs}'
-        AND greptime_timestamp < '${endTs}'
-    ),
-    component_cpu AS (
+    SELECT namespace, component, SUM(cpu_alloc) as cpu_allocated
+    FROM (
       SELECT
         namespace,
         CASE
@@ -351,34 +421,18 @@ export function getCostByComponentPerNamespace({ startTs, endTs }: DateRange): s
           WHEN pod LIKE 'queue-%' THEN 'queue'
           ELSE NULL
         END as component,
-        SUM(greptime_value) as cpu_allocated
+        pod,
+        MAX(greptime_value) as cpu_alloc
       FROM container_cpu_allocation
       WHERE greptime_timestamp >= '${startTs}'
         AND greptime_timestamp < '${endTs}'
         AND namespace IS NOT NULL
         AND namespace NOT IN ('kube-system', 'cloudcosts-agent', 'cloudcosts-cluster')
-      GROUP BY namespace, component
-    ),
-    total_cpu AS (
-      SELECT SUM(greptime_value) as total_cpu
-      FROM container_cpu_allocation
-      WHERE greptime_timestamp >= '${startTs}'
-        AND greptime_timestamp < '${endTs}'
-        AND namespace IS NOT NULL
-        AND namespace NOT IN ('kube-system', 'cloudcosts-agent', 'cloudcosts-cluster')
+      GROUP BY namespace, component, pod
     )
-    SELECT
-      cc.namespace,
-      cc.component,
-      CASE WHEN tc.total_cpu > 0
-        THEN (cc.cpu_allocated / tc.total_cpu) * tw.workspace_cost
-        ELSE 0
-      END as daily_cost
-    FROM component_cpu cc
-    CROSS JOIN total_cpu tc
-    CROSS JOIN total_cost tw
-    WHERE cc.component IS NOT NULL
-    ORDER BY cc.namespace, daily_cost DESC
+    WHERE component IS NOT NULL
+    GROUP BY namespace, component
+    ORDER BY namespace, cpu_allocated DESC
   `
   logQuery("workspace", "getCostByComponentPerNamespace", { startTs, endTs }, sql)
   return sql
@@ -392,47 +446,16 @@ export function getCostTimeSeries(component: string, namespace: string | null, {
   const namespaceFilter = namespace ? `AND namespace = '${namespace}'` : ""
 
   const sql = `
-    WITH hourly_cost AS (
-      SELECT
-        DATE_BIN('1 hour', greptime_timestamp) as ts,
-        SUM(greptime_value) as total_cost
-      FROM node_total_hourly_cost
-      WHERE greptime_timestamp >= '${startTs}'
-        AND greptime_timestamp < '${endTs}'
-      GROUP BY DATE_BIN('1 hour', greptime_timestamp)
-    ),
-    component_cpu AS (
-      SELECT
-        DATE_BIN('1 hour', greptime_timestamp) as ts,
-        SUM(greptime_value) as cpu_allocated
-      FROM container_cpu_allocation
-      WHERE greptime_timestamp >= '${startTs}'
-        AND greptime_timestamp < '${endTs}'
-        AND pod LIKE '${component}-%'
-        ${namespaceFilter}
-      GROUP BY DATE_BIN('1 hour', greptime_timestamp)
-    ),
-    total_cpu AS (
-      SELECT
-        DATE_BIN('1 hour', greptime_timestamp) as ts,
-        SUM(greptime_value) as total_cpu
-      FROM container_cpu_allocation
-      WHERE greptime_timestamp >= '${startTs}'
-        AND greptime_timestamp < '${endTs}'
-        AND namespace IS NOT NULL
-        AND namespace NOT IN ('kube-system', 'cloudcosts-agent', 'cloudcosts-cluster')
-      GROUP BY DATE_BIN('1 hour', greptime_timestamp)
-    )
     SELECT
-      hc.ts,
-      CASE WHEN tc.total_cpu > 0
-        THEN (cc.cpu_allocated / tc.total_cpu) * hc.total_cost
-        ELSE 0
-      END as cost
-    FROM hourly_cost hc
-    LEFT JOIN component_cpu cc ON hc.ts = cc.ts
-    LEFT JOIN total_cpu tc ON hc.ts = tc.ts
-    ORDER BY hc.ts
+      DATE_BIN('1 hour', greptime_timestamp) as ts,
+      AVG(greptime_value) as cost
+    FROM container_cpu_allocation
+    WHERE greptime_timestamp >= '${startTs}'
+      AND greptime_timestamp < '${endTs}'
+      AND pod LIKE '${component}-%'
+      ${namespaceFilter}
+    GROUP BY DATE_BIN('1 hour', greptime_timestamp)
+    ORDER BY ts
   `
   logQuery("workspace", "getCostTimeSeries", { component, namespace, startTs, endTs }, sql)
   return sql
@@ -445,14 +468,16 @@ export function getCostTimeSeries(component: string, namespace: string | null, {
 /**
  * Get IO metrics summary (S3 reads, total bytes, rows)
  * Used by: IODataTransferSection
- * Note: These metrics come from E6 engine, may need different DB
+ * Note: These metrics come from E6 engine - not available from OpenCost
+ * Returns empty result until E6 engine metrics are exported
  */
 export function getIOMetrics({ startTs, endTs }: DateRange): string {
   const sql = `
     SELECT
-      0 as s3_bytes_read,
-      0 as total_bytes_read,
-      0 as rows_read
+      NULL as s3_bytes_read,
+      NULL as total_bytes_read,
+      NULL as rows_read
+    WHERE 1=0
   `
   logQuery("workspace", "getIOMetrics", { startTs, endTs }, sql)
   return sql
@@ -527,16 +552,18 @@ export function getIOTimeSeries(metric: string, { startTs, endTs }: DateRange): 
 /**
  * Get E6 engine usage metrics
  * Used by: E6EngineUsageSection
- * Note: These come from E6 metrics, may need different approach
+ * Note: Query metrics come from E6 engine - not available from OpenCost
+ * Returns empty result until E6 engine metrics are exported
  */
 export function getE6EngineUsage({ startTs, endTs }: DateRange): string {
   const sql = `
     SELECT
-      0 as queries_completed,
-      0 as queries_succeeded,
-      0 as queries_failed,
-      0 as avg_query_time_ms,
-      0 as active_connections
+      NULL as queries_completed,
+      NULL as queries_succeeded,
+      NULL as queries_failed,
+      NULL as avg_query_time_ms,
+      NULL as active_connections
+    WHERE 1=0
   `
   logQuery("workspace", "getE6EngineUsage", { startTs, endTs }, sql)
   return sql
@@ -545,15 +572,16 @@ export function getE6EngineUsage({ startTs, endTs }: DateRange): string {
 /**
  * Get E6 engine usage by cluster (namespace)
  * Used by: E6EngineUsageSection table
+ * Note: Query metrics not available from OpenCost, only executor count is real
  */
 export function getE6EngineUsageByCluster({ startTs, endTs }: DateRange): string {
   const sql = `
     SELECT
       namespace as e6_cluster,
-      0 as queries_completed,
-      0 as queries_succeeded,
-      0 as queries_failed,
-      0 as avg_query_time_ms,
+      NULL as queries_completed,
+      NULL as queries_succeeded,
+      NULL as queries_failed,
+      NULL as avg_query_time_ms,
       COUNT(DISTINCT pod) as active_connections
     FROM container_cpu_allocation
     WHERE greptime_timestamp >= '${startTs}'
@@ -571,18 +599,15 @@ export function getE6EngineUsageByCluster({ startTs, endTs }: DateRange): string
 /**
  * Get query count time series
  * Used by: E6EngineUsageSection modal
+ * Note: Query metrics not available from OpenCost
+ * Returns empty result until E6 engine metrics are exported
  */
 export function getQueryTimeSeries(metric: string, { startTs, endTs }: DateRange): string {
   const sql = `
     SELECT
-      DATE_BIN('1 hour', greptime_timestamp) as ts,
-      0 as value
-    FROM node_total_hourly_cost
-    WHERE greptime_timestamp >= '${startTs}'
-      AND greptime_timestamp < '${endTs}'
-    GROUP BY DATE_BIN('1 hour', greptime_timestamp)
-    ORDER BY ts
-    LIMIT 24
+      NULL as ts,
+      NULL as value
+    WHERE 1=0
   `
   logQuery("workspace", "getQueryTimeSeries", { metric, startTs, endTs }, sql)
   return sql

@@ -37,18 +37,18 @@ interface CostBreakdownSectionProps {
 
 interface ComponentCost {
   component: string
-  daily_cost: number
+  cpu_allocated: number
 }
 
 interface NamespaceCost {
   namespace: string
-  daily_cost: number
+  cpu_allocated: number
 }
 
 interface ComponentPerNamespaceCost {
   namespace: string
   component: string
-  daily_cost: number
+  cpu_allocated: number
 }
 
 interface TimeSeriesPoint {
@@ -57,8 +57,8 @@ interface TimeSeriesPoint {
 }
 
 type ModalType =
-  | { type: "workspace"; component: string; dailyCost: number }
-  | { type: "cluster"; namespace: string; component: string; dailyCost: number }
+  | { type: "workspace"; component: string; cpuAllocated: number }
+  | { type: "cluster"; namespace: string; component: string; cpuAllocated: number }
   | null
 
 // Workspace-level components (shared)
@@ -102,20 +102,20 @@ export function CostBreakdownSection({ eksCluster, dateRange, selectedDate }: Co
     const nsSet = new Set<string>()
 
     // Calculate totals
-    let totalCost = 0
+    let totalCpu = 0
     if (componentCostData?.length) {
-      totalCost = componentCostData.reduce((sum, c) => sum + (c.daily_cost || 0), 0)
+      totalCpu = componentCostData.reduce((sum, c) => sum + (c.cpu_allocated || 0), 0)
     }
 
     // Process component costs
     if (componentCostData?.length) {
       componentCostData.forEach((row) => {
         if (WORKSPACE_COMPONENTS.includes(row.component)) {
-          const cost = row.daily_cost || 0
+          const cpu = row.cpu_allocated || 0
           workspace.push({
             ...row,
-            daily_cost: cost,
-            percentage: totalCost > 0 ? (cost / totalCost) * 100 : 0,
+            cpu_allocated: cpu,
+            percentage: totalCpu > 0 ? (cpu / totalCpu) * 100 : 0,
           })
         }
       })
@@ -128,29 +128,29 @@ export function CostBreakdownSection({ eksCluster, dateRange, selectedDate }: Co
         if (!cluster[row.namespace]) {
           cluster[row.namespace] = []
         }
-        const cost = row.daily_cost || 0
+        const cpu = row.cpu_allocated || 0
         cluster[row.namespace].push({
           ...row,
-          daily_cost: cost,
-          percentage: totalCost > 0 ? (cost / totalCost) * 100 : 0,
+          cpu_allocated: cpu,
+          percentage: totalCpu > 0 ? (cpu / totalCpu) * 100 : 0,
         })
       })
     }
 
-    // Sort by cost
-    workspace.sort((a, b) => b.daily_cost - a.daily_cost)
+    // Sort by cpu
+    workspace.sort((a, b) => b.cpu_allocated - a.cpu_allocated)
     Object.values(cluster).forEach((components) => {
-      components.sort((a, b) => b.daily_cost - a.daily_cost)
+      components.sort((a, b) => b.cpu_allocated - a.cpu_allocated)
     })
 
     return {
       workspaceCosts: {
         components: workspace,
-        total: workspace.reduce((sum, c) => sum + c.daily_cost, 0),
+        total: workspace.reduce((sum, c) => sum + c.cpu_allocated, 0),
       },
       clusterCosts: cluster,
       namespaces: Array.from(nsSet).sort(),
-      grandTotal: totalCost,
+      grandTotal: totalCpu,
     }
   }, [componentCostData, clusterCostData])
 
@@ -168,9 +168,9 @@ export function CostBreakdownSection({ eksCluster, dateRange, selectedDate }: Co
     if (!modalState) return ""
     const componentName = modalState.component.charAt(0).toUpperCase() + modalState.component.slice(1)
     if (modalState.type === "cluster") {
-      return `${modalState.namespace} / ${componentName} - Hourly Cost`
+      return `${modalState.namespace} / ${componentName} - Hourly CPU`
     }
-    return `${componentName} - Hourly Cost`
+    return `${componentName} - Hourly CPU`
   }
 
   // Color coding for cost (high % = red = expensive)
@@ -186,7 +186,7 @@ export function CostBreakdownSection({ eksCluster, dateRange, selectedDate }: Co
         <CardHeader className="pb-2">
           <CardTitle className="flex items-center gap-2 text-base">
             <DollarSign className="h-5 w-5" />
-            Cost Breakdown
+            CPU Allocation by Component
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -207,18 +207,18 @@ export function CostBreakdownSection({ eksCluster, dateRange, selectedDate }: Co
           <div className="flex items-center justify-between">
             <CardTitle className="flex items-center gap-2 text-base">
               <DollarSign className="h-5 w-5" />
-              Cost Breakdown
+              CPU Allocation by Component
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
                 </TooltipTrigger>
                 <TooltipContent side="top" className="max-w-xs">
-                  <p className="text-sm">Compute costs allocated by component based on resource usage</p>
-                  <p className="text-xs text-muted-foreground mt-1">Metrics: node_total_hourly_cost, container_cpu_allocation</p>
+                  <p className="text-sm">CPU cores allocated by component type</p>
+                  <p className="text-xs text-muted-foreground mt-1">Metric: container_cpu_allocation</p>
                 </TooltipContent>
               </Tooltip>
             </CardTitle>
-            <span className="text-lg font-bold">${grandTotal.toFixed(0)}/day</span>
+            <span className="text-lg font-bold">{grandTotal.toFixed(1)} cores</span>
           </div>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -230,12 +230,12 @@ export function CostBreakdownSection({ eksCluster, dateRange, selectedDate }: Co
                 <span className="text-xs text-muted-foreground font-medium">WORKSPACE COMPONENTS</span>
                 <span className="text-xs text-muted-foreground">(shared)</span>
               </div>
-              <span className="text-sm font-medium">${workspaceCosts.total.toFixed(0)}/day</span>
+              <span className="text-sm font-medium">{workspaceCosts.total.toFixed(2)} cores</span>
             </div>
             <div className="flex items-center gap-3 text-xs text-muted-foreground font-medium mb-2">
               <div className="w-20">COMPONENT</div>
               <div className="flex-1"></div>
-              <div className="w-16 text-right">COST</div>
+              <div className="w-16 text-right">CPU</div>
               <div className="w-12 text-right">%</div>
             </div>
             {workspaceCosts.components.length === 0 ? (
@@ -246,7 +246,7 @@ export function CostBreakdownSection({ eksCluster, dateRange, selectedDate }: Co
                   <div
                     key={row.component}
                     className="flex items-center gap-3 cursor-pointer hover:bg-muted/50 p-1 -mx-1 transition-colors"
-                    onClick={() => setModalState({ type: "workspace", component: row.component, dailyCost: row.daily_cost })}
+                    onClick={() => setModalState({ type: "workspace", component: row.component, cpuAllocated: row.cpu_allocated })}
                   >
                     <div className="w-20 truncate text-sm font-medium capitalize">{row.component}</div>
                     <div className="flex-1 h-4 bg-muted overflow-hidden">
@@ -255,7 +255,7 @@ export function CostBreakdownSection({ eksCluster, dateRange, selectedDate }: Co
                         style={{ width: `${Math.min(row.percentage, 100)}%` }}
                       />
                     </div>
-                    <div className="w-16 text-right text-sm">${row.daily_cost.toFixed(0)}</div>
+                    <div className="w-16 text-right text-sm">{row.cpu_allocated.toFixed(2)}</div>
                     <div className="w-12 text-right text-xs text-muted-foreground">{row.percentage.toFixed(0)}%</div>
                   </div>
                 ))}
@@ -270,52 +270,47 @@ export function CostBreakdownSection({ eksCluster, dateRange, selectedDate }: Co
               <span className="text-xs text-muted-foreground font-medium">CLUSTER COMPONENTS</span>
               <span className="text-xs text-muted-foreground">(per E6 cluster)</span>
             </div>
-            <div className="flex items-center gap-3 text-xs text-muted-foreground font-medium mb-2">
-              <div className="w-20">COMPONENT</div>
-              <div className="flex-1"></div>
-              <div className="w-16 text-right">COST</div>
-              <div className="w-12 text-right">%</div>
-            </div>
 
             {namespaces.length === 0 ? (
               <div className="text-sm text-muted-foreground py-4">No cluster components found</div>
             ) : (
-              namespaces.map((namespace) => {
-                const data = clusterCosts[namespace]
-                if (!data) return null
-                const nsTotal = data.reduce((sum, c) => sum + (c.daily_cost || 0), 0)
-                return (
-                  <div key={namespace} className="mb-4 last:mb-0">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm font-medium text-muted-foreground">{namespace}</span>
-                      <span className="text-sm">${nsTotal.toFixed(0)}/day</span>
-                    </div>
-                    <div className="space-y-1 pl-4 border-l-2 border-muted">
-                      {data.map((row) => (
-                        <div
-                          key={row.component}
-                          className="flex items-center gap-3 cursor-pointer hover:bg-muted/50 p-1 -mx-1 transition-colors"
-                          onClick={() => setModalState({ type: "cluster", namespace, component: row.component, dailyCost: row.daily_cost })}
-                        >
-                          <div className="w-20 truncate text-sm capitalize text-muted-foreground">{row.component}</div>
-                          <div className="flex-1 h-3 bg-muted overflow-hidden">
-                            <div
-                              className={`h-full ${getCostColor(row.percentage)}`}
-                              style={{ width: `${Math.min(row.percentage, 100)}%` }}
-                            />
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {namespaces.map((namespace) => {
+                  const data = clusterCosts[namespace]
+                  if (!data) return null
+                  const nsTotal = data.reduce((sum, c) => sum + (c.cpu_allocated || 0), 0)
+                  return (
+                    <div key={namespace} className="border rounded-lg p-3 bg-muted/30">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm font-medium">{namespace}</span>
+                        <span className="text-xs text-muted-foreground">{nsTotal.toFixed(2)} cores</span>
+                      </div>
+                      <div className="space-y-1">
+                        {data.map((row) => (
+                          <div
+                            key={row.component}
+                            className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 p-1 -mx-1 transition-colors rounded"
+                            onClick={() => setModalState({ type: "cluster", namespace, component: row.component, cpuAllocated: row.cpu_allocated })}
+                          >
+                            <div className="w-16 truncate text-xs capitalize text-muted-foreground">{row.component}</div>
+                            <div className="flex-1 h-2 bg-muted overflow-hidden rounded">
+                              <div
+                                className={`h-full ${getCostColor(row.percentage)}`}
+                                style={{ width: `${Math.min(row.percentage, 100)}%` }}
+                              />
+                            </div>
+                            <div className="w-10 text-right text-xs">{row.cpu_allocated.toFixed(1)}</div>
                           </div>
-                          <div className="w-16 text-right text-sm">${row.daily_cost.toFixed(0)}</div>
-                          <div className="w-12 text-right text-xs text-muted-foreground">{row.percentage.toFixed(0)}%</div>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                )
-              })
+                  )
+                })}
+              </div>
             )}
           </div>
 
-          <p className="text-xs text-muted-foreground">Click any row to view hourly cost trend</p>
+          <p className="text-xs text-muted-foreground">Click any row to view hourly CPU trend</p>
         </CardContent>
       </Card>
 
@@ -338,12 +333,12 @@ export function CostBreakdownSection({ eksCluster, dateRange, selectedDate }: Co
                 <LineChart data={chartData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e5e5e5" />
                   <XAxis dataKey="time" tick={{ fontSize: 12, fill: "#666" }} tickLine={false} axisLine={{ stroke: "#ccc" }} />
-                  <YAxis tick={{ fontSize: 12, fill: "#666" }} tickLine={false} axisLine={{ stroke: "#ccc" }} tickFormatter={(v) => `$${v.toFixed(2)}`} />
+                  <YAxis tick={{ fontSize: 12, fill: "#666" }} tickLine={false} axisLine={{ stroke: "#ccc" }} tickFormatter={(v) => `${v.toFixed(2)}`} />
                   <RechartsTooltip
                     contentStyle={{ backgroundColor: "#fff", border: "1px solid #ccc", borderRadius: "8px" }}
-                    formatter={(value) => [`$${(value as number).toFixed(2)}/hr`, "Cost"]}
+                    formatter={(value) => [`${(value as number).toFixed(2)} cores`, "CPU"]}
                   />
-                  <Line type="monotone" dataKey="cost" stroke="#f59e0b" strokeWidth={2} dot={false} name="Cost" />
+                  <Line type="monotone" dataKey="cost" stroke="#f59e0b" strokeWidth={2} dot={false} name="CPU" />
                 </LineChart>
               </ResponsiveContainer>
             )}

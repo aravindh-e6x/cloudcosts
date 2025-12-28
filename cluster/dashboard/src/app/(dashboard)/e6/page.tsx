@@ -13,7 +13,6 @@ import {
 } from "e6ds"
 import { Layers, ChevronRight, ChevronDown, Info } from "lucide-react"
 import { getAllWorkspaces, type Workspace } from "@/config/workspaces"
-import { DateBanner } from "@/components"
 import { useDate } from "@/components/providers"
 import { useQuery } from "@/hooks/useQuery"
 
@@ -565,8 +564,6 @@ export default function E6WorkspacesPage() {
   return (
     <TooltipProvider>
       <div className="space-y-6">
-        <DateBanner />
-
         <div>
           <h1 className="text-3xl font-bold">E6 Workspaces</h1>
           <p className="text-muted-foreground mt-1">

@@ -42,26 +42,21 @@ import {
   WorkspaceChatPanel,
 } from "./components"
 
-interface WorkspaceStats {
+interface NodeCount {
   node_count: number
+}
+
+interface PodCount {
   pod_count: number
-  e6_cluster_count: number
 }
 
-interface WorkspaceCost {
-  hourly_cost: number
-  total_cost: number
+interface CostToday {
+  cost_today: number
 }
 
-interface E6Cluster {
-  namespace: string
-}
-
-interface TimeSeriesPoint {
-  ts: string
-  node_count?: number
-  pod_count?: number
-  hourly_cost?: number
+interface ClusterMetrics {
+  cluster: string
+  cpu_allocated: number
 }
 
 export default function WorkspaceDetailPage({
@@ -95,84 +90,52 @@ export default function WorkspaceDetailPage({
   }, [timeRange])
 
   const selectedDate = timeRange?.from ? format(timeRange.from, "MMM d, yyyy") : format(new Date(), "MMM d, yyyy")
+  const dbOpts = { database: workspace.database }
 
-  // Fetch workspace stats (node_count, pod_count, e6_cluster_count)
-  const { data: statsData, loading: statsLoading } = useQuery<WorkspaceStats>(
-    "e6",
-    "getWorkspaceStats",
+  // Fetch node count
+  const { data: nodeCountData, loading: nodeLoading } = useQuery<NodeCount>(
+    "workspaces",
+    "getNodeCount",
     [dateRange],
-    { database: workspace.database }
+    dbOpts
   )
 
-  // Fetch workspace cost
-  const { data: costData, loading: costLoading } = useQuery<WorkspaceCost>(
-    "e6",
-    "getWorkspaceCost",
+  // Fetch pod count
+  const { data: podCountData, loading: podLoading } = useQuery<PodCount>(
+    "workspaces",
+    "getPodCount",
     [dateRange],
-    { database: workspace.database }
+    dbOpts
   )
 
-  // Fetch E6 clusters list
-  const { data: e6ClustersData, loading: e6ClustersLoading } = useQuery<E6Cluster>(
-    "e6",
-    "getE6Clusters",
+  // Fetch total cost
+  const { data: costData, loading: costLoading } = useQuery<CostToday>(
+    "workspaces",
+    "getWorkspaceMetrics",
     [dateRange],
-    { database: workspace.database }
+    dbOpts
   )
 
-  // Fetch time series data
-  const { data: nodeTimeSeriesData } = useQuery<TimeSeriesPoint>(
-    "e6",
-    "getNodeCountTimeSeries",
+  // Fetch E6 clusters (namespaces with executor pods)
+  const { data: clusterData, loading: clustersLoading } = useQuery<ClusterMetrics>(
+    "workspaces",
+    "getClusterMetrics",
     [dateRange],
-    { database: workspace.database }
-  )
-
-  const { data: costTimeSeriesData } = useQuery<TimeSeriesPoint>(
-    "e6",
-    "getCostTimeSeries",
-    [dateRange],
-    { database: workspace.database }
-  )
-
-  const { data: podTimeSeriesData } = useQuery<TimeSeriesPoint>(
-    "e6",
-    "getPodCountTimeSeries",
-    [dateRange],
-    { database: workspace.database }
+    dbOpts
   )
 
   // Extract values from query results
-  const stats = statsData?.[0] || { node_count: 0, pod_count: 0, e6_cluster_count: 0 }
-  const cost = costData?.[0] || { hourly_cost: 0, total_cost: 0 }
-  const e6Clusters = e6ClustersData?.map(c => c.namespace) || []
+  const nodeCount = nodeCountData?.[0]?.node_count || 0
+  const podCount = podCountData?.[0]?.pod_count || 0
+  const costToday = costData?.[0]?.cost_today || 0
+  const e6Clusters = clusterData?.map(c => c.cluster) || []
 
-  // Format time series data for charts
-  const nodeChartData = useMemo(() => {
-    if (!nodeTimeSeriesData?.length) return []
-    return nodeTimeSeriesData.map(d => ({
-      time: format(new Date(d.ts), "HH:mm"),
-      value: d.node_count || 0,
-    }))
-  }, [nodeTimeSeriesData])
+  // Time series data is not yet available - placeholders for now
+  const nodeChartData: { time: string; value: number }[] = []
+  const costChartData: { time: string; value: number }[] = []
+  const podChartData: { time: string; value: number }[] = []
 
-  const costChartData = useMemo(() => {
-    if (!costTimeSeriesData?.length) return []
-    return costTimeSeriesData.map(d => ({
-      time: format(new Date(d.ts), "HH:mm"),
-      value: d.hourly_cost || 0,
-    }))
-  }, [costTimeSeriesData])
-
-  const podChartData = useMemo(() => {
-    if (!podTimeSeriesData?.length) return []
-    return podTimeSeriesData.map(d => ({
-      time: format(new Date(d.ts), "HH:mm"),
-      value: d.pod_count || 0,
-    }))
-  }, [podTimeSeriesData])
-
-  const isLoading = statsLoading || costLoading || e6ClustersLoading
+  const isLoading = nodeLoading || podLoading || costLoading || clustersLoading
 
   // Info tooltip helper
   const InfoTooltip = ({ description, metric }: { description: string; metric?: string }) => (
@@ -248,16 +211,19 @@ export default function WorkspaceDetailPage({
           Back to Workspaces
         </Link>
 
+        {/* Workspace Heading */}
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-bold font-mono">{workspace.name}</h1>
+          <span className="text-sm text-muted-foreground">{workspace.region || "-"}</span>
+        </div>
+
         {/* Header Card */}
         <Card>
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle className="text-lg font-mono">{workspace.name}</CardTitle>
+                <CardTitle className="text-lg">Overview</CardTitle>
                 <p className="text-sm text-muted-foreground mt-1">{selectedDate}</p>
-              </div>
-              <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                <span>{workspace.region || "-"}</span>
               </div>
             </div>
           </CardHeader>
@@ -270,31 +236,22 @@ export default function WorkspaceDetailPage({
                     <DollarSign className="h-4 w-4" />
                     <span className="text-xs">Cost</span>
                     <InfoTooltip
-                      description="Total compute cost for all nodes in this EKS cluster"
+                      description="Total compute cost for all nodes in this cluster"
                       metric="node_total_hourly_cost"
                     />
                   </div>
                   {costLoading ? (
-                    <>
-                      <Skeleton className="h-6 w-24 mb-1" />
-                      <Skeleton className="h-8 w-20" />
-                    </>
+                    <Skeleton className="h-8 w-20" />
                   ) : (
-                    <>
-                      <p className="text-lg text-muted-foreground">
-                        ${(cost.hourly_cost || 0).toFixed(2)}/hr
-                        <span className="text-xs ml-1">instant</span>
-                      </p>
-                      <p
-                        className="text-2xl font-bold cursor-pointer hover:text-primary transition-colors"
-                        onClick={() => setCostModalOpen(true)}
-                      >
-                        ${(cost.total_cost || 0).toFixed(0)}
-                        <span className="text-sm font-normal text-muted-foreground ml-1">/day</span>
-                      </p>
-                    </>
+                    <p
+                      className="text-2xl font-bold cursor-pointer hover:text-primary transition-colors"
+                      onClick={() => setCostModalOpen(true)}
+                    >
+                      ${costToday.toFixed(2)}
+                      <span className="text-sm font-normal text-muted-foreground ml-1">/day</span>
+                    </p>
                   )}
-                  <p className="text-xs text-muted-foreground">click total for trend</p>
+                  <p className="text-xs text-muted-foreground">click for trend</p>
                 </CardContent>
               </Card>
 
@@ -308,11 +265,11 @@ export default function WorkspaceDetailPage({
                     <Cpu className="h-4 w-4" />
                     <span className="text-xs">Nodes</span>
                     <InfoTooltip
-                      description="Number of worker nodes in this EKS cluster"
-                      metric="kube_node_info"
+                      description="Number of worker nodes in this cluster"
+                      metric="kube_node_status_allocatable_cpu_cores"
                     />
                   </div>
-                  {statsLoading ? <Skeleton className="h-8 w-12" /> : <p className="text-2xl font-bold">{stats.node_count}</p>}
+                  {nodeLoading ? <Skeleton className="h-8 w-12" /> : <p className="text-2xl font-bold">{nodeCount}</p>}
                   <p className="text-xs text-muted-foreground">click for trend</p>
                 </CardContent>
               </Card>
@@ -328,10 +285,10 @@ export default function WorkspaceDetailPage({
                     <span className="text-xs">Pods</span>
                     <InfoTooltip
                       description="Total number of pods running across all nodes"
-                      metric="kube_pod_info"
+                      metric="container_cpu_allocation"
                     />
                   </div>
-                  {statsLoading ? <Skeleton className="h-8 w-12" /> : <p className="text-2xl font-bold">{stats.pod_count}</p>}
+                  {podLoading ? <Skeleton className="h-8 w-12" /> : <p className="text-2xl font-bold">{podCount}</p>}
                   <p className="text-xs text-muted-foreground">click for trend</p>
                 </CardContent>
               </Card>
@@ -343,18 +300,18 @@ export default function WorkspaceDetailPage({
                     <Layers className="h-4 w-4" />
                     <span className="text-xs">E6 Clusters</span>
                     <InfoTooltip
-                      description="E6 database clusters deployed in this EKS cluster"
-                      metric="kube_namespace_labels"
+                      description="E6 database clusters deployed in this workspace"
+                      metric="container_cpu_allocation (by namespace)"
                     />
                   </div>
-                  {statsLoading || e6ClustersLoading ? (
+                  {clustersLoading ? (
                     <>
                       <Skeleton className="h-8 w-12 mb-1" />
                       <Skeleton className="h-5 w-32" />
                     </>
                   ) : (
                     <>
-                      <p className="text-2xl font-bold">{stats.e6_cluster_count}</p>
+                      <p className="text-2xl font-bold">{e6Clusters.length}</p>
                       <div className="flex flex-wrap gap-1 mt-1">
                         {e6Clusters.slice(0, 3).map(cluster => (
                           <Badge key={cluster} variant="secondary" className="text-xs">
