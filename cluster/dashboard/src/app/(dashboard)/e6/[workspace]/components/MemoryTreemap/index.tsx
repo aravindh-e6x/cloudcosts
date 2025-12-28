@@ -3,8 +3,8 @@
 import { useMemo } from "react"
 import { Treemap, ResponsiveContainer } from "recharts"
 import { Card, CardContent, CardHeader, CardTitle, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "e6ds"
-import { Cpu, Info } from "lucide-react"
-import { generateMockNodeData } from "./mockData"
+import { HardDrive, Info } from "lucide-react"
+import { generateMockNodeData } from "../ClusterTreemap/mockData"
 import { useTimeline } from "../TimelineContext"
 
 // Custom content renderer for treemap cells
@@ -105,7 +105,7 @@ const CustomTreemapContent = (props: any) => {
   return null
 }
 
-export function ClusterTreemap() {
+export function MemoryTreemap() {
   const { currentTimestamp } = useTimeline()
 
   const nodes = useMemo(() => {
@@ -113,35 +113,56 @@ export function ClusterTreemap() {
     return generateMockNodeData(currentTimestamp)
   }, [currentTimestamp])
 
-  // Transform to treemap format: nodes -> pods
+  // Transform to treemap format: nodes -> pods (sized by memory)
   const treemapData = useMemo(() => {
-    return nodes.map((node) => ({
-      name: node.name.replace("ip-10-", "").substring(0, 6),
-      size: node.cpuCapacity,
-      children: node.pods.map((pod) => ({
-        name: pod.component,
-        size: pod.cpuRequested,
-        cpuRequested: pod.cpuRequested,
-        utilization: pod.isEmpty ? 0 : pod.cpuUsed / pod.cpuRequested,
-        isEmpty: pod.isEmpty || false,
-      })),
-    }))
+    return nodes.map((node) => {
+      // Calculate total memory used by pods
+      const usedMem = node.pods.reduce((sum, p) => sum + (p.isEmpty ? 0 : p.memRequestedGb), 0)
+      const unusedMem = node.memCapacityGb - usedMem
+
+      const children = node.pods
+        .filter(pod => !pod.isEmpty)
+        .map((pod) => ({
+          name: pod.component,
+          size: pod.memRequestedGb,
+          memRequested: pod.memRequestedGb,
+          utilization: pod.memRequestedGb > 0 ? pod.memUsedGb / pod.memRequestedGb : 0,
+          isEmpty: false,
+        }))
+
+      // Add unused space as a child
+      if (unusedMem > 0.5) {
+        children.push({
+          name: "unused",
+          size: unusedMem,
+          memRequested: unusedMem,
+          utilization: 0,
+          isEmpty: true,
+        })
+      }
+
+      return {
+        name: node.name.replace("ip-10-", "").substring(0, 6),
+        size: node.memCapacityGb,
+        children,
+      }
+    })
   }, [nodes])
 
   // Calculate totals
   const totals = useMemo(() => {
-    let totalCpu = 0
-    let usedCpu = 0
-    let requestedCpu = 0
+    let totalMem = 0
+    let usedMem = 0
+    let requestedMem = 0
     let podCount = 0
 
     nodes.forEach((node) => {
-      totalCpu += node.cpuCapacity
+      totalMem += node.memCapacityGb
       node.pods.forEach((pod) => {
         if (!pod.isEmpty) {
           podCount++
-          requestedCpu += pod.cpuRequested
-          usedCpu += pod.cpuUsed
+          requestedMem += pod.memRequestedGb
+          usedMem += pod.memUsedGb
         }
       })
     })
@@ -149,11 +170,11 @@ export function ClusterTreemap() {
     return {
       nodes: nodes.length,
       pods: podCount,
-      totalCpu,
-      requestedCpu,
-      usedCpu,
-      allocatedPct: totalCpu > 0 ? (requestedCpu / totalCpu) * 100 : 0,
-      utilizationPct: requestedCpu > 0 ? (usedCpu / requestedCpu) * 100 : 0,
+      totalMem,
+      requestedMem,
+      usedMem,
+      allocatedPct: totalMem > 0 ? (requestedMem / totalMem) * 100 : 0,
+      utilizationPct: requestedMem > 0 ? (usedMem / requestedMem) * 100 : 0,
     }
   }, [nodes])
 
@@ -162,8 +183,8 @@ export function ClusterTreemap() {
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="flex items-center gap-2 text-base">
-            <Cpu className="h-5 w-5" />
-            CPU Treemap
+            <HardDrive className="h-5 w-5" />
+            Memory Treemap
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -181,15 +202,15 @@ export function ClusterTreemap() {
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
             <CardTitle className="flex items-center gap-2 text-base">
-              <Cpu className="h-5 w-5" />
-              CPU Treemap
+              <HardDrive className="h-5 w-5" />
+              Memory Treemap
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
                 </TooltipTrigger>
                 <TooltipContent side="top" className="max-w-xs">
-                  <p className="text-sm">Node → Pod hierarchy by CPU</p>
-                  <p className="text-xs text-muted-foreground mt-1">Box size = CPU cores, Color = utilization</p>
+                  <p className="text-sm">Node → Pod hierarchy by Memory</p>
+                  <p className="text-xs text-muted-foreground mt-1">Box size = GB, Color = utilization</p>
                 </TooltipContent>
               </Tooltip>
             </CardTitle>
@@ -208,15 +229,15 @@ export function ClusterTreemap() {
                 <span className="text-muted-foreground ml-1">pods</span>
               </span>
               <span>
-                <span className="font-bold">{totals.totalCpu}</span>
-                <span className="text-muted-foreground ml-1">total cores</span>
+                <span className="font-bold">{totals.totalMem}</span>
+                <span className="text-muted-foreground ml-1">GB total</span>
               </span>
             </div>
             <div className="flex items-center gap-4">
               <span>
                 <span className="text-muted-foreground">Allocated:</span>
                 <span className="font-bold ml-1">{totals.allocatedPct.toFixed(0)}%</span>
-                <span className="text-xs text-muted-foreground ml-1">({totals.requestedCpu.toFixed(0)}/{totals.totalCpu})</span>
+                <span className="text-xs text-muted-foreground ml-1">({totals.requestedMem.toFixed(0)}/{totals.totalMem}GB)</span>
               </span>
               <span>
                 <span className="text-muted-foreground">Utilized:</span>
@@ -259,5 +280,3 @@ export function ClusterTreemap() {
     </TooltipProvider>
   )
 }
-
-export * from "./types"

@@ -35,14 +35,12 @@ import { useQuery } from "@/hooks/useQuery"
 import { getWorkspace } from "@/config/workspaces"
 import {
   NodePackingSection,
-  CostBreakdownSection,
-  IODataTransferSection,
-  E6EngineUsageSection,
   WorkspaceChatPanel,
   E6ClusterPackingSection,
   TimelineProvider,
   TimelineScrubber,
   ClusterTreemap,
+  MemoryTreemap,
   CostDrilldown,
 } from "./components"
 
@@ -404,32 +402,14 @@ export default function WorkspaceDetailPage({
         selectedDate={selectedDate}
       />
 
-      {/* Cluster Treemap - Hierarchical view */}
-      <ClusterTreemap />
+      {/* Treemaps - CPU and Memory side by side */}
+      <div className="grid grid-cols-2 gap-4">
+        <ClusterTreemap />
+        <MemoryTreemap />
+      </div>
 
       {/* Cost Drilldown - Dual view by Node / E6 Cluster */}
       <CostDrilldown />
-
-      {/* Cost Breakdown Section */}
-      <CostBreakdownSection
-        eksCluster={workspace.id}
-        dateRange={dateRange}
-        selectedDate={selectedDate}
-      />
-
-      {/* IO & Data Transfer Section */}
-      <IODataTransferSection
-        eksCluster={workspace.id}
-        dateRange={dateRange}
-        selectedDate={selectedDate}
-      />
-
-      {/* E6 Engine Usage Section */}
-      <E6EngineUsageSection
-        eksCluster={workspace.id}
-        dateRange={dateRange}
-        selectedDate={selectedDate}
-      />
       </div>
 
         {/* AI Chat Panel */}
