@@ -42,6 +42,7 @@ import {
   ClusterTreemap,
   MemoryTreemap,
   CostDrilldown,
+  EngineHealth,
 } from "./components"
 
 interface NodeCount {
@@ -401,6 +402,9 @@ export default function WorkspaceDetailPage({
         dateRange={dateRange}
         selectedDate={selectedDate}
       />
+
+      {/* Engine Health */}
+      <EngineHealth e6Clusters={e6Clusters} />
 
       {/* CPU Treemap */}
       <ClusterTreemap />
