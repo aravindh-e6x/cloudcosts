@@ -42,6 +42,8 @@ import {
   E6ClusterPackingSection,
   TimelineProvider,
   TimelineScrubber,
+  ClusterTreemap,
+  CostDrilldown,
 } from "./components"
 
 interface NodeCount {
@@ -401,6 +403,12 @@ export default function WorkspaceDetailPage({
         dateRange={dateRange}
         selectedDate={selectedDate}
       />
+
+      {/* Cluster Treemap - Hierarchical view */}
+      <ClusterTreemap />
+
+      {/* Cost Drilldown - Dual view by Node / E6 Cluster */}
+      <CostDrilldown />
 
       {/* Cost Breakdown Section */}
       <CostBreakdownSection
