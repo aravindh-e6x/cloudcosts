@@ -4,7 +4,6 @@ import { useMemo } from "react"
 import { Treemap, ResponsiveContainer } from "recharts"
 import { Card, CardContent, CardHeader, CardTitle, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "e6ds"
 import { HardDrive, Info } from "lucide-react"
-import { generateMockNodeData } from "../ClusterTreemap/mockData"
 import { useTimeline } from "../TimelineContext"
 
 // Custom content renderer for treemap cells
@@ -106,36 +105,29 @@ const CustomTreemapContent = (props: any) => {
 }
 
 export function MemoryTreemap() {
-  const { currentTimestamp } = useTimeline()
+  const { currentSnapshot } = useTimeline()
 
-  const nodes = useMemo(() => {
-    if (!currentTimestamp) return []
-    return generateMockNodeData(currentTimestamp)
-  }, [currentTimestamp])
-
-  // Transform to treemap format: nodes -> pods (sized by memory)
+  // Transform to treemap format: nodes -> pods (sized by memory) with unallocated space
   const treemapData = useMemo(() => {
-    return nodes.map((node) => {
-      // Calculate total memory used by pods
-      const usedMem = node.pods.reduce((sum, p) => sum + (p.isEmpty ? 0 : p.memRequestedGb), 0)
-      const unusedMem = node.memCapacityGb - usedMem
+    if (!currentSnapshot) return []
+    return currentSnapshot.nodes.map((node) => {
+      const allocatedMem = node.pods.reduce((sum, p) => sum + p.memRequestedGb, 0)
+      const unallocatedMem = Math.max(0, node.memCapacityGb - allocatedMem)
 
-      const children = node.pods
-        .filter(pod => !pod.isEmpty)
-        .map((pod) => ({
-          name: pod.component,
-          size: pod.memRequestedGb,
-          memRequested: pod.memRequestedGb,
-          utilization: pod.memRequestedGb > 0 ? pod.memUsedGb / pod.memRequestedGb : 0,
-          isEmpty: false,
-        }))
+      const podChildren = node.pods.map((pod) => ({
+        name: pod.component,
+        size: pod.memRequestedGb,
+        memRequested: pod.memRequestedGb,
+        utilization: pod.memRequestedGb > 0 ? pod.memUsedGb / pod.memRequestedGb : 0,
+        isEmpty: false,
+      }))
 
-      // Add unused space as a child
-      if (unusedMem > 0.5) {
-        children.push({
-          name: "unused",
-          size: unusedMem,
-          memRequested: unusedMem,
+      // Add unallocated space as empty pod
+      if (unallocatedMem > 0.5) {
+        podChildren.push({
+          name: "unallocated",
+          size: unallocatedMem,
+          memRequested: unallocatedMem,
           utilization: 0,
           isEmpty: true,
         })
@@ -144,31 +136,31 @@ export function MemoryTreemap() {
       return {
         name: node.name.replace("ip-10-", "").substring(0, 6),
         size: node.memCapacityGb,
-        children,
+        children: podChildren,
       }
     })
-  }, [nodes])
+  }, [currentSnapshot])
 
   // Calculate totals
   const totals = useMemo(() => {
+    if (!currentSnapshot) return { nodes: 0, pods: 0, totalMem: 0, requestedMem: 0, usedMem: 0, allocatedPct: 0, utilizationPct: 0 }
+
     let totalMem = 0
     let usedMem = 0
     let requestedMem = 0
     let podCount = 0
 
-    nodes.forEach((node) => {
+    currentSnapshot.nodes.forEach((node) => {
       totalMem += node.memCapacityGb
       node.pods.forEach((pod) => {
-        if (!pod.isEmpty) {
-          podCount++
-          requestedMem += pod.memRequestedGb
-          usedMem += pod.memUsedGb
-        }
+        podCount++
+        requestedMem += pod.memRequestedGb
+        usedMem += pod.memUsedGb
       })
     })
 
     return {
-      nodes: nodes.length,
+      nodes: currentSnapshot.nodes.length,
       pods: podCount,
       totalMem,
       requestedMem,
@@ -176,9 +168,9 @@ export function MemoryTreemap() {
       allocatedPct: totalMem > 0 ? (requestedMem / totalMem) * 100 : 0,
       utilizationPct: requestedMem > 0 ? (usedMem / requestedMem) * 100 : 0,
     }
-  }, [nodes])
+  }, [currentSnapshot])
 
-  if (!currentTimestamp || nodes.length === 0) {
+  if (!currentSnapshot || treemapData.length === 0) {
     return (
       <Card>
         <CardHeader className="pb-2">

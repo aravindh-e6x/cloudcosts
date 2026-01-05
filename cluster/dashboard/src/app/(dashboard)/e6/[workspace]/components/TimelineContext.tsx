@@ -2,12 +2,15 @@
 
 import { createContext, useContext, useState, useMemo, ReactNode } from "react"
 import { addMinutes } from "date-fns"
+import { WorkspaceSnapshot } from "./shared/types"
+import { generateWorkspaceSnapshot } from "./shared/mockData"
 
 interface TimelineContextValue {
   snapshots: Date[]
   selectedIndex: number
   setSelectedIndex: (index: number) => void
   currentTimestamp: Date | null
+  currentSnapshot: WorkspaceSnapshot | null
 }
 
 const TimelineContext = createContext<TimelineContextValue | null>(null)
@@ -37,6 +40,12 @@ export function TimelineProvider({ children, dateRange }: TimelineProviderProps)
 
   const currentTimestamp = snapshots[selectedIndex] || null
 
+  // Generate workspace snapshot for the current timestamp
+  const currentSnapshot = useMemo(() => {
+    if (!currentTimestamp) return null
+    return generateWorkspaceSnapshot(currentTimestamp)
+  }, [currentTimestamp])
+
   return (
     <TimelineContext.Provider
       value={{
@@ -44,6 +53,7 @@ export function TimelineProvider({ children, dateRange }: TimelineProviderProps)
         selectedIndex,
         setSelectedIndex,
         currentTimestamp,
+        currentSnapshot,
       }}
     >
       {children}

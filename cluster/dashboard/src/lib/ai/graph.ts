@@ -1,5 +1,6 @@
+import { ChatOpenAI } from "@langchain/openai"
 import { StateGraph, Annotation, END, START } from "@langchain/langgraph"
-import { ChatAnthropic } from "@langchain/anthropic"
+
 import { HumanMessage, SystemMessage, BaseMessage } from "@langchain/core/messages"
 import { QUERY_TOOLS, getToolByName, getToolsDescription } from "./query-tools"
 
@@ -57,10 +58,10 @@ type AgentStateType = typeof AgentState.State
 
 // Create model
 const getModel = () => {
-  return new ChatAnthropic({
-    model: "claude-sonnet-4-20250514",
-    anthropicApiKey: process.env.ANTHROPIC_API_KEY,
+  return new ChatOpenAI({
+    model: "gpt-4o-mini",
     temperature: 0,
+    openAIApiKey: process.env.OPENAI_API_KEY,
   })
 }
 

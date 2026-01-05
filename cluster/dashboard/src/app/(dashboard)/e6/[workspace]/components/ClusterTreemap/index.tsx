@@ -4,7 +4,6 @@ import { useMemo } from "react"
 import { Treemap, ResponsiveContainer } from "recharts"
 import { Card, CardContent, CardHeader, CardTitle, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "e6ds"
 import { Cpu, Info } from "lucide-react"
-import { generateMockNodeData } from "./mockData"
 import { useTimeline } from "../TimelineContext"
 
 // Custom content renderer for treemap cells
@@ -106,48 +105,62 @@ const CustomTreemapContent = (props: any) => {
 }
 
 export function ClusterTreemap() {
-  const { currentTimestamp } = useTimeline()
+  const { currentSnapshot } = useTimeline()
 
-  const nodes = useMemo(() => {
-    if (!currentTimestamp) return []
-    return generateMockNodeData(currentTimestamp)
-  }, [currentTimestamp])
-
-  // Transform to treemap format: nodes -> pods
+  // Transform to treemap format: nodes -> pods with unallocated space
   const treemapData = useMemo(() => {
-    return nodes.map((node) => ({
-      name: node.name.replace("ip-10-", "").substring(0, 6),
-      size: node.cpuCapacity,
-      children: node.pods.map((pod) => ({
+    if (!currentSnapshot) return []
+    return currentSnapshot.nodes.map((node) => {
+      const allocatedCpu = node.pods.reduce((sum, p) => sum + p.cpuRequested, 0)
+      const unallocatedCpu = Math.max(0, node.cpuCapacity - allocatedCpu)
+
+      const podChildren = node.pods.map((pod) => ({
         name: pod.component,
         size: pod.cpuRequested,
         cpuRequested: pod.cpuRequested,
-        utilization: pod.isEmpty ? 0 : pod.cpuUsed / pod.cpuRequested,
-        isEmpty: pod.isEmpty || false,
-      })),
-    }))
-  }, [nodes])
+        utilization: pod.cpuRequested > 0 ? pod.cpuUsed / pod.cpuRequested : 0,
+        isEmpty: false,
+      }))
+
+      // Add unallocated space as empty pod
+      if (unallocatedCpu > 0.5) {
+        podChildren.push({
+          name: "unallocated",
+          size: unallocatedCpu,
+          cpuRequested: unallocatedCpu,
+          utilization: 0,
+          isEmpty: true,
+        })
+      }
+
+      return {
+        name: node.name.replace("ip-10-", "").substring(0, 6),
+        size: node.cpuCapacity,
+        children: podChildren,
+      }
+    })
+  }, [currentSnapshot])
 
   // Calculate totals
   const totals = useMemo(() => {
+    if (!currentSnapshot) return { nodes: 0, pods: 0, totalCpu: 0, requestedCpu: 0, usedCpu: 0, allocatedPct: 0, utilizationPct: 0 }
+
     let totalCpu = 0
     let usedCpu = 0
     let requestedCpu = 0
     let podCount = 0
 
-    nodes.forEach((node) => {
+    currentSnapshot.nodes.forEach((node) => {
       totalCpu += node.cpuCapacity
       node.pods.forEach((pod) => {
-        if (!pod.isEmpty) {
-          podCount++
-          requestedCpu += pod.cpuRequested
-          usedCpu += pod.cpuUsed
-        }
+        podCount++
+        requestedCpu += pod.cpuRequested
+        usedCpu += pod.cpuUsed
       })
     })
 
     return {
-      nodes: nodes.length,
+      nodes: currentSnapshot.nodes.length,
       pods: podCount,
       totalCpu,
       requestedCpu,
@@ -155,9 +168,9 @@ export function ClusterTreemap() {
       allocatedPct: totalCpu > 0 ? (requestedCpu / totalCpu) * 100 : 0,
       utilizationPct: requestedCpu > 0 ? (usedCpu / requestedCpu) * 100 : 0,
     }
-  }, [nodes])
+  }, [currentSnapshot])
 
-  if (!currentTimestamp || nodes.length === 0) {
+  if (!currentSnapshot || treemapData.length === 0) {
     return (
       <Card>
         <CardHeader className="pb-2">

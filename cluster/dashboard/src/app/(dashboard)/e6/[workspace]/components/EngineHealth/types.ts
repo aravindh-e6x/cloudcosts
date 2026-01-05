@@ -15,8 +15,18 @@ export interface ComponentInstance {
   costPerHour: number
 }
 
+// Expected configuration for a component
+export interface ExpectedConfig {
+  podCount: number
+  cpuPerPod: number
+  memoryPerPodGb: number
+  instanceType: string
+}
+
 export interface ComponentMetrics {
   instances: ComponentInstance[]
+  // Expected config
+  expectedConfig: ExpectedConfig
   // Aggregate metrics
   totalCpuRequested: number
   totalCpuUsed: number
@@ -167,4 +177,11 @@ export interface ThroughputDataPoint {
   queriesPerMin: number
   rowsPerSec: number
   bytesPerSec: number
+}
+
+export interface UtilizationDataPoint {
+  time: string
+  timestamp: Date
+  cpuUtilPct: number
+  memUtilPct: number
 }

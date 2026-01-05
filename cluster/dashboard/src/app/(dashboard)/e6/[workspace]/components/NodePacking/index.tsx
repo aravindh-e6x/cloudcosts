@@ -17,22 +17,29 @@ import {
   TabsTrigger,
 } from "e6ds"
 
-import { NodePackingSectionProps } from "./types"
-import { generateNodeSnapshot } from "./mockData"
-import { DistributionView } from "./DistributionView"
+import { NodePackingSectionProps, NodeSnapshot } from "./types"
 import { HistogramView } from "./HistogramView"
 import { CardsView } from "./CardsView"
 import { useTimeline } from "../TimelineContext"
 
 export function NodePackingSection({ eksCluster, dateRange, selectedDate }: NodePackingSectionProps) {
-  const { currentTimestamp } = useTimeline()
+  const { currentSnapshot: workspaceSnapshot } = useTimeline()
   const [activeTab, setActiveTab] = useState("overview")
 
-  // Generate snapshot for current timestamp
+  // Transform workspace snapshot nodes to NodePacking view format
   const currentSnapshot = useMemo(() => {
-    if (!currentTimestamp) return null
-    return generateNodeSnapshot(currentTimestamp)
-  }, [currentTimestamp])
+    if (!workspaceSnapshot) return null
+    const nodes: NodeSnapshot[] = workspaceSnapshot.nodes.map((node) => ({
+      node: node.name,
+      cpuAllocated: node.pods.reduce((sum, p) => sum + p.cpuRequested, 0),
+      cpuCapacity: node.cpuCapacity,
+      memAllocatedGb: node.pods.reduce((sum, p) => sum + p.memRequestedGb, 0),
+      memCapacityGb: node.memCapacityGb,
+      podCount: node.pods.length,
+      instanceType: node.instanceType,
+    }))
+    return { timestamp: workspaceSnapshot.timestamp, nodes }
+  }, [workspaceSnapshot])
 
   const totals = useMemo(() => {
     if (!currentSnapshot?.nodes.length) {
@@ -136,7 +143,6 @@ export function NodePackingSection({ eksCluster, dateRange, selectedDate }: Node
             </TabsList>
 
             <TabsContent value="overview" className="mt-4 space-y-6">
-              <DistributionView nodes={currentSnapshot.nodes} />
               <HistogramView nodes={currentSnapshot.nodes} />
             </TabsContent>
 

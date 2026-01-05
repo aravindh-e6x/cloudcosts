@@ -1,5 +1,5 @@
 export { NodePackingSection } from './NodePackingSection'
-export { WorkspaceChatPanel } from './WorkspaceChatPanel'
+
 export { E6ClusterPackingSection } from './E6ClusterPacking'
 export { TimelineProvider, useTimeline } from './TimelineContext'
 export { TimelineScrubber } from './TimelineScrubber'

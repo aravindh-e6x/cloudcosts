@@ -35,15 +35,7 @@ import { useQuery } from "@/hooks/useQuery"
 import { getWorkspace } from "@/config/workspaces"
 import {
   NodePackingSection,
-  WorkspaceChatPanel,
-  E6ClusterPackingSection,
-  TimelineProvider,
-  TimelineScrubber,
-  ClusterTreemap,
-  MemoryTreemap,
-  CostDrilldown,
-  EngineHealth,
-} from "./components"
+  
 
 interface NodeCount {
   node_count: number
@@ -388,6 +380,9 @@ export default function WorkspaceDetailPage({
         </DialogContent>
       </Dialog>
 
+      {/* Cost Drilldown - Dual view by Node / E6 Cluster */}
+      <CostDrilldown />
+
       {/* Node Packing Section */}
       <NodePackingSection
         eksCluster={workspace.id}
@@ -411,16 +406,9 @@ export default function WorkspaceDetailPage({
 
       {/* Memory Treemap */}
       <MemoryTreemap />
-
-      {/* Cost Drilldown - Dual view by Node / E6 Cluster */}
-      <CostDrilldown />
       </div>
 
-        {/* AI Chat Panel */}
-        <WorkspaceChatPanel
-          eksCluster={workspace.id}
-          e6Clusters={e6Clusters}
-        />
+
       </TooltipProvider>
     </TimelineProvider>
   )

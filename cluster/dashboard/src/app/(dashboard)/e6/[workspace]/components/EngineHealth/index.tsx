@@ -1,7 +1,9 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { Activity, Info, BarChart3, LayoutGrid, DollarSign, AlertTriangle, TrendingDown } from "lucide-react"
+import Link from "next/link"
+import { useParams } from "next/navigation"
+import { Activity, Info, BarChart3, LayoutGrid, DollarSign, TrendingDown, ExternalLink } from "lucide-react"
 import {
   Card,
   CardContent,
@@ -15,15 +17,14 @@ import {
   TabsContent,
   TabsList,
   TabsTrigger,
-  Badge,
+  Button,
 } from "e6ds"
 
 import { useTimeline } from "../TimelineContext"
-import { generateEngineSnapshot } from "./mockData"
+import { generateEngineSnapshotFromWorkspace } from "./mockData"
 import { OverviewView } from "./OverviewView"
 import { PipelineView } from "./PipelineView"
 import { CostView } from "./CostView"
-import { IssuesView } from "./IssuesView"
 import { EngineSnapshot } from "./types"
 
 interface EngineHealthProps {
@@ -31,20 +32,22 @@ interface EngineHealthProps {
 }
 
 export function EngineHealth({ e6Clusters }: EngineHealthProps) {
-  const { currentTimestamp } = useTimeline()
+  const { currentSnapshot } = useTimeline()
   const [activeTab, setActiveTab] = useState("overview")
+  const params = useParams()
+  const workspaceId = params.workspace as string
 
-  // Generate snapshot for each cluster
+  // Generate engine snapshots from workspace snapshot
   const clusterSnapshots = useMemo(() => {
-    if (!currentTimestamp || e6Clusters.length === 0) return new Map<string, EngineSnapshot>()
+    if (!currentSnapshot || currentSnapshot.e6Clusters.length === 0) return new Map<string, EngineSnapshot>()
 
     const snapshots = new Map<string, EngineSnapshot>()
-    e6Clusters.forEach((cluster, idx) => {
-      const snapshot = generateEngineSnapshot(currentTimestamp, idx)
-      snapshots.set(cluster, snapshot)
+    currentSnapshot.e6Clusters.forEach((cluster, idx) => {
+      const snapshot = generateEngineSnapshotFromWorkspace(currentSnapshot, cluster.name, idx)
+      snapshots.set(cluster.name, snapshot)
     })
     return snapshots
-  }, [currentTimestamp, e6Clusters])
+  }, [currentSnapshot])
 
   // Calculate aggregate totals across all clusters
   const totals = useMemo(() => {
@@ -53,8 +56,6 @@ export function EngineHealth({ e6Clusters }: EngineHealthProps) {
         clusterCount: 0,
         totalCostPerHour: 0,
         potentialSavingsPerHour: 0,
-        totalIssues: 0,
-        criticalIssues: 0,
         queriesRunning: 0,
         queriesQueued: 0,
       }
@@ -62,16 +63,12 @@ export function EngineHealth({ e6Clusters }: EngineHealthProps) {
 
     let totalCost = 0
     let potentialSavings = 0
-    let totalIssues = 0
-    let criticalIssues = 0
     let queriesRunning = 0
     let queriesQueued = 0
 
     clusterSnapshots.forEach((snapshot) => {
       totalCost += snapshot.totalCostPerHour
       potentialSavings += snapshot.potentialSavingsPerHour
-      totalIssues += snapshot.queryBottlenecks.length + snapshot.idleResourceAlerts.length
-      criticalIssues += snapshot.queryBottlenecks.filter(b => b.severity === "critical" || b.severity === "high").length
       queriesRunning += snapshot.gateway.queriesRunning
       queriesQueued += snapshot.gateway.queriesQueued
     })
@@ -80,32 +77,12 @@ export function EngineHealth({ e6Clusters }: EngineHealthProps) {
       clusterCount: clusterSnapshots.size,
       totalCostPerHour: totalCost,
       potentialSavingsPerHour: potentialSavings,
-      totalIssues,
-      criticalIssues,
       queriesRunning,
       queriesQueued,
     }
   }, [clusterSnapshots])
 
-  if (e6Clusters.length === 0) {
-    return (
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Activity className="h-5 w-5" />
-            Engine Health
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="text-center text-muted-foreground py-8">
-            No E6 clusters available
-          </div>
-        </CardContent>
-      </Card>
-    )
-  }
-
-  if (!currentTimestamp) {
+  if (!currentSnapshot || currentSnapshot.e6Clusters.length === 0) {
     return (
       <Card>
         <CardHeader className="pb-2">
@@ -140,6 +117,12 @@ export function EngineHealth({ e6Clusters }: EngineHealthProps) {
                 </TooltipContent>
               </Tooltip>
             </CardTitle>
+            <Link href={`/e6/${workspaceId}/engine`}>
+              <Button variant="outline" size="sm" className="gap-1">
+                <span>View Details</span>
+                <ExternalLink className="h-3.5 w-3.5" />
+              </Button>
+            </Link>
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -171,17 +154,12 @@ export function EngineHealth({ e6Clusters }: EngineHealthProps) {
                   <span className="text-xs">potential</span>
                 </span>
               )}
-              {totals.criticalIssues > 0 && (
-                <Badge variant="destructive" className="text-xs">
-                  {totals.criticalIssues} critical
-                </Badge>
-              )}
             </div>
           </div>
 
           {/* Tabs */}
           <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="grid w-full grid-cols-4">
+            <TabsList className="grid w-full grid-cols-3">
               <TabsTrigger value="overview" className="flex items-center gap-1">
                 <BarChart3 className="h-3.5 w-3.5" />
                 <span>Overview</span>
@@ -193,15 +171,6 @@ export function EngineHealth({ e6Clusters }: EngineHealthProps) {
               <TabsTrigger value="costs" className="flex items-center gap-1">
                 <DollarSign className="h-3.5 w-3.5" />
                 <span>Costs</span>
-              </TabsTrigger>
-              <TabsTrigger value="issues" className="flex items-center gap-1 relative">
-                <AlertTriangle className="h-3.5 w-3.5" />
-                <span>Issues</span>
-                {totals.totalIssues > 0 && (
-                  <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-[10px] rounded-full flex items-center justify-center">
-                    {totals.totalIssues}
-                  </span>
-                )}
               </TabsTrigger>
             </TabsList>
 
@@ -215,10 +184,6 @@ export function EngineHealth({ e6Clusters }: EngineHealthProps) {
 
             <TabsContent value="costs" className="mt-4">
               <CostView clusterSnapshots={clusterSnapshots} />
-            </TabsContent>
-
-            <TabsContent value="issues" className="mt-4">
-              <IssuesView clusterSnapshots={clusterSnapshots} />
             </TabsContent>
           </Tabs>
         </CardContent>

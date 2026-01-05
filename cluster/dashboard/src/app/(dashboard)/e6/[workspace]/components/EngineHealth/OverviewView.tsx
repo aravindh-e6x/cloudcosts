@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react"
 import { EngineSnapshot } from "./types"
+import { COMPONENT_COLORS } from "./constants"
 
 function formatBytes(bytes: number): string {
   if (bytes >= 1024 * 1024 * 1024) {
@@ -197,11 +198,11 @@ export function OverviewView({ clusterSnapshots }: OverviewViewProps) {
           {/* Component breakdown */}
           <div className="grid grid-cols-5 gap-3 mb-4">
             {[
-              { name: "Gateway", data: selectedSnapshot.gateway, color: "#8b5cf6" },
-              { name: "Queue", data: selectedSnapshot.queue, color: "#f59e0b" },
-              { name: "Executor", data: selectedSnapshot.executor, color: "#10b981" },
-              { name: "Schema", data: selectedSnapshot.schema, color: "#ec4899" },
-              { name: "Storage", data: selectedSnapshot.storage, color: "#06b6d4" },
+              { name: "Gateway", data: selectedSnapshot.gateway, color: COMPONENT_COLORS.gateway },
+              { name: "Queue", data: selectedSnapshot.queue, color: COMPONENT_COLORS.queue },
+              { name: "Executor", data: selectedSnapshot.executor, color: COMPONENT_COLORS.executor },
+              { name: "Schema", data: selectedSnapshot.schema, color: COMPONENT_COLORS.schema },
+              { name: "Storage", data: selectedSnapshot.storage, color: COMPONENT_COLORS.storage },
             ].map(({ name, data, color }) => {
               const cpuPct = data.totalCpuRequested > 0 ? (data.totalCpuUsed / data.totalCpuRequested) * 100 : 0
               const memPct = data.totalMemoryRequestedGb > 0 ? (data.totalMemoryUsedGb / data.totalMemoryRequestedGb) * 100 : 0

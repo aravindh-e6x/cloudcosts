@@ -3,9 +3,9 @@
 import { createContext, useContext, useMemo, useState } from "react"
 import { DollarSign, ChevronRight, ChevronDown, Cpu, HardDrive, Server, Box, Layers, Component, ChevronsUpDown, Activity, Database, Zap, BarChart3 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "e6ds"
-import { generateCostDrilldownData } from "./mockData"
 import { useTimeline } from "../TimelineContext"
-import { NodeMetrics, E6ClusterMetrics, PodMetrics, E6ComponentMetrics, ComponentMetrics } from "./types"
+import { NodeMetrics, E6ClusterMetrics, PodMetrics, E6ComponentMetrics, ComponentMetrics, CostDrilldownData } from "./types"
+import { E6ComponentMetrics as SharedE6ComponentMetrics } from "../shared/types"
 
 // Format bytes to human readable
 function formatBytes(bytes: number): string {
@@ -503,16 +503,173 @@ function E6ClustersSection({ clusters, level }: { clusters: E6ClusterMetrics[]; 
   )
 }
 
+// Helper to generate seeded random
+function seededRandom(seed: number): number {
+  const x = Math.sin(seed) * 10000
+  return x - Math.floor(x)
+}
+
+// Helper to convert shared E6ComponentMetrics to CostDrilldown format
+function toCostComponentMetrics(
+  component: string,
+  metrics: SharedE6ComponentMetrics,
+  seed: number
+): E6ComponentMetrics {
+  const random = (offset: number) => seededRandom(seed + offset)
+
+  let componentMetrics: ComponentMetrics
+  switch (component) {
+    case "gateway":
+      componentMetrics = {
+        type: "gateway",
+        data: {
+          activeConnections: Math.floor(20 + random(1) * 80),
+          queriesRunning: Math.floor(5 + random(2) * 20),
+          queriesQueued: Math.floor(random(3) * 10),
+          queriesSucceeded: Math.floor(100 + random(4) * 500),
+          queriesFailed: Math.floor(random(5) * 5),
+          queriesCompleted: Math.floor(100 + random(6) * 500),
+        },
+      }
+      break
+    case "executor":
+      componentMetrics = {
+        type: "executor",
+        data: {
+          activeTasks: Math.floor(10 + random(1) * 40),
+          runningTasks: Math.floor(5 + random(2) * 30),
+          activeConnections: Math.floor(5 + random(3) * 20),
+          allocatedMemoryBytes: Math.floor((8 + random(4) * 24) * 1024 * 1024 * 1024),
+          usedMemoryBytes: Math.floor((4 + random(5) * 16) * 1024 * 1024 * 1024),
+          filesReadFromS3Bytes: Math.floor((50 + random(6) * 200) * 1024 * 1024),
+          filesReadFromCacheBytes: Math.floor((100 + random(7) * 400) * 1024 * 1024),
+          rowsRead: Math.floor((100 + random(8) * 900) * 1000),
+          spilledBytesWritten: Math.floor(random(9) * 100 * 1024 * 1024),
+          diskCacheHitBytes: Math.floor((50 + random(10) * 200) * 1024 * 1024),
+          diskCacheMissBytes: Math.floor(random(11) * 50 * 1024 * 1024),
+        },
+      }
+      break
+    case "queue":
+      componentMetrics = {
+        type: "queue",
+        data: {
+          activeRequests: Math.floor(5 + random(1) * 20),
+          activeTasks: Math.floor(10 + random(2) * 30),
+          activeSplits: Math.floor(20 + random(3) * 60),
+          tasksRunning: Math.floor(5 + random(4) * 20),
+          requestsSucceeded: Math.floor(100 + random(5) * 400),
+          requestsFailed: Math.floor(random(6) * 5),
+        },
+      }
+      break
+    case "schema":
+      componentMetrics = {
+        type: "schema",
+        data: {
+          tableListingQueued: Math.floor(random(1) * 5),
+          tableListingInProgress: Math.floor(random(2) * 3),
+          metadataQueued: Math.floor(random(3) * 10),
+          metadataInProgress: Math.floor(1 + random(4) * 5),
+          thriftQueued: Math.floor(random(5) * 5),
+          thriftInProgress: Math.floor(1 + random(6) * 3),
+        },
+      }
+      break
+    default: // storage
+      componentMetrics = {
+        type: "storage",
+        data: {
+          cacheSize: Math.floor((1 + random(1) * 10) * 1024 * 1024 * 1024),
+          thriftQueued: Math.floor(random(2) * 5),
+          thriftInProgress: Math.floor(1 + random(3) * 3),
+          metadataRequestsInProgress: Math.floor(random(4) * 5),
+          partitionRequestsInProgress: Math.floor(random(5) * 10),
+        },
+      }
+  }
+
+  return {
+    component,
+    podCount: metrics.instances.length,
+    cpuRequested: metrics.totalCpuRequested,
+    cpuUsed: metrics.totalCpuUsed,
+    memRequestedGb: metrics.totalMemRequestedGb,
+    memUsedGb: metrics.totalMemUsedGb,
+    componentMetrics,
+  }
+}
+
 export function CostDrilldown() {
-  const { currentTimestamp } = useTimeline()
+  const { currentSnapshot } = useTimeline()
   const [expandAll, setExpandAll] = useState(false)
 
-  const data = useMemo(() => {
-    if (!currentTimestamp) return null
-    return generateCostDrilldownData(currentTimestamp)
-  }, [currentTimestamp])
+  // Transform workspace snapshot to CostDrilldown format
+  const data = useMemo((): CostDrilldownData | null => {
+    if (!currentSnapshot) return null
 
-  if (!currentTimestamp || !data) {
+    // Transform nodes
+    const nodes: NodeMetrics[] = currentSnapshot.nodes.map((node) => ({
+      name: node.name,
+      instanceType: node.instanceType,
+      costPerDay: node.costPerHour * 24,
+      cpuCapacity: node.cpuCapacity,
+      cpuAllocated: node.pods.reduce((sum, p) => sum + p.cpuRequested, 0),
+      memCapacityGb: node.memCapacityGb,
+      memAllocatedGb: node.pods.reduce((sum, p) => sum + p.memRequestedGb, 0),
+      pods: node.pods.map((pod) => ({
+        name: pod.name,
+        component: pod.component,
+        cpuRequested: pod.cpuRequested,
+        cpuUsed: pod.cpuUsed,
+        memRequestedGb: pod.memRequestedGb,
+        memUsedGb: pod.memUsedGb,
+      })),
+    }))
+
+    // Transform E6 clusters
+    const e6Clusters: E6ClusterMetrics[] = currentSnapshot.e6Clusters.map((cluster, idx) => {
+      const seed = idx * 1000
+      const components = [
+        toCostComponentMetrics("gateway", cluster.gateway, seed + 100),
+        toCostComponentMetrics("queue", cluster.queue, seed + 200),
+        toCostComponentMetrics("executor", cluster.executor, seed + 300),
+        toCostComponentMetrics("schema", cluster.schema, seed + 400),
+        toCostComponentMetrics("storage", cluster.storage, seed + 500),
+      ]
+
+      const gatewayMetrics = components[0].componentMetrics as { type: "gateway"; data: any }
+      const executorMetrics = components[2].componentMetrics as { type: "executor"; data: any }
+      const queueMetrics = components[1].componentMetrics as { type: "queue"; data: any }
+
+      return {
+        name: cluster.name,
+        costPerDay: cluster.totalCostPerHour * 24,
+        components,
+        clusterMetrics: {
+          totalQueriesRunning: gatewayMetrics.data.queriesRunning,
+          totalQueriesQueued: gatewayMetrics.data.queriesQueued,
+          totalActiveTasks: executorMetrics.data.activeTasks,
+          totalBytesReadS3: executorMetrics.data.filesReadFromS3Bytes,
+          totalBytesReadCache: executorMetrics.data.filesReadFromCacheBytes,
+          cacheHitRate: Math.floor(
+            (executorMetrics.data.filesReadFromCacheBytes /
+              (executorMetrics.data.filesReadFromS3Bytes + executorMetrics.data.filesReadFromCacheBytes)) *
+              100
+          ),
+          totalActiveRequests: queueMetrics.data.activeRequests,
+        },
+      }
+    })
+
+    return {
+      totalCostPerDay: currentSnapshot.totalCostPerHour * 24,
+      nodes,
+      e6Clusters,
+    }
+  }, [currentSnapshot])
+
+  if (!currentSnapshot || !data) {
     return (
       <Card>
         <CardHeader className="pb-2">

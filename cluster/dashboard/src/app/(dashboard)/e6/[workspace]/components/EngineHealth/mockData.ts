@@ -6,13 +6,25 @@ import {
   SchemaMetrics,
   StorageMetrics,
   ThroughputDataPoint,
+  UtilizationDataPoint,
   ComponentInstance,
+  ExpectedConfig,
   RightSizingRecommendation,
   IdleResourceAlert,
   ScalingRecommendation,
   QueryBottleneck,
   CostBreakdown,
 } from "./types"
+import { WorkspaceSnapshot, E6ClusterSnapshot, E6ComponentMetrics } from "../shared/types"
+
+// Expected configurations for each component type
+const EXPECTED_CONFIGS: Record<string, ExpectedConfig> = {
+  gateway: { podCount: 2, cpuPerPod: 2, memoryPerPodGb: 4, instanceType: "m5.large" },
+  queue: { podCount: 1, cpuPerPod: 4, memoryPerPodGb: 8, instanceType: "m5.xlarge" },
+  executor: { podCount: 4, cpuPerPod: 8, memoryPerPodGb: 32, instanceType: "r5.2xlarge" },
+  schema: { podCount: 1, cpuPerPod: 2, memoryPerPodGb: 4, instanceType: "m5.large" },
+  storage: { podCount: 2, cpuPerPod: 2, memoryPerPodGb: 8, instanceType: "m5.large" },
+}
 
 function seededRandom(seed: number): number {
   const x = Math.sin(seed) * 10000
@@ -400,6 +412,7 @@ export function generateEngineSnapshot(timestamp: Date, clusterOffset: number = 
   const gatewayInstances = generateInstances("gateway", gatewayCount, seed + 100, 2, 4, timeFactor, clusterOffset)
   const gateway: GatewayMetrics = {
     instances: gatewayInstances.instances,
+    expectedConfig: EXPECTED_CONFIGS.gateway,
     totalCpuRequested: gatewayInstances.totals.cpuReq,
     totalCpuUsed: gatewayInstances.totals.cpuUsed,
     totalMemoryRequestedGb: gatewayInstances.totals.memReq,
@@ -420,6 +433,7 @@ export function generateEngineSnapshot(timestamp: Date, clusterOffset: number = 
   const queueInstances = generateInstances("queue", queueCount, seed + 200, 4, 8, timeFactor, clusterOffset)
   const queue: QueueMetrics = {
     instances: queueInstances.instances,
+    expectedConfig: EXPECTED_CONFIGS.queue,
     totalCpuRequested: queueInstances.totals.cpuReq,
     totalCpuUsed: queueInstances.totals.cpuUsed,
     totalMemoryRequestedGb: queueInstances.totals.memReq,
@@ -442,6 +456,7 @@ export function generateEngineSnapshot(timestamp: Date, clusterOffset: number = 
   const memoryUsedPct = 0.5 + timeFactor * 0.35 + seededRandom(seed + 20) * 0.1
   const executor: ExecutorMetrics = {
     instances: executorInstances.instances,
+    expectedConfig: EXPECTED_CONFIGS.executor,
     totalCpuRequested: executorInstances.totals.cpuReq,
     totalCpuUsed: executorInstances.totals.cpuUsed,
     totalMemoryRequestedGb: executorInstances.totals.memReq,
@@ -472,6 +487,7 @@ export function generateEngineSnapshot(timestamp: Date, clusterOffset: number = 
   const schemaInstances = generateInstances("schema", schemaCount, seed + 400, 2, 4, timeFactor, clusterOffset)
   const schema: SchemaMetrics = {
     instances: schemaInstances.instances,
+    expectedConfig: EXPECTED_CONFIGS.schema,
     totalCpuRequested: schemaInstances.totals.cpuReq,
     totalCpuUsed: schemaInstances.totals.cpuUsed,
     totalMemoryRequestedGb: schemaInstances.totals.memReq,
@@ -491,6 +507,7 @@ export function generateEngineSnapshot(timestamp: Date, clusterOffset: number = 
   const storageInstances = generateInstances("storage", storageCount, seed + 500, 2, 8, timeFactor, clusterOffset)
   const storage: StorageMetrics = {
     instances: storageInstances.instances,
+    expectedConfig: EXPECTED_CONFIGS.storage,
     totalCpuRequested: storageInstances.totals.cpuReq,
     totalCpuUsed: storageInstances.totals.cpuUsed,
     totalMemoryRequestedGb: storageInstances.totals.memReq,
@@ -560,4 +577,231 @@ export function generateThroughputHistory(timestamp: Date): ThroughputDataPoint[
   }
 
   return data
+}
+
+export function generateUtilizationHistory(timestamp: Date, numPoints: number = 20): UtilizationDataPoint[] {
+  const data: UtilizationDataPoint[] = []
+
+  for (let i = numPoints - 1; i >= 0; i--) {
+    const offsetMinutes = i * 5  // 5 minute intervals
+    const time = new Date(timestamp.getTime() - offsetMinutes * 60 * 1000)
+    const seed = time.getHours() * 60 + time.getMinutes()
+
+    const hour = time.getHours()
+    let timeFactor: number
+    if (hour >= 9 && hour <= 17) {
+      timeFactor = 0.7 + Math.sin((hour - 9) * Math.PI / 8) * 0.25
+    } else if (hour >= 1 && hour <= 5) {
+      timeFactor = 0.85
+    } else {
+      timeFactor = 0.3
+    }
+
+    // CPU utilization: 40-90% based on time factor
+    const cpuUtilPct = 40 + timeFactor * 45 + seededRandom(seed) * 10
+
+    // Memory utilization: typically higher and more stable, 50-85%
+    const memUtilPct = 50 + timeFactor * 30 + seededRandom(seed + 1) * 8
+
+    data.push({
+      time: `${time.getHours().toString().padStart(2, "0")}:${time.getMinutes().toString().padStart(2, "0")}`,
+      timestamp: time,
+      cpuUtilPct: Math.min(95, cpuUtilPct),
+      memUtilPct: Math.min(92, memUtilPct),
+    })
+  }
+
+  return data
+}
+
+// Helper to convert shared E6ComponentMetrics instances to EngineHealth ComponentInstance
+function convertToComponentInstances(
+  sharedMetrics: E6ComponentMetrics,
+  workspaceSnapshot: WorkspaceSnapshot
+): ComponentInstance[] {
+  return sharedMetrics.instances.map((inst) => {
+    // Find the node this pod is running on
+    const node = workspaceSnapshot.nodes.find((n) =>
+      n.pods.some((p) => p.name === inst.pod.replace(`${sharedMetrics.component}-`, ""))
+    )
+
+    return {
+      pod: inst.pod,
+      node: inst.node,
+      nodeCpuCapacity: inst.nodeCpuCapacity,
+      nodeMemoryCapacityGb: inst.nodeMemCapacityGb,
+      nodeInstanceType: inst.nodeInstanceType,
+      cpuRequested: inst.cpuRequested,
+      memoryRequestedGb: inst.memRequestedGb,
+      cpuUsed: inst.cpuUsed,
+      memoryUsedGb: inst.memUsedGb,
+      costPerHour: inst.costPerHour,
+    }
+  })
+}
+
+// Generate EngineSnapshot from WorkspaceSnapshot for a specific E6 cluster
+export function generateEngineSnapshotFromWorkspace(
+  workspaceSnapshot: WorkspaceSnapshot,
+  clusterName: string,
+  clusterOffset: number = 0
+): EngineSnapshot {
+  const e6Cluster = workspaceSnapshot.e6Clusters.find((c) => c.name === clusterName)
+  if (!e6Cluster) {
+    throw new Error(`E6 cluster ${clusterName} not found in workspace snapshot`)
+  }
+
+  const timestamp = workspaceSnapshot.timestamp
+  const hour = timestamp.getHours()
+  const minute = timestamp.getMinutes()
+  const seed = hour * 60 + minute + (clusterOffset * 1000)
+
+  // Time factor for generating additional metrics
+  let timeFactor: number
+  if (hour >= 9 && hour <= 17) {
+    timeFactor = 0.7 + Math.sin((hour - 9) * Math.PI / 8) * 0.25
+  } else if (hour >= 1 && hour <= 5) {
+    timeFactor = 0.85
+  } else {
+    timeFactor = 0.3
+  }
+
+  // Convert shared metrics to EngineHealth format
+  const gatewayInstances = convertToComponentInstances(e6Cluster.gateway, workspaceSnapshot)
+  const gateway: GatewayMetrics = {
+    instances: gatewayInstances,
+    expectedConfig: EXPECTED_CONFIGS.gateway,
+    totalCpuRequested: e6Cluster.gateway.totalCpuRequested,
+    totalCpuUsed: e6Cluster.gateway.totalCpuUsed,
+    totalMemoryRequestedGb: e6Cluster.gateway.totalMemRequestedGb,
+    totalMemoryUsedGb: e6Cluster.gateway.totalMemUsedGb,
+    totalCostPerHour: e6Cluster.gateway.totalCostPerHour,
+    activeConnections: Math.floor(20 + timeFactor * 60 + seededRandom(seed) * 20),
+    queriesRunning: e6Cluster.queriesRunning,
+    queriesQueued: e6Cluster.queriesQueued,
+    queriesSucceeded: e6Cluster.queriesSucceeded,
+    queriesFailed: e6Cluster.queriesFailed,
+    queriesCompleted: e6Cluster.queriesSucceeded + e6Cluster.queriesFailed,
+    avgQueryLatencyMs: Math.floor(50 + (1 - timeFactor) * 100 + seededRandom(seed + 6) * 50),
+    p99QueryLatencyMs: Math.floor(200 + (1 - timeFactor) * 500 + seededRandom(seed + 7) * 200),
+    queriesTimedOut: timeFactor > 0.8 ? Math.floor(seededRandom(seed + 8) * 3) : 0,
+  }
+
+  const queueInstances = convertToComponentInstances(e6Cluster.queue, workspaceSnapshot)
+  const queue: QueueMetrics = {
+    instances: queueInstances,
+    expectedConfig: EXPECTED_CONFIGS.queue,
+    totalCpuRequested: e6Cluster.queue.totalCpuRequested,
+    totalCpuUsed: e6Cluster.queue.totalCpuUsed,
+    totalMemoryRequestedGb: e6Cluster.queue.totalMemRequestedGb,
+    totalMemoryUsedGb: e6Cluster.queue.totalMemUsedGb,
+    totalCostPerHour: e6Cluster.queue.totalCostPerHour,
+    activeRequests: Math.floor(10 + timeFactor * 30 + seededRandom(seed + 10) * 10),
+    activeTasks: Math.floor(20 + timeFactor * 60 + seededRandom(seed + 11) * 20),
+    activeSplits: Math.floor(40 + timeFactor * 120 + seededRandom(seed + 12) * 40),
+    tasksRunning: Math.floor(15 + timeFactor * 45 + seededRandom(seed + 13) * 15),
+    tasksNew: Math.floor(5 + timeFactor * 15 + seededRandom(seed + 14) * 5),
+    requestsSucceeded: Math.floor(50 + timeFactor * 200 + seededRandom(seed + 15) * 30),
+    requestsFailed: Math.floor(seededRandom(seed + 16) * 3),
+    avgQueueWaitMs: Math.floor(20 + timeFactor * 200 + seededRandom(seed + 17) * 100),
+    maxQueueDepth: Math.floor(5 + timeFactor * 20 + seededRandom(seed + 18) * 10),
+  }
+
+  const executorInstances = convertToComponentInstances(e6Cluster.executor, workspaceSnapshot)
+  const memoryAllocated = e6Cluster.executor.totalMemRequestedGb * 1024 * 1024 * 1024
+  const memoryUsedPct = e6Cluster.executor.totalMemRequestedGb > 0
+    ? e6Cluster.executor.totalMemUsedGb / e6Cluster.executor.totalMemRequestedGb
+    : 0.7
+  const executor: ExecutorMetrics = {
+    instances: executorInstances,
+    expectedConfig: EXPECTED_CONFIGS.executor,
+    totalCpuRequested: e6Cluster.executor.totalCpuRequested,
+    totalCpuUsed: e6Cluster.executor.totalCpuUsed,
+    totalMemoryRequestedGb: e6Cluster.executor.totalMemRequestedGb,
+    totalMemoryUsedGb: e6Cluster.executor.totalMemUsedGb,
+    totalCostPerHour: e6Cluster.executor.totalCostPerHour,
+    activeTasks: Math.floor(15 + timeFactor * 50 + seededRandom(seed + 21) * 15),
+    runningTasks: Math.floor(12 + timeFactor * 40 + seededRandom(seed + 22) * 12),
+    memoryAllocatedBytes: memoryAllocated,
+    memoryUsedBytes: Math.floor(memoryAllocated * memoryUsedPct),
+    memoryOccupiedBytes: Math.floor(memoryAllocated * memoryUsedPct * 0.9),
+    bytesReadS3: Math.floor((50 + timeFactor * 150) * 1024 * 1024 + seededRandom(seed + 23) * 50 * 1024 * 1024),
+    bytesReadCache: Math.floor((100 + timeFactor * 400) * 1024 * 1024 + seededRandom(seed + 24) * 100 * 1024 * 1024),
+    bytesReadTotal: 0,
+    rowsRead: Math.floor((50000 + timeFactor * 200000) + seededRandom(seed + 25) * 50000),
+    diskCacheHitBytes: Math.floor((80 + timeFactor * 300) * 1024 * 1024),
+    diskCacheMissBytes: Math.floor((20 + timeFactor * 60) * 1024 * 1024),
+    heapCacheHitBytes: Math.floor((40 + timeFactor * 150) * 1024 * 1024),
+    heapCacheMissBytes: Math.floor((5 + timeFactor * 20) * 1024 * 1024),
+    spillBytesWritten: Math.floor(timeFactor * 30 * 1024 * 1024 + seededRandom(seed + 26) * 10 * 1024 * 1024),
+    spillBytesRead: Math.floor(timeFactor * 25 * 1024 * 1024 + seededRandom(seed + 27) * 8 * 1024 * 1024),
+    avgTaskDurationMs: Math.floor(100 + timeFactor * 500 + seededRandom(seed + 28) * 200),
+    tasksKilled: timeFactor > 0.85 ? Math.floor(seededRandom(seed + 29) * 2) : 0,
+    oomKills: memoryUsedPct > 0.9 ? Math.floor(seededRandom(seed + 30) * 2) : 0,
+  }
+  executor.bytesReadTotal = executor.bytesReadS3 + executor.bytesReadCache
+
+  const schemaInstances = convertToComponentInstances(e6Cluster.schema, workspaceSnapshot)
+  const schema: SchemaMetrics = {
+    instances: schemaInstances,
+    expectedConfig: EXPECTED_CONFIGS.schema,
+    totalCpuRequested: e6Cluster.schema.totalCpuRequested,
+    totalCpuUsed: e6Cluster.schema.totalCpuUsed,
+    totalMemoryRequestedGb: e6Cluster.schema.totalMemRequestedGb,
+    totalMemoryUsedGb: e6Cluster.schema.totalMemUsedGb,
+    totalCostPerHour: e6Cluster.schema.totalCostPerHour,
+    tableListingQueued: Math.floor(timeFactor * 8 + seededRandom(seed + 30) * 4),
+    tableListingInProgress: Math.floor(timeFactor * 4 + seededRandom(seed + 31) * 2),
+    metadataQueued: Math.floor(timeFactor * 12 + seededRandom(seed + 32) * 6),
+    metadataInProgress: Math.floor(timeFactor * 6 + seededRandom(seed + 33) * 3),
+    thriftQueued: Math.floor(timeFactor * 10 + seededRandom(seed + 34) * 5),
+    thriftInProgress: Math.floor(timeFactor * 5 + seededRandom(seed + 35) * 3),
+    avgMetadataFetchMs: Math.floor(10 + seededRandom(seed + 36) * 30),
+    cacheHitRate: 0.7 + seededRandom(seed + 37) * 0.25,
+  }
+
+  const storageInstances = convertToComponentInstances(e6Cluster.storage, workspaceSnapshot)
+  const storage: StorageMetrics = {
+    instances: storageInstances,
+    expectedConfig: EXPECTED_CONFIGS.storage,
+    totalCpuRequested: e6Cluster.storage.totalCpuRequested,
+    totalCpuUsed: e6Cluster.storage.totalCpuUsed,
+    totalMemoryRequestedGb: e6Cluster.storage.totalMemRequestedGb,
+    totalMemoryUsedGb: e6Cluster.storage.totalMemUsedGb,
+    totalCostPerHour: e6Cluster.storage.totalCostPerHour,
+    cacheSize: Math.floor((500 + timeFactor * 1500) * 1024 * 1024),
+    thriftQueued: Math.floor(timeFactor * 8 + seededRandom(seed + 40) * 4),
+    thriftInProgress: Math.floor(timeFactor * 4 + seededRandom(seed + 41) * 2),
+    metadataRequestsInProgress: Math.floor(timeFactor * 10 + seededRandom(seed + 42) * 5),
+    partitionRequestsInProgress: Math.floor(timeFactor * 8 + seededRandom(seed + 43) * 4),
+    avgReadLatencyMs: Math.floor(5 + seededRandom(seed + 44) * 15),
+    cacheEvictions: Math.floor(timeFactor * 50 + seededRandom(seed + 45) * 30),
+  }
+
+  // Generate optimization data
+  const rightSizingRecommendations = generateRightSizingRecommendations(gateway, queue, executor, schema, storage, seed)
+  const idleResourceAlerts = generateIdleResourceAlerts(gateway, queue, executor, schema, storage, seed, timeFactor)
+  const scalingRecommendations = generateScalingRecommendations(gateway, queue, executor, timeFactor, seed)
+  const queryBottlenecks = generateQueryBottlenecks(gateway, queue, executor, seed)
+  const costBreakdown = generateCostBreakdown(gateway, queue, executor, schema, storage)
+
+  const totalCostPerHour = costBreakdown.reduce((sum, c) => sum + c.totalCost, 0)
+  const potentialSavingsPerHour = rightSizingRecommendations.reduce((sum, r) => sum + r.savingsPerHour, 0) +
+    idleResourceAlerts.reduce((sum, a) => sum + a.potentialSavingsPerHour, 0)
+
+  return {
+    timestamp,
+    gateway,
+    queue,
+    executor,
+    schema,
+    storage,
+    rightSizingRecommendations,
+    idleResourceAlerts,
+    scalingRecommendations,
+    queryBottlenecks,
+    costBreakdown,
+    totalCostPerHour,
+    potentialSavingsPerHour,
+  }
 }
