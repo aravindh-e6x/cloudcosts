@@ -1,0 +1,153 @@
+# =============================================================================
+# CloudCosts Agent - Vector Configuration
+# =============================================================================
+#
+# Scrapes metrics from static service endpoints:
+# - kube-state-metrics: Kubernetes object state
+# - node-exporter: Node-level metrics
+# - opencost: Cost allocation and container metrics
+#
+# Note: kubelet/cAdvisor metrics are collected by OpenCost internally.
+# e6data metrics are collected separately by e6metrics-exporter.
+# =============================================================================
+
+# Enable API for health checks
+api:
+  enabled: true
+  address: "0.0.0.0:8686"
+
+sources:
+  # Scrape kube-state-metrics
+  kube_state_metrics:
+    type: prometheus_scrape
+    endpoints:
+      - "http://{{RELEASE_NAME}}-kube-state-metrics.{{RELEASE_NAMESPACE}}.svc:8080/metrics"
+    scrape_interval_secs: 30
+    instance_tag: instance
+    endpoint_tag: endpoint
+
+  # Scrape node-exporter (single service endpoint, returns metrics for all nodes via labels)
+  node_exporter:
+    type: prometheus_scrape
+    endpoints:
+      - "http://{{RELEASE_NAME}}-prometheus-node-exporter.{{RELEASE_NAMESPACE}}.svc:9100/metrics"
+    scrape_interval_secs: 30
+    instance_tag: instance
+    endpoint_tag: endpoint
+
+  # Scrape OpenCost (includes container allocation metrics)
+  opencost:
+    type: prometheus_scrape
+    endpoints:
+      - "http://{{RELEASE_NAME}}-opencost.{{RELEASE_NAMESPACE}}.svc:9003/metrics"
+    scrape_interval_secs: 30
+    instance_tag: instance
+    endpoint_tag: endpoint
+
+  # Internal metrics for heartbeat
+  internal_metrics:
+    type: internal_metrics
+    scrape_interval_secs: 60
+
+transforms:
+  # Filter to whitelist only essential metrics
+  filtered_metrics:
+    type: filter
+    inputs:
+      - kube_state_metrics
+      - node_exporter
+      - opencost
+    condition:
+      type: vrl
+      source: |
+        name = to_string!(.name)
+
+        # Container allocation metrics (OpenCost)
+        starts_with(name, "container_cpu_allocation") ||
+        starts_with(name, "container_gpu_allocation") ||
+        starts_with(name, "container_memory_allocation") ||
+
+        # Node metrics (node-exporter)
+        starts_with(name, "node_cpu_") ||
+        starts_with(name, "node_memory_") ||
+        starts_with(name, "node_filesystem_") ||
+        starts_with(name, "node_network_info") ||
+        starts_with(name, "node_gpu_") ||
+        starts_with(name, "node_ram_hourly_cost") ||
+        starts_with(name, "node_total_hourly_cost") ||
+
+        # Kubernetes node metrics (kube-state-metrics)
+        starts_with(name, "kube_node_") ||
+
+        # Kubernetes pod metrics (kube-state-metrics)
+        starts_with(name, "kube_pod_") ||
+
+        # OpenCost/Kubecost metrics
+        starts_with(name, "opencost_") ||
+        starts_with(name, "kubecost_") ||
+        starts_with(name, "pv_hourly_cost") ||
+        starts_with(name, "pod_pvc_allocation") ||
+
+        # Kubernetes object labels
+        name == "deployment_match_labels" ||
+        name == "service_selector_labels" ||
+        name == "statefulSet_match_labels"
+
+  # Add cluster label to all metrics
+  labeled_metrics:
+    type: remap
+    inputs:
+      - filtered_metrics
+    source: |
+      .tags.cluster = "{{CLUSTER_DATABASE}}"
+
+  # Prepare heartbeat metric
+  heartbeat:
+    type: filter
+    inputs:
+      - internal_metrics
+    condition:
+      type: vrl
+      source: |
+        .name == "component_sent_events_total"
+
+  heartbeat_transform:
+    type: remap
+    inputs:
+      - heartbeat
+    source: |
+      .name = "exporter_heartbeat"
+      .tags = {}
+      .tags.exporter = "cloudcosts-agent"
+      .tags.cluster = "{{CLUSTER_DATABASE}}"
+      .counter.value = 1.0
+
+sinks:
+  # Main metrics to cluster database
+  greptimedb_cluster:
+    type: prometheus_remote_write
+    inputs:
+      - labeled_metrics
+    endpoint: "{{GREPTIMEDB_URL}}/v1/prometheus/write?db={{CLUSTER_DATABASE}}"
+    auth:
+      strategy: basic
+      user: "{{GREPTIMEDB_USERNAME}}"
+      password: "{{GREPTIMEDB_PASSWORD}}"
+    healthcheck:
+      enabled: false
+    batch:
+      max_bytes: 1048576
+      timeout_secs: 5
+
+  # Heartbeat to system database
+  greptimedb_system:
+    type: prometheus_remote_write
+    inputs:
+      - heartbeat_transform
+    endpoint: "{{GREPTIMEDB_URL}}/v1/prometheus/write?db=system"
+    auth:
+      strategy: basic
+      user: "{{GREPTIMEDB_USERNAME}}"
+      password: "{{GREPTIMEDB_PASSWORD}}"
+    healthcheck:
+      enabled: false

@@ -8,13 +8,6 @@ greptimedb:
   username: "${GREPTIMEDB_USERNAME}"
   password: "${GREPTIMEDB_PASSWORD}"
 
-alloy:
-  alloy:
-    configMap:
-      create: false
-      name: cloudcosts-agent-alloy
-      key: config.alloy
-
 opencost:
   opencost:
     exporter:

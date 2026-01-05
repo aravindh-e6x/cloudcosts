@@ -1,12 +1,12 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ .Release.Name }}-alloy
+  name: {{ .Release.Name }}-vector
   labels:
     {{- include "cloudcosts-agent.labels" . | nindent 4 }}
 data:
-  config.alloy: |
-{{- $config := .Files.Get "config.alloy" }}
+  vector.yaml: |
+{{- $config := .Files.Get "vector.yaml" }}
 {{- $config = replace "{{RELEASE_NAME}}" .Release.Name $config }}
 {{- $config = replace "{{RELEASE_NAMESPACE}}" .Release.Namespace $config }}
 {{- $config = replace "{{GREPTIMEDB_URL}}" .Values.greptimedb.urlBase $config }}

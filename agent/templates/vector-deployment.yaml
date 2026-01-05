@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-vector
+  labels:
+    {{- include "cloudcosts-agent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: vector
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "cloudcosts-agent.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: vector
+  template:
+    metadata:
+      labels:
+        {{- include "cloudcosts-agent.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: vector
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/vector-configmap.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ .Release.Name }}-vector
+      containers:
+        - name: vector
+          image: "timberio/vector:{{ .Values.vector.image.tag | default "0.42.0-alpine" }}"
+          args:
+            - --config-dir
+            - /etc/vector/
+          ports:
+            - name: api
+              containerPort: 8686
+              protocol: TCP
+          env:
+            - name: VECTOR_LOG
+              value: "info"
+          resources:
+            {{- toYaml .Values.vector.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/vector/
+              readOnly: true
+            - name: data
+              mountPath: /vector-data-dir
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: api
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: api
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: config
+          configMap:
+            name: {{ .Release.Name }}-vector
+        - name: data
+          emptyDir: {}

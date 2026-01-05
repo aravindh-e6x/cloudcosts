@@ -10,27 +10,17 @@ greptimedb:
   username: "${GREPTIMEDB_USERNAME}"
   password: "${GREPTIMEDB_PASSWORD}"
 
-# Alloy (Metrics Collector)
-alloy:
-  alloy:
-    configMap:
-      create: false
-      name: null
-      key: config.alloy
-    resources:
-      requests:
-        cpu: 50m
-        memory: 128Mi
-      limits:
-        cpu: 200m
-        memory: 256Mi
-  controller:
-    type: deployment
-    replicas: 1
-  serviceAccount:
-    create: true
-  rbac:
-    create: true
+# Vector (Metrics Collector)
+vector:
+  image:
+    tag: "0.42.0-alpine"
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
 
 # Kube State Metrics
 kube-state-metrics:
