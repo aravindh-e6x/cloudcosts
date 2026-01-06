@@ -13,6 +13,7 @@
     "@langchain/anthropic": "^1.3.3",
     "@langchain/core": "^1.1.8",
     "@langchain/langgraph": "^1.0.7",
+    "@langchain/openai": "^1.2.0",
     "@tanstack/react-query": "^5.90.12",
     "@xyflow/react": "^12.10.0",
     "ai": "^6.0.3",

@@ -35,7 +35,14 @@ import { useQuery } from "@/hooks/useQuery"
 import { getWorkspace } from "@/config/workspaces"
 import {
   NodePackingSection,
-  
+  E6ClusterPackingSection,
+  TimelineProvider,
+  TimelineScrubber,
+  CostDrilldown,
+  EngineHealth,
+  ClusterTreemap,
+  MemoryTreemap,
+} from "./components"
 
 interface NodeCount {
   node_count: number
