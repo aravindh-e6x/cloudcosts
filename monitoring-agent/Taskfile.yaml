@@ -4,7 +4,7 @@ dotenv: ['../.env']
 
 vars:
   RELEASE_NAME: monitoring-agent
-  NAMESPACE: monitoring
+  NAMESPACE: monitoring-cost
   CHART_DIR: .
 
 tasks:

@@ -19,11 +19,11 @@ alloy:
       key: config.alloy
     resources:
       requests:
-        cpu: 50m
-        memory: 128Mi
+        cpu: 100m
+        memory: 512Mi
       limits:
-        cpu: 200m
-        memory: 256Mi
+        cpu: 1000m
+        memory: 1500Mi
   controller:
     type: deployment
     replicas: 1

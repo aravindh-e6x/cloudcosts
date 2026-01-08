@@ -28,15 +28,15 @@ logging.basicConfig(
 logger = logging.getLogger('vantage-exporter')
 
 # Configuration from environment variables
-VANTAGE_API_TOKEN = os.environ.get('VANTAGE_API_TOKEN', '')
+VANTAGE_API_TOKEN = os.environ.get('VANTAGE_API_TOKEN', 'vntg_tkn_883ebd03ad6b99710eee1d152a33d52994cb822b')
 VANTAGE_API_URL = os.environ.get('VANTAGE_API_URL', 'https://api.vantage.sh')
 VANTAGE_WORKSPACE_TOKEN = os.environ.get('VANTAGE_WORKSPACE_TOKEN', 'wrkspc_835ba35b0dc804f9')
-GREPTIMEDB_URL = os.environ.get('GREPTIMEDB_URL', 'http://monitoring-stack-greptimedb-standalone.monitoring.svc:4000')
+GREPTIMEDB_URL = os.environ.get('GREPTIMEDB_URL', 'https://greptimedb.cloudcosts.in')
 GREPTIMEDB_USERNAME = os.environ.get('GREPTIMEDB_USERNAME', 'e6data')
 GREPTIMEDB_PASSWORD = os.environ.get('GREPTIMEDB_PASSWORD', 'cloudcosts')
-GREPTIMEDB_DATABASE = os.environ.get('GREPTIMEDB_DATABASE', 'vantage')
+GREPTIMEDB_DATABASE = os.environ.get('GREPTIMEDB_DATABASE', 'vantagesql')
 PUSH_INTERVAL = int(os.environ.get('PUSH_INTERVAL', '3600'))  # 1 hour default
-HISTORICAL_DAYS = int(os.environ.get('HISTORICAL_DAYS', '90'))  # 90 days of daily data
+HISTORICAL_DAYS = int(os.environ.get('HISTORICAL_DAYS', '120'))  # 90 days of daily data
 
 # Collection flags
 COLLECT_BY_PROVIDER = os.environ.get('COLLECT_BY_PROVIDER', 'true').lower() == 'true'
@@ -191,20 +191,31 @@ class VantageClient:
 
 
 class GreptimeDBClient:
-    """Client for pushing metrics to GreptimeDB via Prometheus remote write."""
+    """Client for pushing metrics to GreptimeDB.
 
-    def __init__(self, greptimedb_url: str, username: str = '', password: str = '', database: str = 'vantage'):
+    Supports:
+    - Prometheus remote write (default, time-series style)
+    - Direct SQL inserts (optional, easier for SQL-based dashboards)
+    """
+
+    def __init__(
+        self,
+        greptimedb_url: str,
+        username: str = '',
+        password: str = '',
+        database: str = 'vantage',
+        write_mode: str = 'prom'
+    ):
         self.greptimedb_url = greptimedb_url.rstrip('/')
         self.database = database
         self.username = username
         self.password = password
+        self.write_mode = write_mode.lower() if write_mode else 'prom'
+
+        # Prometheus remote write endpoint (used when write_mode == 'prom')
         self.push_url = f"{self.greptimedb_url}/v1/prometheus/write?db={database}"
         self.session = requests.Session()
-        self.session.headers.update({
-            'Content-Type': 'application/x-protobuf',
-            'Content-Encoding': 'snappy',
-            'X-Prometheus-Remote-Write-Version': '0.1.0'
-        })
+        # Note: headers are configured per-request depending on write_mode
         if username and password:
             self.session.auth = (username, password)
 
@@ -226,6 +237,62 @@ class GreptimeDBClient:
                 logger.warning(f"Failed to ensure database exists: {response.status_code} - {response.text}")
         except Exception as e:
             logger.warning(f"Failed to ensure database exists: {e}")
+
+    def _quote_identifier(self, identifier: str) -> str:
+        """Quote an SQL identifier to handle reserved keywords."""
+        # Use double quotes for GreptimeDB identifiers
+        return f'"{identifier}"'
+    
+    def _ensure_table_exists_sql(self, table_name: str, label_keys: List[str]) -> bool:
+        """Ensure a table exists for SQL mode, creating it if needed.
+        
+        Returns True if table exists or was created successfully, False otherwise.
+        """
+        sql_url = f"{self.greptimedb_url}/v1/sql?db={self.database}"
+        
+        # Build column definitions - quote all identifiers to handle reserved keywords
+        columns = ['greptime_timestamp TIMESTAMP TIME INDEX']
+        for key in label_keys:
+            quoted_key = self._quote_identifier(key)
+            columns.append(f"{quoted_key} STRING")
+        columns.append('greptime_value DOUBLE')
+        
+        create_table_sql = (
+            f"CREATE TABLE IF NOT EXISTS {table_name} (\n"
+            f"  {', '.join(columns)}\n"
+            f")"
+        )
+        
+        try:
+            logger.debug(f"Creating table '{table_name}' in database '{self.database}' with SQL: {create_table_sql[:200]}...")
+            response = self.session.post(
+                sql_url,
+                data={'sql': create_table_sql},
+                auth=(self.username, self.password) if self.username else None,
+                timeout=10
+            )
+            if response.ok:
+                try:
+                    result = response.json()
+                    if result.get('error'):
+                        error_msg = result.get('error', 'Unknown error')
+                        logger.error(f"Table creation failed for '{table_name}' in database '{self.database}': {error_msg}")
+                        logger.debug(f"Full SQL: {create_table_sql}")
+                        return False
+                    else:
+                        logger.info(f"Table '{table_name}' ensured to exist in database '{self.database}'")
+                        return True
+                except ValueError:
+                    # Response is not JSON, but status is OK - assume success
+                    logger.info(f"Table '{table_name}' creation request succeeded (non-JSON response)")
+                    return True
+            else:
+                logger.error(f"Failed to ensure table exists: HTTP {response.status_code} - {response.text}")
+                logger.debug(f"Full SQL: {create_table_sql}")
+                return False
+        except Exception as e:
+            logger.error(f"Exception while ensuring table exists: {e}")
+            return False
 
     def _encode_varint(self, value: int) -> bytes:
         """Encode an integer as a varint."""
@@ -281,20 +348,36 @@ class GreptimeDBClient:
         return result
 
     def push_metrics(self, metrics: List[Dict], batch_size: int = 500) -> bool:
-        """Push metrics to Mimir in batches."""
+        """Push metrics to GreptimeDB in batches."""
         if not metrics:
             return True
 
         success = True
-        for i in range(0, len(metrics), batch_size):
-            batch = metrics[i:i + batch_size]
-            if not self._push_batch(batch):
-                success = False
+        if self.write_mode == 'sql':
+            logger.info("GreptimeDBClient running in SQL write mode")
+            for i in range(0, len(metrics), batch_size):
+                batch = metrics[i:i + batch_size]
+                if not self._push_batch_sql(batch):
+                    success = False
+        else:
+            logger.info("GreptimeDBClient running in Prometheus remote write mode")
+            for i in range(0, len(metrics), batch_size):
+                batch = metrics[i:i + batch_size]
+                if not self._push_batch_prometheus(batch):
+                    success = False
 
         return success
 
-    def _push_batch(self, metrics: List[Dict]) -> bool:
-        """Push a batch of metrics to Mimir."""
+    def _push_batch_prometheus(self, metrics: List[Dict]) -> bool:
+        """Push a batch of metrics via Prometheus remote write."""
+        # Configure headers for remote write
+        self.session.headers.clear()
+        self.session.headers.update({
+            'Content-Type': 'application/x-protobuf',
+            'Content-Encoding': 'snappy',
+            'X-Prometheus-Remote-Write-Version': '0.1.0'
+        })
+
         timeseries_list = []
 
         for metric in metrics:
@@ -311,14 +394,161 @@ class GreptimeDBClient:
         try:
             response = self.session.post(self.push_url, data=compressed, timeout=30)
             if response.status_code in (200, 204):
-                logger.info(f"Successfully pushed {len(metrics)} metrics to GreptimeDB")
+                logger.info(f"Successfully pushed {len(metrics)} metrics to GreptimeDB via remote write")
                 return True
             else:
-                logger.error(f"Failed to push metrics: {response.status_code} - {response.text}")
+                logger.error(f"Failed to push metrics via remote write: {response.status_code} - {response.text}")
                 return False
         except requests.exceptions.RequestException as e:
-            logger.error(f"Failed to push metrics to GreptimeDB: {e}")
+            logger.error(f"Failed to push metrics to GreptimeDB via remote write: {e}")
             return False
+
+    def _escape_sql_string(self, value: str) -> str:
+        """Escape a string for safe inclusion in SQL single-quoted literals."""
+        if value is None:
+            return ''
+        return str(value).replace("'", "''")
+
+    def _push_batch_sql(self, metrics: List[Dict]) -> bool:
+        """Push a batch of metrics using SQL INSERT statements.
+
+        Creates/uses tables matching the metric names, with schema:
+          - greptime_timestamp (TimestampMillisecond)
+          - greptime_value (Float64)
+          - one column per label key (String)
+        """
+        if not metrics:
+            return True
+
+        # Configure headers for SQL API
+        self.session.headers.clear()
+        # Use database as query parameter, not in table name
+        sql_url = f"{self.greptimedb_url}/v1/sql?db={self.database}"
+        logger.debug(f"Using SQL URL: {sql_url} (database: {self.database})")
+
+        # Group metrics by table (metric name)
+        grouped: Dict[str, List[Dict]] = {}
+        for m in metrics:
+            name = m.get('name', '')
+            if not name:
+                continue
+            grouped.setdefault(name, []).append(m)
+
+        all_ok = True
+
+        for metric_name, items in grouped.items():
+            # Collect all label keys seen for this metric name
+            label_keys = set()
+            for m in items:
+                label_keys.update((m.get('labels') or {}).keys())
+
+            label_keys = sorted(label_keys)
+            # Table name without database prefix (database is in URL query param)
+            table_name = metric_name
+
+            # Log which accounts are being processed (for account metrics)
+            if 'account_name' in label_keys:
+                accounts_in_batch = set()
+                for m in items:
+                    account_name = m.get('labels', {}).get('account_name', 'unknown')
+                    accounts_in_batch.add(account_name)
+                logger.info(f"Processing {len(items)} metrics for {len(accounts_in_batch)} accounts in {table_name}: {sorted(accounts_in_batch)[:10]}")
+
+            # Ensure table exists before inserting
+            table_created = self._ensure_table_exists_sql(table_name, label_keys)
+            if not table_created:
+                logger.error(f"Skipping insert for {table_name} - table creation failed. Check logs above for details.")
+                all_ok = False
+                continue
+            
+            # Small delay to ensure table is fully created
+            time.sleep(0.1)
+
+            # Build INSERT with multiple VALUES rows
+            values_sql_parts = []
+            for m in items:
+                ts_ms = int(m.get('timestamp_ms', 0))
+                value = float(m.get('value', 0.0))
+                labels = m.get('labels') or {}
+
+                # Build value list: timestamp, labels..., value
+                ts_expr = f"to_timestamp_millis({ts_ms})"
+
+                label_values_sql = []
+                for key in label_keys:
+                    raw_val = labels.get(key, '')
+                    escaped = self._escape_sql_string(raw_val)
+                    label_values_sql.append(f"'{escaped}'")
+
+                row_sql = f"({ts_expr}, {', '.join(label_values_sql)}, {value})"
+                values_sql_parts.append(row_sql)
+
+            if not values_sql_parts:
+                continue
+
+            # Column list: greptime_timestamp, <label keys>, greptime_value
+            # Quote all column names to handle reserved keywords
+            columns = ['greptime_timestamp']
+            columns.extend([self._quote_identifier(key) for key in label_keys])
+            columns.append('greptime_value')
+            columns_sql = ', '.join(columns)
+
+            # Break large inserts into smaller batches to avoid SQL statement size limits
+            batch_size = 100  # Insert 100 rows at a time
+            total_inserted = 0
+            
+            for batch_start in range(0, len(values_sql_parts), batch_size):
+                batch_end = min(batch_start + batch_size, len(values_sql_parts))
+                batch_values = values_sql_parts[batch_start:batch_end]
+                
+                # Build INSERT statement for this batch
+                insert_sql = f"INSERT INTO {table_name} ({columns_sql}) VALUES {', '.join(batch_values)}"
+                
+                try:
+                    response = self.session.post(
+                        sql_url,
+                        data={'sql': insert_sql},
+                        auth=(self.username, self.password) if self.username else None,
+                        timeout=30,
+                    )
+                    
+                    # Check both HTTP status and JSON response for errors
+                    if response.ok:
+                        try:
+                            result = response.json()
+                            if result.get('error'):
+                                error_msg = result.get('error', 'Unknown error')
+                                all_ok = False
+                                logger.error(
+                                    f"Failed to insert batch {batch_start}-{batch_end} into {table_name} via SQL: {error_msg}"
+                                )
+                                logger.debug(f"Failed SQL (first 500 chars): {insert_sql[:500]}")
+                                continue
+                            else:
+                                total_inserted += len(batch_values)
+                                logger.debug(f"Successfully inserted batch {batch_start}-{batch_end} ({len(batch_values)} rows) into {table_name}")
+                        except ValueError:
+                            # Response is not JSON, but HTTP is OK - assume success
+                            total_inserted += len(batch_values)
+                            logger.debug(f"Successfully inserted batch {batch_start}-{batch_end} ({len(batch_values)} rows) into {table_name}")
+                    else:
+                        all_ok = False
+                        logger.error(
+                            f"Failed to insert batch {batch_start}-{batch_end} into {table_name} via SQL: "
+                            f"HTTP {response.status_code} - {response.text}"
+                        )
+                        logger.debug(f"Failed SQL (first 500 chars): {insert_sql[:500]}")
+                        
+                except requests.exceptions.RequestException as e:
+                    all_ok = False
+                    logger.error(f"Failed to insert batch {batch_start}-{batch_end} into {table_name} via SQL: {e}")
+            
+            if total_inserted > 0:
+                logger.info(f"Successfully inserted {total_inserted}/{len(items)} rows into {table_name} via SQL")
+            else:
+                logger.warning(f"No rows were inserted into {table_name} - all batches failed")
+
+        return all_ok
 
 
 class VantageExporter:
@@ -415,7 +645,16 @@ class VantageExporter:
             end_date=end_date,
             groupings=['provider', 'account_id']
         )
-        logger.info(f"  Fetched {len(costs)} account cost records")
+        # Log unique accounts found
+        unique_accounts = set()
+        for cost in costs:
+            account_id = cost.get('account_id', 'unknown')
+            account_name = cost.get('account_name', account_id)
+            provider = cost.get('provider', 'unknown')
+            unique_accounts.add(f"{provider}:{account_id}:{account_name}")
+        logger.info(f"  Fetched {len(costs)} account cost records from {len(unique_accounts)} unique accounts")
+        if len(unique_accounts) > 0:
+            logger.debug(f"  Unique accounts: {sorted(unique_accounts)[:10]}")  # Log first 10
         return costs
 
     def _fetch_costs_by_service(self, start_date: str, end_date: str) -> List[Dict]:
@@ -471,8 +710,15 @@ class VantageExporter:
         logger.info(f"Collection and push completed, {len(all_metrics)} metrics")
 
     def _date_to_timestamp_ms(self, date_str: str) -> int:
-        """Convert date string to millisecond timestamp."""
+        """Convert date string to millisecond timestamp.
+        
+        Adds 1 day to the date because Vantage API returns costs with the date
+        when they occurred, but we need to shift them forward by 1 day to align
+        with the correct display date.
+        """
         dt = datetime.strptime(date_str, '%Y-%m-%d')
+        # Add 1 day to align costs with the correct date
+        dt = dt + timedelta(days=1)
         return int(dt.timestamp() * 1000)
 
     def _sanitize_label(self, value: str) -> str:
@@ -503,14 +749,24 @@ class VantageExporter:
     def _convert_account_costs_to_metrics(self, costs: List[Dict]) -> List[Dict]:
         """Convert account costs to Prometheus metrics format."""
         metrics = []
+        seen_accounts = set()
+        
         for cost in costs:
             provider = cost.get('provider', 'unknown')
             account_id = cost.get('account_id', 'unknown')
-            account_name = cost.get('account_name', account_id)
+            account_name = cost.get('account_name') or str(account_id)
+            
+            # Track unique accounts for logging
+            account_key = f"{provider}:{account_id}:{account_name}"
+            if account_key not in seen_accounts:
+                seen_accounts.add(account_key)
+                logger.debug(f"Processing account: provider={provider}, account_id={account_id}, account_name={account_name}")
+            
             date = cost.get('accrued_at', cost.get('date', cost.get('accrued_date', '')))
             amount = float(cost.get('amount', 0))
 
             if not date:
+                logger.warning(f"Skipping cost record with no date: {cost}")
                 continue
 
             metrics.append({
@@ -523,6 +779,8 @@ class VantageExporter:
                 'value': amount,
                 'timestamp_ms': self._date_to_timestamp_ms(date)
             })
+        
+        logger.info(f"Converted {len(costs)} account cost records to {len(metrics)} metrics. Unique accounts: {len(seen_accounts)}")
         return metrics
 
     def _convert_service_costs_to_metrics(self, costs: List[Dict]) -> List[Dict]:
@@ -603,11 +861,19 @@ def main():
         workspace_token=VANTAGE_WORKSPACE_TOKEN
     )
 
+    # Allow selecting write mode via env var (prom | sql)
+    greptime_write_mode = os.environ.get('GREPTIMEDB_WRITE_MODE', 'prom').lower()
+    if greptime_write_mode not in ('prom', 'sql'):
+        logger.warning(f"Unknown GREPTIMEDB_WRITE_MODE='{greptime_write_mode}', defaulting to 'prom'")
+        greptime_write_mode = 'prom'
+    logger.info(f"GreptimeDB write mode: {greptime_write_mode}")
+
     greptimedb_client = GreptimeDBClient(
         greptimedb_url=GREPTIMEDB_URL,
         username=GREPTIMEDB_USERNAME,
         password=GREPTIMEDB_PASSWORD,
-        database=GREPTIMEDB_DATABASE
+        database=GREPTIMEDB_DATABASE,
+        write_mode=greptime_write_mode,
     )
 
     exporter = VantageExporter(

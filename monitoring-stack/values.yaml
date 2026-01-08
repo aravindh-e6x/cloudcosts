@@ -161,6 +161,22 @@ grafana:
           jsonData:
             timeInterval: "1m"
             httpHeaderName1: x-greptime-db-name
+        - name: GreptimeDB-Vantage-SQL
+          uid: greptimedb-vantage-sql
+          type: postgres
+          url: monitoring-stack-greptimedb-standalone.monitoring.svc:4003
+          access: proxy
+          database: vantage
+          user: ${GREPTIMEDB_USERNAME}
+          secureJsonData:
+            password: ${GREPTIMEDB_PASSWORD}
+          jsonData:
+            sslmode: "disable"
+            postgresVersion: 1200
+            timescaledb: false
+            maxOpenConns: 100
+            maxIdleConns: 100
+            connMaxLifetime: 14400
 
   sidecar:
     dashboards:
