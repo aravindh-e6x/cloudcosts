@@ -1,0 +1,498 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "gridPos": { "h": 2, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "options": {
+        "content": "# Monthly Cloud Cost Report\n\n- **Calendar View**: Shows cost per account per calendar month (Jan-Dec) for the current year\n- **Time Series**: Monthly cost trends over time\n- Data is delayed by 1 day.\n\n**Setup**: This dashboard uses SQL queries via PostgreSQL datasource (`GreptimeDB-Vantage-SQL`). Ensure:\n1. Vantage exporter is configured with `GREPTIMEDB_WRITE_MODE=sql`\n2. GreptimeDB PostgreSQL datasource named `GreptimeDB-Vantage-SQL` is configured in Grafana (port 4003)\n3. Database name is set to `vantage`",
+        "mode": "markdown"
+      },
+      "type": "text"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "name": "GreptimeDB-Vantage-SQL"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          },
+          "unit": "currencyUSD"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 8, "x": 0, "y": 2 },
+      "id": 2,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "name": "GreptimeDB-Vantage-SQL"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT SUM(greptime_value) as total_cost\nFROM vantage_daily_cost_by_account\nWHERE greptime_timestamp >= NOW() - INTERVAL '30 days'\n  AND greptime_timestamp < NOW();",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Total Cost (Last 30d ≈ Current Month)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "name": "GreptimeDB-Vantage-SQL"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "drawStyle": "bars",
+            "lineInterpolation": "smooth",
+            "lineWidth": 1,
+            "fillOpacity": 80,
+            "gradientMode": "none",
+            "stacking": { "mode": "normal", "group": "A" },
+            "barAlignment": 0,
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "axisColorMode": "text",
+            "axisBorderShow": false,
+            "scaleDistribution": { "type": "linear" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "unit": "currencyUSD"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 10, "w": 16, "x": 0, "y": 6 },
+      "id": 3,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "name": "GreptimeDB-Vantage-SQL"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  date_trunc('month', greptime_timestamp) as time,\n  account_name,\n  SUM(greptime_value) as value\nFROM vantage_daily_cost_by_account\nWHERE $__timeFilter(greptime_timestamp)\nGROUP BY date_trunc('month', greptime_timestamp), account_name\nORDER BY time, account_name;",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          },
+          "timeColumn": "time",
+          "timeColumnType": "timestamp"
+        }
+      ],
+      "title": "Monthly Cost by Account (Time Series)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "name": "GreptimeDB-Vantage-SQL"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "custom": {
+            "align": "auto",
+            "cellOptions": { "type": "auto" },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Account" },
+            "properties": [
+              { "id": "custom.width", "value": 200 }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Monthly Cost" },
+            "properties": [
+              { "id": "unit", "value": "currencyUSD" }
+            ]
+          }
+        ]
+      },
+      "gridPos": { "h": 10, "w": 8, "x": 16, "y": 6 },
+      "id": 4,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": ["sum"],
+          "show": true
+        },
+        "showHeader": true,
+        "sortBy": [
+          { "desc": true, "displayName": "Monthly Cost" }
+        ]
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "name": "GreptimeDB-Vantage-SQL"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  account_name as \"Account\",\n  SUM(greptime_value) as \"Monthly Cost\"\nFROM vantage_daily_cost_by_account\nWHERE greptime_timestamp >= NOW() - INTERVAL '30 days'\n  AND greptime_timestamp < NOW()\nGROUP BY account_name\nORDER BY \"Monthly Cost\" DESC;",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Current Month by Account (Last 30d)",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "name": "GreptimeDB-Vantage-SQL"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "color-background",
+              "mode": "gradient"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          },
+          "unit": "currencyUSD"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Account" },
+            "properties": [
+              { "id": "custom.width", "value": 200 },
+              { "id": "custom.cellOptions", "value": { "type": "auto" } }
+            ]
+          }
+        ]
+      },
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 16 },
+      "id": 7,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": ["sum"],
+          "show": true
+        },
+        "showHeader": true,
+        "sortBy": [
+          { "desc": false, "displayName": "Account" }
+        ]
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "name": "GreptimeDB-Vantage-SQL"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  account_name as \"Account\",\n  SUM(CASE WHEN EXTRACT(YEAR FROM greptime_timestamp) = EXTRACT(YEAR FROM $__timeTo()) AND EXTRACT(MONTH FROM greptime_timestamp) = 1 THEN greptime_value ELSE 0 END) as \"Jan\",\n  SUM(CASE WHEN EXTRACT(YEAR FROM greptime_timestamp) = EXTRACT(YEAR FROM $__timeTo()) AND EXTRACT(MONTH FROM greptime_timestamp) = 2 THEN greptime_value ELSE 0 END) as \"Feb\",\n  SUM(CASE WHEN EXTRACT(YEAR FROM greptime_timestamp) = EXTRACT(YEAR FROM $__timeTo()) AND EXTRACT(MONTH FROM greptime_timestamp) = 3 THEN greptime_value ELSE 0 END) as \"Mar\",\n  SUM(CASE WHEN EXTRACT(YEAR FROM greptime_timestamp) = EXTRACT(YEAR FROM $__timeTo()) AND EXTRACT(MONTH FROM greptime_timestamp) = 4 THEN greptime_value ELSE 0 END) as \"Apr\",\n  SUM(CASE WHEN EXTRACT(YEAR FROM greptime_timestamp) = EXTRACT(YEAR FROM $__timeTo()) AND EXTRACT(MONTH FROM greptime_timestamp) = 5 THEN greptime_value ELSE 0 END) as \"May\",\n  SUM(CASE WHEN EXTRACT(YEAR FROM greptime_timestamp) = EXTRACT(YEAR FROM $__timeTo()) AND EXTRACT(MONTH FROM greptime_timestamp) = 6 THEN greptime_value ELSE 0 END) as \"Jun\",\n  SUM(CASE WHEN EXTRACT(YEAR FROM greptime_timestamp) = EXTRACT(YEAR FROM $__timeTo()) AND EXTRACT(MONTH FROM greptime_timestamp) = 7 THEN greptime_value ELSE 0 END) as \"Jul\",\n  SUM(CASE WHEN EXTRACT(YEAR FROM greptime_timestamp) = EXTRACT(YEAR FROM $__timeTo()) AND EXTRACT(MONTH FROM greptime_timestamp) = 8 THEN greptime_value ELSE 0 END) as \"Aug\",\n  SUM(CASE WHEN EXTRACT(YEAR FROM greptime_timestamp) = EXTRACT(YEAR FROM $__timeTo()) AND EXTRACT(MONTH FROM greptime_timestamp) = 9 THEN greptime_value ELSE 0 END) as \"Sep\",\n  SUM(CASE WHEN EXTRACT(YEAR FROM greptime_timestamp) = EXTRACT(YEAR FROM $__timeTo()) AND EXTRACT(MONTH FROM greptime_timestamp) = 10 THEN greptime_value ELSE 0 END) as \"Oct\",\n  SUM(CASE WHEN EXTRACT(YEAR FROM greptime_timestamp) = EXTRACT(YEAR FROM $__timeTo()) AND EXTRACT(MONTH FROM greptime_timestamp) = 11 THEN greptime_value ELSE 0 END) as \"Nov\",\n  SUM(CASE WHEN EXTRACT(YEAR FROM greptime_timestamp) = EXTRACT(YEAR FROM $__timeTo()) AND EXTRACT(MONTH FROM greptime_timestamp) = 12 THEN greptime_value ELSE 0 END) as \"Dec\"\nFROM vantage_daily_cost_by_account\nWHERE $__timeFilter(greptime_timestamp)\nGROUP BY account_name\nORDER BY account_name;",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Monthly Cost by Account - Calendar View (Jan-Dec)",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "name": "GreptimeDB-Vantage-SQL"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false }
+          },
+          "mappings": [],
+          "unit": "currencyUSD"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 28 },
+      "id": 5,
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "values": ["value", "percent"]
+        },
+        "pieType": "pie",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "name": "GreptimeDB-Vantage-SQL"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  account_name,\n  SUM(greptime_value) as value\nFROM vantage_daily_cost_by_account\nWHERE greptime_timestamp >= NOW() - INTERVAL '30 days'\n  AND greptime_timestamp < NOW()\nGROUP BY account_name\nORDER BY value DESC;",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Current Month Account Share (Last 30d)",
+      "type": "piechart"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "name": "GreptimeDB-Vantage-SQL"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "stacking": { "mode": "none", "group": "A" },
+            "barAlignment": 0,
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "axisColorMode": "text",
+            "axisBorderShow": false,
+            "scaleDistribution": { "type": "linear" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "unit": "currencyUSD"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 28 },
+      "id": 6,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "name": "GreptimeDB-Vantage-SQL"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  date_trunc('month', greptime_timestamp) as time,\n  SUM(greptime_value) as value\nFROM vantage_daily_cost_by_account\nWHERE $__timeFilter(greptime_timestamp)\nGROUP BY date_trunc('month', greptime_timestamp)\nORDER BY time;",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          },
+          "timeColumn": "time",
+          "timeColumnType": "timestamp"
+        }
+      ],
+      "title": "Total Monthly Cost (All Accounts)",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["vantage", "cost", "monthly", "sql"],
+  "templating": { "list": [] },
+  "time": {
+    "from": "now-12M",
+    "to": "now"
+  },
+  "timepicker": {
+    "hidden": false,
+    "time_options": ["1M", "3M", "6M", "12M"]
+  },
+  "timezone": "utc",
+  "title": "Vantage Cloud Costs - Monthly (SQL)",
+  "uid": "vantage-cloud-costs-monthly-sql",
+  "version": 2,
+  "weekStart": ""
+}
